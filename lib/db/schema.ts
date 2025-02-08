@@ -1,28 +1,84 @@
-import type { InferSelectModel } from 'drizzle-orm';
-import {
-    pgTable,
-    varchar,
-    timestamp,
-    uuid,
-    text,
-    serial,
-} from 'drizzle-orm/pg-core';
+export type Json =
+    | string
+    | number
+    | boolean
+    | null
+    | { [key: string]: Json | undefined }
+    | Json[]
 
-export const user = pgTable('User', {
-    id: uuid('id').primaryKey().notNull().defaultRandom(),
-    email: varchar('email', { length: 64 }).notNull(),
-    password: varchar('password', { length: 64 }),
-});
-
-export type User = InferSelectModel<typeof user>;
-
-export const pendingRegistrations = pgTable('PendingRegistrations', {
-    id: serial('id').primaryKey(),
-    email: text('email').notNull(),
-    password: text('password').notNull(),
-    otp: text('otp').notNull(),
-    expiresAt: timestamp('expiresAt', { withTimezone: true }).notNull(),
-    createdAt: timestamp('createdAt', { withTimezone: true }).defaultNow()
-});
-
-export type PendingRegistrations = InferSelectModel<typeof pendingRegistrations>;
+export interface Database {
+    public: {
+        Tables: {
+            users: {
+                Row: {
+                    id: string  // references auth.users
+                    email: string
+                    created_at: string
+                    display_name: string | null
+                    avatar_url: string | null
+                    phone_number: string | null
+                    address: string | null
+                    updated_at: string
+                }
+                Insert: {
+                    id: string  // references auth.users
+                    email: string
+                    created_at?: string
+                    display_name?: string | null
+                    avatar_url?: string | null
+                    phone_number?: string | null
+                    address?: string | null
+                    updated_at?: string
+                }
+                Update: {
+                    id?: string
+                    email?: string
+                    created_at?: string
+                    display_name?: string | null
+                    avatar_url?: string | null
+                    phone_number?: string | null
+                    address?: string | null
+                    updated_at?: string
+                }
+            }
+            assets: {
+                Row: {
+                    id: string
+                    created_at: string
+                    user_id: string
+                    name: string
+                    description: string | null
+                    estimated_value: number | null
+                    media_url: string
+                    media_type: 'image' | 'video'
+                    is_signed: boolean
+                    signature_data: Json | null
+                }
+                Insert: {
+                    id?: string
+                    created_at?: string
+                    user_id: string
+                    name: string
+                    description?: string | null
+                    estimated_value?: number | null
+                    media_url: string
+                    media_type: 'image' | 'video'
+                    is_signed?: boolean
+                    signature_data?: Json | null
+                }
+                Update: {
+                    id?: string
+                    created_at?: string
+                    user_id?: string
+                    name?: string
+                    description?: string | null
+                    estimated_value?: number | null
+                    media_url?: string
+                    media_type?: 'image' | 'video'
+                    is_signed?: boolean
+                    signature_data?: Json | null
+                }
+            }
+        }
+    }
+}
