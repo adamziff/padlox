@@ -101,7 +101,7 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                             {asset.description && (
                                 <div>
                                     <h3 className="font-medium mb-2">Description</h3>
-                                    <p className="text-muted-foreground">{asset.description}</p>
+                                    <p className="text-muted-foreground whitespace-pre-line">{asset.description}</p>
                                 </div>
                             )}
 

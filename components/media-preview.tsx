@@ -64,10 +64,17 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
         }
     }
 
+    function handleDescriptionChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+        // Only clean up excessive newlines, preserve normal spaces
+        const value = e.target.value
+            .replace(/\n{3,}/g, '\n\n') // Replace 3+ newlines with 2
+        setDescription(value)
+    }
+
     return (
-        <div className="fixed inset-0 bg-background z-50 flex">
-            {/* Left side - Preview */}
-            <div className="w-1/2 flex flex-col border-r">
+        <div className="fixed inset-0 bg-background z-50 flex flex-col md:flex-row">
+            {/* Top/Left side - Preview */}
+            <div className="w-full md:w-1/2 flex flex-col border-b md:border-b-0 md:border-r">
                 <div className="p-4 flex justify-between items-center border-b">
                     <Button variant="ghost" size="icon" onClick={onCancel}>
                         <CrossIcon />
@@ -76,7 +83,7 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
                     <div className="w-10" />
                 </div>
 
-                <div className="flex-1 relative">
+                <div className="relative h-[300px] md:h-full">
                     {isVideo ? (
                         <video
                             src={previewUrl}
@@ -93,8 +100,8 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
                 </div>
             </div>
 
-            {/* Right side - Form */}
-            <div className="w-1/2 flex flex-col p-6">
+            {/* Bottom/Right side - Form */}
+            <div className="w-full md:w-1/2 flex flex-col p-4 md:p-6 overflow-y-auto">
                 <h2 className="text-lg font-semibold mb-6">Asset Details</h2>
 
                 <div className="space-y-4">
@@ -114,9 +121,10 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
                         <Textarea
                             id="description"
                             value={description}
-                            onChange={(e) => setDescription(e.target.value)}
+                            onChange={handleDescriptionChange}
                             placeholder="Describe the item (brand, model, condition, etc.)"
                             rows={4}
+                            className="font-mono whitespace-pre-wrap"
                         />
                     </div>
 
@@ -134,12 +142,16 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
                     </div>
                 </div>
 
-                <div className="mt-auto pt-6 flex gap-4">
-                    <Button variant="outline" onClick={onRetry}>
+                <div className="mt-auto pt-6 flex flex-col-reverse md:flex-row gap-4">
+                    <Button
+                        variant="outline"
+                        onClick={onRetry}
+                        className="w-full md:w-auto order-2 md:order-1"
+                    >
                         Retake
                     </Button>
                     <Button
-                        className="flex-1"
+                        className="w-full md:flex-1 order-1 md:order-2"
                         onClick={handleSave}
                         disabled={isSaving || !name.trim()}
                     >
