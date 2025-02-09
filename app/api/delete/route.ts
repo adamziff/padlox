@@ -1,14 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3'
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION!,
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-    },
-    useArnRegion: true
+    }
 })
 
 export async function POST(request: Request) {
@@ -21,51 +20,21 @@ export async function POST(request: Request) {
     }
 
     try {
-        const formData = await request.formData()
-        const file = formData.get('file') as File
+        const { key } = await request.json()
 
-        if (!file) {
-            return new NextResponse('No file provided', { status: 400 })
+        if (!key) {
+            return new NextResponse('No key provided', { status: 400 })
         }
 
-        // Generate a unique key for the file
-        const timestamp = Date.now()
-        const key = `${user.id}/${timestamp}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
-        const buffer = Buffer.from(await file.arrayBuffer())
-
-        console.log('Uploading file to S3:', {
-            bucket: process.env.AWS_BUCKET_NAME,
-            key,
-            contentType: file.type,
-            size: buffer.length
-        })
-
-        const command = new PutObjectCommand({
+        const command = new DeleteObjectCommand({
             Bucket: process.env.AWS_BUCKET_NAME!,
             Key: key,
-            Body: buffer,
-            ContentType: file.type,
-            CacheControl: 'max-age=31536000',
-            Metadata: {
-                'original-filename': file.name,
-                'user-id': user.id,
-                'upload-timestamp': timestamp.toString()
-            },
         })
 
         await s3Client.send(command)
 
-        // Return both the full URL and the key
-        const url = `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${key}`
-
-        console.log('File uploaded successfully:', {
-            key,
-            url,
-            contentType: file.type
-        })
-
         return NextResponse.json(
-            { url, key },
+            { success: true },
             {
                 headers: {
                     'Access-Control-Allow-Origin': '*',
@@ -75,13 +44,13 @@ export async function POST(request: Request) {
             }
         )
     } catch (error: any) {
-        console.error('Upload error:', {
+        console.error('Delete error:', {
             message: error?.message,
             code: error?.code,
             stack: error?.stack,
         })
         return new NextResponse(
-            JSON.stringify({ error: 'Upload failed', details: error?.message }),
+            JSON.stringify({ error: 'Delete failed', details: error?.message }),
             {
                 status: 500,
                 headers: {

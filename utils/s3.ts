@@ -1,4 +1,9 @@
-export async function uploadToS3(file: File): Promise<string> {
+interface UploadResponse {
+    url: string
+    key: string
+}
+
+export async function uploadToS3(file: File): Promise<UploadResponse> {
     const formData = new FormData()
     formData.append('file', file)
 
@@ -14,7 +19,7 @@ export async function uploadToS3(file: File): Promise<string> {
         }
 
         const data = await response.json()
-        return data.url
+        return data
     } catch (error: any) {
         console.error('S3 upload error:', {
             message: error?.message,
