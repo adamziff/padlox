@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -7,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 
-export default function VerifyPage() {
+function VerifyContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
     const email = searchParams.get('email')
@@ -138,5 +139,17 @@ export default function VerifyPage() {
                 </CardFooter>
             </Card>
         </div>
+    )
+}
+
+export default function VerifyPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center">
+                <p className="text-muted-foreground">Loading...</p>
+            </div>
+        }>
+            <VerifyContent />
+        </Suspense>
     )
 } 
