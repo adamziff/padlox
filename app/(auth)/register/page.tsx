@@ -24,7 +24,7 @@ export default function RegisterPage() {
             setSentTo(email)
         } catch (err) {
             // If it's a redirect error, that means the email was sent successfully
-            if ((err as any)?.digest?.includes('NEXT_REDIRECT')) {
+            if ((err as Error & { digest?: string })?.digest?.includes('NEXT_REDIRECT')) {
                 setEmailSent(true)
                 setSentTo(email)
             }

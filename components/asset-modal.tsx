@@ -1,4 +1,5 @@
 import { Asset } from '@/types/asset'
+import Image from 'next/image'
 import { Button } from './ui/button'
 import { formatCurrency } from '@/utils/format'
 import { CrossIcon, TrashIcon } from './icons'
@@ -88,11 +89,16 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                                     className="w-full h-full object-contain"
                                 />
                             ) : (
-                                <img
-                                    src={asset.media_url}
-                                    alt={asset.name}
-                                    className="w-full h-full object-contain"
-                                />
+                                <div className="relative w-full h-full">
+                                    <Image
+                                        src={asset.media_url}
+                                        alt={asset.name}
+                                        fill
+                                        className="object-contain"
+                                        sizes="(max-width: 768px) 100vw, 50vw"
+                                        priority
+                                    />
+                                </div>
                             )}
                         </div>
 

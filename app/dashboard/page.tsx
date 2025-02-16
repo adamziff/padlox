@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { createClient } from '@/utils/supabase/client'
 import { CameraCapture } from '@/components/camera-capture'
 import { MediaPreview } from '@/components/media-preview'
@@ -28,7 +29,7 @@ export default function Dashboard() {
     const supabase = createClient()
     const router = useRouter()
 
-    async function ensureUserExists(user: { id: string, email?: string | undefined }) {
+    const ensureUserExists = useCallback(async (user: { id: string, email?: string | undefined }) => {
         try {
             // First check if user exists
             const { data: existingUser, error: fetchError } = await supabase
@@ -84,17 +85,22 @@ export default function Dashboard() {
 
             console.log('User already exists:', existingUser)
             return existingUser
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const err = error as Error & {
+                details?: string
+                hint?: string
+                code?: string
+            }
             console.error('Error in ensureUserExists:', {
-                message: error?.message,
-                details: error?.details,
-                hint: error?.hint,
-                code: error?.code,
-                stack: error?.stack
+                message: err?.message,
+                details: err?.details,
+                hint: err?.hint,
+                code: err?.code,
+                stack: err?.stack
             })
-            throw error
+            throw err
         }
-    }
+    }, [supabase])
 
     useEffect(() => {
         async function loadAssets() {
@@ -142,7 +148,7 @@ export default function Dashboard() {
         }
 
         loadAssets()
-    }, [])
+    }, [supabase, router, ensureUserExists])
 
     async function handleCapture(file: File) {
         setCapturedFile(file)
@@ -177,7 +183,7 @@ export default function Dashboard() {
 
             console.log('Uploading file to S3...')
             const response = await uploadToS3(capturedFile)
-            const { url: s3Url, key } = typeof response === 'string' ? { url: response, key: response.split('/').pop()! } : response
+            const { url: s3Url, key } = response
             console.log('File uploaded successfully:', { s3Url, key })
 
             console.log('Saving asset to database...')
@@ -213,12 +219,18 @@ export default function Dashboard() {
             console.log('Asset saved successfully:', transformedAsset)
             setAssets(prev => [transformedAsset, ...prev])
             setCapturedFile(null)
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const err = error as Error & {
+                details?: string
+                hint?: string
+                code?: string
+                name?: string
+            }
             console.error('Error saving asset:', {
-                message: error?.message,
-                details: error?.details,
-                stack: error?.stack,
-                name: error?.name
+                message: err?.message,
+                details: err?.details,
+                stack: err?.stack,
+                name: err?.name
             })
             alert('Failed to save asset. Please try again.')
         }
@@ -292,7 +304,7 @@ export default function Dashboard() {
     }
 
     // Add function to handle media errors
-    function handleMediaError(assetId: string, url: string, type: 'image' | 'video', error: any) {
+    function handleMediaError(assetId: string, url: string, type: 'image' | 'video', error: unknown) {
         console.error(`Error loading ${type}:`, {
             assetId,
             url,
@@ -478,25 +490,26 @@ export default function Dashboard() {
                                     </div>
                                 ) : (
                                     <>
-                                        <img
+                                        <Image
                                             key={`${asset.media_url}-${mediaErrors[asset.id] ? 'retry' : 'initial'}`}
                                             src={asset.media_url}
                                             alt={asset.name}
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                                const target = e.target as HTMLImageElement
+                                            fill
+                                            className="object-cover"
+                                            onError={() => {
                                                 handleMediaError(
                                                     asset.id,
                                                     asset.media_url,
                                                     'image',
                                                     {
-                                                        complete: target.complete,
-                                                        naturalWidth: target.naturalWidth,
-                                                        naturalHeight: target.naturalHeight
+                                                        complete: false,
+                                                        naturalWidth: 0,
+                                                        naturalHeight: 0
                                                     }
                                                 )
                                             }}
-                                            loading="lazy"
+                                            sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                                            priority={false}
                                         />
                                         <div className="absolute bottom-2 right-2 bg-black/50 rounded-full p-1.5">
                                             <ImageIcon size={14} />

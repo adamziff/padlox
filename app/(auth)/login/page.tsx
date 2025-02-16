@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { ThemeToggle } from "@/components/theme-toggle"
 import Link from 'next/link'
 import { useState } from 'react'
-import { useFormState } from 'react-dom'
+import { ApiError } from '@/types/errors'
 
 export default function LoginPage() {
     const [emailSent, setEmailSent] = useState(false)
@@ -23,9 +23,9 @@ export default function LoginPage() {
             // If we get here, the email was sent successfully
             setEmailSent(true)
             setSentTo(email)
-        } catch (err) {
-            // If it's a redirect error, that means the email was sent successfully
-            if ((err as any)?.digest?.includes('NEXT_REDIRECT')) {
+        } catch (err: unknown) {
+            const error = err as ApiError
+            if (error?.digest?.includes('NEXT_REDIRECT')) {
                 setEmailSent(true)
                 setSentTo(email)
             }

@@ -39,7 +39,8 @@ export default function VerifyPage() {
 
             // If successful, redirect to dashboard
             router.push('/dashboard')
-        } catch (err) {
+        } catch (error) {
+            console.error('Verification error:', error)
             setError('An error occurred while verifying your code')
         } finally {
             setIsLoading(false)
@@ -63,7 +64,8 @@ export default function VerifyPage() {
             if (error) {
                 setError(error.message)
             }
-        } catch (err) {
+        } catch (error) {
+            console.error('Failed to resend code:', error)
             setError('Failed to resend verification code')
         } finally {
             setIsLoading(false)

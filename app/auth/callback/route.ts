@@ -1,6 +1,5 @@
 import { createClient } from '@/utils/supabase/server'
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
@@ -47,13 +46,18 @@ export async function GET(request: Request) {
             }
 
             return NextResponse.redirect(new URL(next, request.url))
-        } catch (error: any) {
+        } catch (error: unknown) {
+            const err = error as Error & {
+                details?: string
+                hint?: string
+                code?: string
+            }
             console.error('Auth callback error:', {
-                message: error?.message,
-                details: error?.details,
-                hint: error?.hint,
-                code: error?.code,
-                stack: error?.stack
+                message: err?.message,
+                details: err?.details,
+                hint: err?.hint,
+                code: err?.code,
+                stack: err?.stack
             })
             return NextResponse.redirect(new URL('/auth/auth-error', request.url))
         }

@@ -74,14 +74,15 @@ export async function POST(request: Request) {
                 },
             }
         )
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const err = error as Error & { code?: string }
         console.error('Upload error:', {
-            message: error?.message,
-            code: error?.code,
-            stack: error?.stack,
+            message: err?.message,
+            code: err?.code,
+            stack: err?.stack,
         })
         return new NextResponse(
-            JSON.stringify({ error: 'Upload failed', details: error?.message }),
+            JSON.stringify({ error: 'Upload failed', details: err?.message }),
             {
                 status: 500,
                 headers: {
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
     }
 }
 
-export async function OPTIONS(request: Request) {
+export async function OPTIONS() {
     return new NextResponse(null, {
         headers: {
             'Access-Control-Allow-Origin': '*',

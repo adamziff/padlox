@@ -20,12 +20,13 @@ export async function uploadToS3(file: File): Promise<UploadResponse> {
 
         const data = await response.json()
         return data
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const err = error as Error & { status?: number }
         console.error('S3 upload error:', {
-            message: error?.message,
-            status: error?.status,
-            stack: error?.stack
+            message: err?.message,
+            status: err?.status,
+            stack: err?.stack
         })
-        throw error
+        throw err
     }
 } 

@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from './ui/button'
-import { CrossIcon, PlusIcon } from './icons'
+import { CrossIcon } from './icons'
 
 interface CameraCaptureProps {
     onCapture: (file: File) => void
@@ -13,13 +13,23 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     const [stream, setStream] = useState<MediaStream | null>(null)
     const [isRecording, setIsRecording] = useState(false)
     const [mode, setMode] = useState<'photo' | 'video'>('photo')
+
     const videoRef = useRef<HTMLVideoElement>(null)
     const mediaRecorderRef = useRef<MediaRecorder | null>(null)
     const chunksRef = useRef<Blob[]>([])
 
-    async function startCamera() {
-        // Stop any existing stream first
-        await stopCamera()
+    const stopCamera = useCallback(() => {
+        if (!stream) return
+        stream.getTracks().forEach((track) => track.stop())
+        setStream(null)
+
+        if (videoRef.current) {
+            videoRef.current.srcObject = null
+        }
+    }, [stream])
+
+    const startCamera = useCallback(async () => {
+        if (stream) return
 
         try {
             const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -27,36 +37,35 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                 audio: mode === 'video'
             })
             setStream(mediaStream)
+
             if (videoRef.current) {
                 videoRef.current.srcObject = mediaStream
+                try {
+                    await videoRef.current.play()
+                } catch (err) {
+                    if (err instanceof DOMException && err.name === 'AbortError') {
+                        // no-op
+                    } else {
+                        console.error('Error playing video stream:', err)
+                    }
+                }
             }
         } catch (err) {
             console.error('Error accessing camera:', err)
         }
-    }
+    }, [mode, stream])
 
-    async function stopCamera() {
-        // Stop all tracks
-        if (stream) {
-            const tracks = stream.getTracks()
-            tracks.forEach(track => {
-                track.stop()
-            })
-            setStream(null)
+    useEffect(() => {
+        startCamera()
+        return () => {
+            stopCamera()
         }
-        // Clear video source
-        if (videoRef.current) {
-            videoRef.current.srcObject = null
-        }
-    }
+    }, [startCamera, stopCamera])
 
     async function takePhoto() {
         if (!videoRef.current || !stream) return
-
         try {
-            // Take the photo first
             const canvas = document.createElement('canvas')
-            // Use the intrinsic video dimensions to get the full uncropped image
             const videoWidth = videoRef.current.videoWidth
             const videoHeight = videoRef.current.videoHeight
             canvas.width = videoWidth
@@ -64,18 +73,18 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             const ctx = canvas.getContext('2d')
             if (!ctx) return
 
+            // Draw the current frame onto the canvas
             ctx.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight)
 
-            // Stop the camera immediately
-            await stopCamera()
-
-            // Create the file after camera is stopped
+            // Convert the canvas to a Blob -> File
             const blob = await new Promise<Blob | null>((resolve) =>
                 canvas.toBlob(resolve, 'image/jpeg')
             )
             if (!blob) return
 
-            const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' })
+            const file = new File([blob], `photo-${Date.now()}.jpg`, {
+                type: 'image/jpeg'
+            })
             onCapture(file)
         } catch (error) {
             console.error('Error taking photo:', error)
@@ -95,25 +104,6 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             }
         }
 
-        // Capture first frame for thumbnail
-        if (videoRef.current) {
-            const canvas = document.createElement('canvas')
-            canvas.width = videoRef.current.videoWidth
-            canvas.height = videoRef.current.videoHeight
-            const ctx = canvas.getContext('2d')
-            if (ctx) {
-                ctx.drawImage(videoRef.current, 0, 0)
-                canvas.toBlob((blob) => {
-                    if (blob) {
-                        const thumbnailUrl = URL.createObjectURL(blob)
-                        if (videoRef.current) {
-                            videoRef.current.poster = thumbnailUrl
-                        }
-                    }
-                }, 'image/jpeg')
-            }
-        }
-
         mediaRecorder.start()
         setIsRecording(true)
     }
@@ -122,11 +112,9 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         if (!mediaRecorderRef.current || !isRecording) return
 
         try {
-            // Get the recording data
             const recorder = mediaRecorderRef.current
             const recordingChunks = chunksRef.current
 
-            // Create a promise that resolves when the recording stops
             const recordingData = await new Promise<Blob>((resolve) => {
                 recorder.onstop = () => {
                     const blob = new Blob(recordingChunks, { type: 'video/webm' })
@@ -135,11 +123,9 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                 recorder.stop()
             })
 
-            // Stop the camera immediately after getting the recording
-            await stopCamera()
-
-            // Create the file after camera is stopped
-            const file = new File([recordingData], `video-${Date.now()}.webm`, { type: 'video/webm' })
+            const file = new File([recordingData], `video-${Date.now()}.webm`, {
+                type: 'video/webm'
+            })
             setIsRecording(false)
             onCapture(file)
         } catch (error) {
@@ -148,31 +134,25 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         }
     }
 
-    // Handle camera initialization and cleanup
-    useEffect(() => {
-        startCamera()
-        return () => {
-            stopCamera()
-        }
-    }, [mode])
-
-    // Handle mode changes
     function handleModeChange(newMode: 'photo' | 'video') {
         if (isRecording) {
             stopRecording()
         }
         setMode(newMode)
+        stopCamera()
+        startCamera()
     }
 
     return (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-background flex flex-col w-full max-w-3xl rounded-lg overflow-hidden max-h-[90vh]">
+                {/* Header */}
                 <div className="p-4 flex justify-between items-center border-b">
                     <Button
                         variant="ghost"
                         size="icon"
-                        onClick={async () => {
-                            await stopCamera()
+                        onClick={() => {
+                            stopCamera()
                             onClose()
                         }}
                     >
@@ -197,6 +177,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                     <div className="w-10" />
                 </div>
 
+                {/* Camera Preview */}
                 <div className="relative bg-black flex items-center justify-center flex-1 min-h-0">
                     <video
                         ref={videoRef}
@@ -207,6 +188,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                     />
                 </div>
 
+                {/* Capture Button */}
                 <div className="p-6 flex justify-center bg-background/80 backdrop-blur-sm">
                     {mode === 'photo' ? (
                         <Button
@@ -222,7 +204,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                             size="lg"
                             className="rounded-full w-16 h-16 p-0 relative hover:bg-primary/90 transition-colors"
                             onClick={isRecording ? stopRecording : startRecording}
-                            variant={isRecording ? "destructive" : "default"}
+                            variant={isRecording ? 'destructive' : 'default'}
                         >
                             {isRecording ? (
                                 <div className="w-8 h-8 rounded-sm bg-destructive" />
@@ -235,4 +217,4 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             </div>
         </div>
     )
-} 
+}

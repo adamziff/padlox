@@ -1,4 +1,3 @@
-import { login } from "./(auth)/actions";
 import { NavBar } from "@/components/nav-bar";
 
 export default function Home() {

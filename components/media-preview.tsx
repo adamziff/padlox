@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { Label } from './ui/label'
 import { CrossIcon } from './icons'
-import { createClient } from '@/utils/supabase/client'
 
 interface MediaPreviewProps {
     file: File
@@ -43,7 +43,7 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
     }
 
     async function handleSave() {
-        if (!name.trim()) {
+        if (!name.trim() || !previewUrl) {
             // TODO: Show error toast
             return
         }
@@ -90,13 +90,18 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
                             controls
                             className="w-full h-full object-contain"
                         />
-                    ) : (
-                        <img
-                            src={previewUrl}
-                            alt="Preview"
-                            className="w-full h-full object-contain"
-                        />
-                    )}
+                    ) : previewUrl ? (
+                        <div className="relative w-full h-full">
+                            <Image
+                                src={previewUrl}
+                                alt="Preview"
+                                fill
+                                className="object-contain"
+                                sizes="(max-width: 768px) 100vw, 50vw"
+                                priority
+                            />
+                        </div>
+                    ) : null}
                 </div>
             </div>
 
