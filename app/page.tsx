@@ -1,4 +1,5 @@
 import { NavBar } from "@/components/nav-bar";
+import Image from "next/image";
 
 export default function Home() {
   return (
@@ -6,9 +7,12 @@ export default function Home() {
       <NavBar />
       <main className="flex-1 flex flex-col items-center justify-center p-8">
         <div className="max-w-2xl w-full mx-auto text-center space-y-8">
-          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-foreground">
-            Your Digital Home Inventory Solution
-          </h1>
+          <div className="flex items-center justify-center gap-3">
+            <Image src="/lock.svg" alt="Padlox logo" width={40} height={40} className="dark:invert" />
+            <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-foreground">
+              Padlox
+            </h1>
+          </div>
 
           <p className="text-lg sm:text-xl text-muted-foreground mx-auto max-w-xl">
             Keep track of your valuable possessions with ease. Our home inventory app helps you document,

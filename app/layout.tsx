@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Home Inventory App",
-  description: "Track your belongings for insurance purposes",
+  title: "Padlox",
+  description: "AI-Proof Home Inventory App",
 };
 
 export default function RootLayout({

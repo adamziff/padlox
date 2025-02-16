@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32" height="32" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="8" cy="8" r="8" fill="black"/>
+    <g transform="translate(8 7) scale(0.75) translate(-8 -8)">
+        <!-- Main lock body -->
+        <path
+            fill-rule="evenodd"
+            clip-rule="evenodd"
+            d="M10 5V6.5H6V5C6 3.89543 6.89543 3 8 3C9.10457 3 10 3.89543 10 5ZM4.5 6.5V5C4.5 3.067 6.067 1.5 8 1.5C9.933 1.5 11.5 3.067 11.5 5V6.5H14V13C14 14.1046 12.3137 15 10 15H6C3.68629 15 2 14.1046 2 13V6.5H4.5Z"
+            fill="white"
+        />
+        <!-- Keyhole -->
+        <path
+            d="M8 8.5C8.82843 8.5 9.5 9.17157 9.5 10C9.5 10.8284 8.82843 11.5 8 11.5C7.17157 11.5 6.5 10.8284 6.5 10C6.5 9.17157 7.17157 8.5 8 8.5ZM8 12L8 13"
+            stroke="black"
+            stroke-width="1"
+            fill="none"
+        />
+    </g>
+</svg> 
