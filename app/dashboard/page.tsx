@@ -483,6 +483,9 @@ export default function Dashboard() {
                                             preload="metadata"
                                             muted
                                             playsInline
+                                            controlsList="nodownload"
+                                            webkit-playsinline="true"
+                                            x-webkit-airplay="allow"
                                         />
                                         <div className="absolute bottom-2 right-2 bg-black/50 rounded-full p-1.5">
                                             <VideoIcon size={14} />

@@ -89,6 +89,11 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
                             src={previewUrl}
                             controls
                             className="w-full h-full object-contain"
+                            playsInline
+                            preload="metadata"
+                            controlsList="nodownload"
+                            webkit-playsinline="true"
+                            x-webkit-airplay="allow"
                         />
                     ) : previewUrl ? (
                         <div className="relative w-full h-full">

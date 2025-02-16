@@ -87,6 +87,11 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                                     src={asset.media_url}
                                     controls
                                     className="w-full h-full object-contain"
+                                    playsInline
+                                    preload="metadata"
+                                    controlsList="nodownload"
+                                    webkit-playsinline="true"
+                                    x-webkit-airplay="allow"
                                 />
                             ) : (
                                 <div className="relative w-full h-full">
