@@ -4,59 +4,35 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 
-export async function login(formData: FormData) {
+/**
+ * Unified loginOrRegister action:
+ * - ShouldCreateUser: true => If user doesn't exist, create them; otherwise send Magic Link
+ * - Logs a message when sending the email, for debugging purposes
+ */
+export async function loginOrRegister(formData: FormData) {
     const supabase = await createClient()
-
     const email = formData.get('email') as string
+
+    console.log(`[loginOrRegister] About to send login/signup email to: ${email}`)
 
     try {
         const { error } = await supabase.auth.signInWithOtp({
             email,
             options: {
-                shouldCreateUser: false, // Don't create new users through login
+                shouldCreateUser: true,
                 emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/dashboard`,
-            }
+            },
         })
 
         if (error) {
-            console.error('Login error:', error.message)
+            console.error('Magic Link error:', error.message)
             return { error: error.message }
         }
 
-        // Redirect to verification page
+        // On success, we redirect to /verify (just one place to handle user input of code, if needed)
         redirect(`/verify?email=${encodeURIComponent(email)}`)
     } catch (error) {
-        console.error('Unexpected error:', error)
-        return { error: 'An unexpected error occurred' }
-    }
-}
-
-export async function signup(formData: FormData) {
-    const supabase = await createClient()
-
-    const email = formData.get('email') as string
-
-    try {
-        const { error } = await supabase.auth.signInWithOtp({
-            email,
-            options: {
-                shouldCreateUser: true, // Create a new user if they don't exist
-                emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/dashboard`,
-                data: {
-                    created_at: new Date().toISOString(),
-                }
-            }
-        })
-
-        if (error) {
-            console.error('Signup error:', error.message)
-            return { error: error.message }
-        }
-
-        // Redirect to verification page
-        redirect(`/verify?email=${encodeURIComponent(email)}&type=signup`)
-    } catch (error) {
-        console.error('Unexpected error:', error)
+        console.error('Unexpected error during loginOrRegister:', error)
         return { error: 'An unexpected error occurred' }
     }
 }

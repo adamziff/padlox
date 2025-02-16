@@ -1,26 +1,33 @@
 'use client'
 
-import { login } from '../actions'
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { ThemeToggle } from "@/components/theme-toggle"
-import Link from 'next/link'
-import { useState } from 'react'
+import { FormEvent, useState } from 'react'
 import { ApiError } from '@/types/errors'
+import { loginOrRegister } from '../actions'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardFooter,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card'
+import { ThemeToggle } from '@/components/theme-toggle'
+import Link from 'next/link'
+import Image from 'next/image'
 
 export default function LoginPage() {
     const [emailSent, setEmailSent] = useState(false)
     const [sentTo, setSentTo] = useState<string>('')
 
-    async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault()
         const formData = new FormData(e.currentTarget)
         const email = formData.get('email') as string
 
         try {
-            await login(formData)
-            // If we get here, the email was sent successfully
+            await loginOrRegister(formData)
             setEmailSent(true)
             setSentTo(email)
         } catch (err: unknown) {
@@ -29,13 +36,16 @@ export default function LoginPage() {
                 setEmailSent(true)
                 setSentTo(email)
             }
-            // Ignore other errors as they're likely redirect-related
         }
     }
 
     if (emailSent) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4 py-6">
+                <Link href="/" className="absolute top-4 left-4 flex items-center gap-2 hover:opacity-80 transition-opacity">
+                    <Image src="/lock.svg" alt="Padlox logo" width={24} height={24} className="dark:invert" />
+                    <span className="font-semibold">Padlox</span>
+                </Link>
                 <div className="absolute top-4 right-4">
                     <ThemeToggle />
                 </div>
@@ -43,7 +53,8 @@ export default function LoginPage() {
                     <CardHeader className="space-y-1">
                         <CardTitle className="text-2xl font-bold text-center">Check your email</CardTitle>
                         <CardDescription className="text-center text-muted-foreground">
-                            We sent a login link to <span className="font-medium text-foreground">{sentTo}</span>. Click the link in the email to sign in.
+                            We sent a magic link to{' '}
+                            <span className="font-medium text-foreground">{sentTo}</span>
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="flex flex-col items-center space-y-4">
@@ -60,8 +71,9 @@ export default function LoginPage() {
                     </CardContent>
                     <CardFooter className="flex flex-col space-y-4 text-center">
                         <p className="text-sm text-muted-foreground">
-                            Didn&apos;t receive an email? Check your spam folder or{' '}
+                            No email? Check your spam folder or{' '}
                             <button
+                                type="button"
                                 onClick={() => {
                                     setEmailSent(false)
                                     setSentTo('')
@@ -79,14 +91,18 @@ export default function LoginPage() {
 
     return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4 py-6">
+            <Link href="/" className="absolute top-4 left-4 flex items-center gap-2 hover:opacity-80 transition-opacity">
+                <Image src="/lock.svg" alt="Padlox logo" width={24} height={24} className="dark:invert" />
+                <span className="font-semibold">Padlox</span>
+            </Link>
             <div className="absolute top-4 right-4">
                 <ThemeToggle />
             </div>
             <Card className="w-full max-w-md">
                 <CardHeader className="space-y-1">
-                    <CardTitle className="text-2xl font-bold text-center">Welcome back</CardTitle>
+                    <CardTitle className="text-2xl font-bold text-center">Welcome to Padlox</CardTitle>
                     <CardDescription className="text-center text-muted-foreground">
-                        Enter your email to receive a login link
+                        Enter your email to sign in or create an account
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -106,23 +122,11 @@ export default function LoginPage() {
                                 autoFocus
                             />
                         </div>
-                        <Button
-                            type="submit"
-                            className="w-full font-medium"
-                            size="lg"
-                        >
-                            Send login link
+                        <Button type="submit" className="w-full font-medium" size="lg">
+                            Continue with Email
                         </Button>
                     </form>
                 </CardContent>
-                <CardFooter className="flex flex-col space-y-4">
-                    <div className="text-sm text-center text-muted-foreground">
-                        Don&apos;t have an account?{' '}
-                        <Link href="/register" className="font-medium text-primary hover:text-primary/80">
-                            Sign up
-                        </Link>
-                    </div>
-                </CardFooter>
             </Card>
         </div>
     )
