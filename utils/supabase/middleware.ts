@@ -37,12 +37,14 @@ export async function updateSession(request: NextRequest) {
         data: { user },
     } = await supabase.auth.getUser()
 
-    // Allow access to auth-related pages for unauthenticated users
-    const isAuthPage = request.nextUrl.pathname.startsWith('/login') ||
-        request.nextUrl.pathname.startsWith('/register') ||
-        request.nextUrl.pathname.startsWith('/auth')
+    // Allow access to auth-related pages and homepage for unauthenticated users
+    const isPublicPage = request.nextUrl.pathname.startsWith('/login') ||
+        request.nextUrl.pathname.startsWith('/auth') ||
+        request.nextUrl.pathname === '/'
 
-    if (!user && !isAuthPage) {
+    console.log('Is public page:', isPublicPage)
+
+    if (!user && !isPublicPage) {
         // no user, redirect to login page
         const url = request.nextUrl.clone()
         url.pathname = '/login'
