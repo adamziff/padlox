@@ -1,0 +1,29 @@
+---
+description: TailwindCSS Best Practices
+globs: "**/*.tsx"
+---
+
+# TailwindCSS Best Practices
+
+Encourages consistent usage of TailwindCSS utility classes and shadcn/ui components.
+
+<rule>
+name: tailwind_best_practices
+description: Nudges consistent usage of TailwindCSS and shadcn/ui patterns
+filters:
+  - type: file_extension
+    pattern: "\\.tsx$"
+actions:
+  - type: suggest
+    message: |
+      1. Use utility classes consistently rather than inline styles.
+      2. Prefer the "cn(...)" helper for combining conditional classes.
+      3. Rely on the configured theme tokens (colors, spacing) from tailwind.config.ts.
+      4. Where feasible, build accessible components or use shadcn/ui components to speed up dev.
+examples:
+  - input: "Inline styling or usage of <div style='color: red;'>"
+    output: "Use Tailwind classes like 'text-red-500' or base theming from tailwind.config.ts."
+metadata:
+  priority: medium
+  version: 1.0
+</rule> 

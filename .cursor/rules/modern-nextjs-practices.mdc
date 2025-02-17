@@ -1,0 +1,33 @@
+---
+description: Modern Next.js 15 Best Practices
+globs: *.tsx
+---
+
+# Modern Next.js 15 Best Practices
+
+Advises using the new app directory, server components, and best practices for Next.js 15.
+
+<rule>
+name: modern_nextjs
+description: Encourage best practices for Next.js 15 dev
+filters:
+  - type: file_extension
+    pattern: "\\.tsx$"
+  - type: content
+    pattern: "(?i)import.*react"
+
+actions:
+  - type: suggest
+    message: |
+      1. Use the /app directory and the new app router.
+      2. Avoid the old /pages directory in new code.
+      3. Favor server components for logic, and client components only if needed (e.g., user interaction).
+      4. Use TypeScript with strict mode on for better type safety and error detection.
+      5. Maintain good SEO with Next.js 15's built-in metadata configurations.
+examples:
+  - input: "A new file in /pages or referencing outdated next/router approaches"
+    output: "Migrate to the new /app router. Use server components and Next.js 15 conventions."
+metadata:
+  priority: medium
+  version: 1.0
+</rule> 

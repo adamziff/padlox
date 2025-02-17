@@ -1,0 +1,34 @@
+---
+description: Agentic Workflow Best Practices
+globs: *
+---
+
+# Agentic Workflow Best Practices
+
+Guidelines for an iterative, agentic development workflow in Cursor, emphasizing fast test cycles, strong typing, and clear requirements.
+
+<rule>
+name: agentic_workflow
+description: Enforces good practices when prompting and iterating with Cursor
+filters:
+  - type: content
+    pattern: ".*"
+  - type: event
+    pattern: "build_success|build_fail|test_failure"
+
+actions:
+  - type: suggest
+    message: |
+      1. Write requirements in bullet lists and refer to them precisely in your prompts.
+      2. Quickly iterate: after each change, run builds/tests to reinforce success or failure.
+      3. Maintain a fast test suite and strong TypeScript checks to give clear signals to the AI.
+      4. Update or create new rules whenever you correct the AI or adopt new conventions.
+      5. Keep code style consistent (ESLint, Prettier, etc.) so the AI sees uniform examples.
+      6. For Next.js, prefer server components and the new app directory in version 15. Check code compiles before moving on.
+examples:
+  - input: "Implement new feature without referencing any tests or instructions"
+    output: "Prompt with clarifications and bullet-point requirements, then run tests."
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

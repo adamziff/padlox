@@ -144,7 +144,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     }
 
     return (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" role="dialog" aria-label="Camera Capture">
             <div className="bg-background flex flex-col w-full max-w-3xl rounded-lg overflow-hidden max-h-[90vh]">
                 {/* Header */}
                 <div className="p-4 flex justify-between items-center border-b">
@@ -155,6 +155,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                             stopCamera()
                             onClose()
                         }}
+                        aria-label="Close camera capture"
+                        data-testid="close-button"
                     >
                         <CrossIcon />
                     </Button>
@@ -185,6 +187,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                         playsInline
                         muted
                         className="w-full h-full object-contain"
+                        data-testid="camera-feed"
                     />
                 </div>
 
@@ -195,6 +198,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                             size="lg"
                             className="rounded-full w-16 h-16 p-0 relative hover:bg-primary/90 transition-colors"
                             onClick={takePhoto}
+                            data-testid="capture-button"
                         >
                             <div className="absolute inset-2 rounded-full border-4 border-white bg-transparent" />
                             <div className="absolute inset-4 rounded-full bg-white" />
@@ -205,6 +209,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                             className="rounded-full w-16 h-16 p-0 relative hover:bg-primary/90 transition-colors"
                             onClick={isRecording ? stopRecording : startRecording}
                             variant={isRecording ? 'destructive' : 'default'}
+                            data-testid="capture-button"
                         >
                             {isRecording ? (
                                 <div className="w-8 h-8 rounded-sm bg-destructive" />

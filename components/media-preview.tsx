@@ -72,11 +72,16 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
     }
 
     return (
-        <div className="fixed inset-0 bg-background z-50 flex flex-col md:flex-row">
+        <div className="fixed inset-0 bg-background z-50 flex flex-col md:flex-row" role="dialog" aria-label="Media Preview">
             {/* Top/Left side - Preview */}
             <div className="w-full md:w-1/2 flex flex-col border-b md:border-b-0 md:border-r">
                 <div className="p-4 flex justify-between items-center border-b">
-                    <Button variant="ghost" size="icon" onClick={onCancel}>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={onCancel}
+                        aria-label="Close media preview"
+                    >
                         <CrossIcon />
                     </Button>
                     <h2 className="text-lg font-semibold">Preview</h2>
@@ -94,6 +99,7 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
                             controlsList="nodownload"
                             webkit-playsinline="true"
                             x-webkit-airplay="allow"
+                            data-testid="video-preview"
                         />
                     ) : previewUrl ? (
                         <div className="relative w-full h-full">
@@ -157,6 +163,7 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
                         variant="outline"
                         onClick={onRetry}
                         className="w-full md:w-auto order-2 md:order-1"
+                        aria-label="Retake"
                     >
                         Retake
                     </Button>

@@ -1,0 +1,46 @@
+---
+description: Cursor Rules Location
+globs: *.mdc
+---
+
+# Cursor Rules Location
+
+Standardizes the placement of Cursor rule files within the repository.
+
+<rule>
+name: cursor_rules_location
+description: Ensure that new .mdc rule files are placed in .cursor/rules
+filters:
+  - type: file_extension
+    pattern: "\\.mdc$"
+  - type: content
+    pattern: "(?s)<rule>.*?</rule>"
+  - type: event
+    pattern: "file_create"
+
+actions:
+  - type: reject
+    conditions:
+      - pattern: "^(?!\\.\\/\\.cursor\\/rules\\/.*\\.mdc$)"
+        message: "All .mdc files should be placed in the .cursor/rules/ directory."
+
+  - type: suggest
+    message: |
+      Please place Cursor rule files here:
+      .cursor/rules/
+          your-rule-name.mdc
+          another-rule.mdc
+
+      Filenames:
+      - Use kebab-case
+      - Use descriptive names
+      - Always use .mdc
+examples:
+  - input: ".cursor/rules/modern-nextjs-practices.mdc"
+    output: "Correctly placed rule file."
+  - input: "src/my-rule.mdc"
+    output: "Invalid location. Please move it to .cursor/rules/"
+metadata:
+  priority: high
+  version: 1.0
+</rule> 

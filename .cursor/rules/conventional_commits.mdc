@@ -1,0 +1,49 @@
+---
+description: Automatic Conventional Commits
+globs: *
+---
+
+# Conventional Commits
+
+Enforces a conventional commits structure after successful builds/tests.
+
+<rule>
+name: conventional_commits
+description: Autocommit changes made by Cursor using conventional commit format
+filters:
+  - type: event
+    pattern: "build_success"
+  - type: file_change
+    pattern: ".*"
+
+actions:
+  - type: execute
+    command: |
+      CHANGE_TYPE=""
+      case "$CHANGE_DESCRIPTION" in
+        *"add"*|*"create"*|*"feature"*|*"implement"*) CHANGE_TYPE="feat";;
+        *"fix"*|*"bug"*|*"correct"*) CHANGE_TYPE="fix";;
+        *"refactor"*) CHANGE_TYPE="refactor";;
+        *"test"*) CHANGE_TYPE="test";;
+        *"doc"*|*"docs"*) CHANGE_TYPE="docs";;
+        *"style"*|*"format"*) CHANGE_TYPE="style";;
+        *"perf"*|*"optimize"*) CHANGE_TYPE="perf";;
+        *) CHANGE_TYPE="chore";;
+      esac
+
+      SCOPE=$(dirname "$FILE" | tr '/' '-')
+      git add "$FILE"
+      git commit -m "$CHANGE_TYPE($SCOPE): $CHANGE_DESCRIPTION"
+  - type: suggest
+    message: |
+      Use conventional commits format:
+        feat(scope): short description
+        fix(scope): short description
+      The scope is derived from the path or component name. The description is short & imperative.
+examples:
+  - input: "Adding a new Supabase query function"
+    output: "feat(lib-db): add supabase query function"
+metadata:
+  priority: high
+  version: 1.0
+</rule> 
