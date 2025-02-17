@@ -7,6 +7,7 @@ import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
 import { Label } from './ui/label'
 import { CrossIcon } from './icons'
+import { signMediaFile } from '@/utils/c2pa'
 
 interface MediaPreviewProps {
     file: File
@@ -38,27 +39,52 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
 
     const isVideo = file.type.startsWith('video/')
 
-    if (!previewUrl) {
-        return null
-    }
-
     async function handleSave() {
         if (!name.trim() || !previewUrl) {
-            // TODO: Show error toast
             return
         }
 
         setIsSaving(true)
         try {
-            const value = estimatedValue ? parseFloat(estimatedValue) : null
-            await onSave(previewUrl, {
+            // Check video format requirements
+            if (isVideo && !file.type.includes('mp4')) {
+                throw new Error('Only MP4 videos are supported for content credentials. Please record or upload an MP4 video.')
+            }
+
+            // Sign the file with C2PA
+            const signedFile = await signMediaFile(file, {
                 name: name.trim(),
                 description: description.trim() || null,
-                estimated_value: value
+                estimated_value: estimatedValue ? parseFloat(estimatedValue) : null
+            })
+
+            // Upload the signed file with metadata
+            const formData = new FormData()
+            formData.append('file', signedFile)
+            formData.append('metadata', JSON.stringify({
+                name: name.trim(),
+                description: description.trim() || null,
+                estimated_value: estimatedValue ? parseFloat(estimatedValue) : null
+            }))
+
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            })
+
+            if (!response.ok) {
+                throw new Error('Failed to upload file')
+            }
+
+            const { url } = await response.json()
+            await onSave(url, {
+                name: name.trim(),
+                description: description.trim() || null,
+                estimated_value: estimatedValue ? parseFloat(estimatedValue) : null
             })
         } catch (error) {
             console.error('Error saving asset:', error)
-            // TODO: Show error toast
+            alert(error instanceof Error ? error.message : 'Failed to save asset. Please try again.')
         } finally {
             setIsSaving(false)
         }
@@ -71,10 +97,24 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
         setDescription(value)
     }
 
+    if (!previewUrl) {
+        return null
+    }
+
     return (
-        <div className="fixed inset-0 bg-background z-50 flex flex-col md:flex-row" role="dialog" aria-label="Media Preview">
+        <div
+            className="fixed inset-0 bg-background z-50 flex flex-col md:flex-row"
+            role="dialog"
+            aria-label="Media Preview"
+            onClick={(e) => {
+                // Only close if clicking the outer container
+                if (e.target === e.currentTarget) {
+                    onCancel()
+                }
+            }}
+        >
             {/* Top/Left side - Preview */}
-            <div className="w-full md:w-1/2 flex flex-col border-b md:border-b-0 md:border-r">
+            <div className="w-full md:w-1/2 flex flex-col border-b md:border-b-0 md:border-r" onClick={(e) => e.stopPropagation()}>
                 <div className="p-4 flex justify-between items-center border-b">
                     <Button
                         variant="ghost"

@@ -1,15 +1,16 @@
 import { Asset } from '@/types/asset'
 import Image from 'next/image'
 import { Button } from './ui/button'
+import { Label } from './ui/label'
 import { formatCurrency } from '@/utils/format'
-import { CrossIcon, TrashIcon } from './icons'
+import { CrossIcon, TrashIcon, DownloadIcon } from './icons'
 import { useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 
 interface AssetModalProps {
     asset: Asset
     onClose: () => void
-    onDelete?: () => void
+    onDelete?: (id: string) => void
 }
 
 export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
@@ -46,13 +47,61 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                 throw new Error('Failed to delete file from S3')
             }
 
-            onDelete?.()
+            onDelete?.(asset.id)
             onClose()
         } catch (error) {
             console.error('Error deleting asset:', error)
             alert('Failed to delete asset. Please try again.')
         } finally {
             setIsDeleting(false)
+        }
+    }
+
+    async function handleDownload() {
+        try {
+            // Send the full media URL to let the server handle key extraction
+            const response = await fetch('/api/download', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    key: asset.media_url,
+                    filename: `${asset.name}${asset.media_type === 'video' ? '.mp4' : '.jpg'}`
+                }),
+            })
+
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({ details: 'Failed to download file' }))
+                throw new Error(error.details || 'Failed to download file')
+            }
+
+            // Check content type to ensure we received the file
+            const contentType = response.headers.get('Content-Type')
+            if (!contentType || (!contentType.includes('video') && !contentType.includes('image'))) {
+                throw new Error('Invalid response type received')
+            }
+
+            const blob = await response.blob()
+            if (blob.size === 0) {
+                throw new Error('Received empty file')
+            }
+
+            // Create and trigger download
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `${asset.name}${asset.media_type === 'video' ? '.mp4' : '.jpg'}`
+            document.body.appendChild(a)
+            a.click()
+
+            // Cleanup
+            window.URL.revokeObjectURL(url)
+            document.body.removeChild(a)
+        } catch (error) {
+            console.error('Error downloading asset:', error)
+            alert(error instanceof Error ? error.message : 'Failed to download asset. Please try again.')
         }
     }
 
@@ -63,6 +112,14 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                     <div className="flex justify-between items-center p-4 border-b">
                         <h2 className="text-xl font-semibold">{asset.name}</h2>
                         <div className="flex items-center gap-2">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={handleDownload}
+                                aria-label="Download asset"
+                            >
+                                <DownloadIcon />
+                            </Button>
                             <Button
                                 variant="destructive"
                                 size="icon"
