@@ -21,6 +21,29 @@ describe('MediaPreview', () => {
         // Mock URL.createObjectURL
         global.URL.createObjectURL = vi.fn(() => 'blob:test');
         global.URL.revokeObjectURL = vi.fn();
+
+        // Mock fetch for signing and uploading
+        global.fetch = vi.fn((url) => {
+            if (url === '/api/sign') {
+                return Promise.resolve(new Response(
+                    new Blob(['test'], { type: 'image/jpeg' }),
+                    { status: 200 }
+                ));
+            }
+            if (url === '/api/upload') {
+                return Promise.resolve(new Response(
+                    JSON.stringify({ url: 'https://example.com/test.jpg' }),
+                    {
+                        status: 200,
+                        headers: { 'Content-Type': 'application/json' }
+                    }
+                ));
+            }
+            return Promise.reject(new Error(`Unhandled fetch to ${url}`));
+        });
+
+        // Mock window.alert
+        global.alert = vi.fn();
     });
 
     it('renders image preview for image files', async () => {
@@ -90,8 +113,13 @@ describe('MediaPreview', () => {
             fireEvent.click(screen.getByRole('button', { name: 'Save & Sign' }));
         });
 
+        // Wait for all promises to resolve
+        await act(async () => {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        });
+
         expect(mockOnSave).toHaveBeenCalledWith(
-            'blob:test',
+            'https://example.com/test.jpg',
             {
                 name: 'Test Item',
                 description: 'Test description',
@@ -122,5 +150,45 @@ describe('MediaPreview', () => {
         });
 
         expect(mockOnCancel).toHaveBeenCalled();
+    });
+
+    it('shows error when signing fails', async () => {
+        // Mock fetch to fail for signing
+        global.fetch = vi.fn((url) => {
+            if (url === '/api/sign') {
+                return Promise.resolve(new Response(
+                    JSON.stringify({ details: 'Signing failed' }),
+                    {
+                        status: 400,
+                        headers: { 'Content-Type': 'application/json' }
+                    }
+                ));
+            }
+            return Promise.reject(new Error(`Unhandled fetch to ${url}`));
+        });
+
+        await act(async () => {
+            render(<MediaPreview {...defaultProps} />);
+        });
+
+        // Fill in required fields
+        await act(async () => {
+            fireEvent.change(screen.getByLabelText('Name *'), {
+                target: { value: 'Test Item' }
+            });
+        });
+
+        // Submit form
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'Save & Sign' }));
+        });
+
+        // Wait for all promises to resolve
+        await act(async () => {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        });
+
+        expect(global.alert).toHaveBeenCalledWith('Signing failed');
+        expect(mockOnSave).not.toHaveBeenCalled();
     });
 }); 
