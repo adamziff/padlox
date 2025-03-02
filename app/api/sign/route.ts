@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import { signFile } from '@/utils/server/c2pa'
+import { signFile } from '@/utils/server/mediaSigningService'
 
 export async function POST(request: Request) {
     // Verify authentication

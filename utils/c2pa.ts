@@ -42,23 +42,28 @@ export async function signMediaFile(file: File, metadata: {
 }
 
 export async function verifyMediaFile(file: File): Promise<boolean> {
-    try {
-        const formData = new FormData()
-        formData.append('file', file)
+    const formData = new FormData()
+    formData.append('file', file)
 
-        const response = await fetch('/api/verify', {
-            method: 'POST',
-            body: formData,
-        })
+    console.log('Verifying file:', {
+        name: file.name,
+        type: file.type,
+        size: file.size
+    })
 
-        if (!response.ok) {
-            return false
-        }
+    const response = await fetch('/api/verify', {
+        method: 'POST',
+        body: formData,
+    })
 
-        const result = await response.json()
-        return result.isValid
-    } catch (error) {
-        console.error('Error verifying file:', error)
-        return false
+    if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.details || 'Failed to verify file')
     }
+
+    const result = await response.json()
+
+    console.log('Verification result:', result)
+
+    return result.verified
 } 

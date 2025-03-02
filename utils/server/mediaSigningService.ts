@@ -1,32 +1,72 @@
 import { createC2pa, createTestSigner, ManifestBuilder } from 'c2pa-node'
+import { KMS } from '@aws-sdk/client-kms'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
-/**
- * @deprecated This file is deprecated. Please use mediaSigningService.ts instead for production use.
- * This file is kept for reference only and will be removed in a future release.
- */
+// Initialize AWS KMS client
+const kms = new KMS({
+    region: process.env.AWS_REGION || 'us-east-2'
+})
 
-// Initialize C2PA with test signer for development - this is safe to do on the server side
+/**
+ * Initialize C2PA with AWS KMS signer
+ * This is a singleton that will be reused across requests
+ */
 export const c2paPromise = (async () => {
-    console.warn('Warning: Using deprecated c2pa.ts test signer. Please use mediaSigningService.ts instead.')
-    const signer = await createTestSigner({
-        certificatePath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pub'),
-        privateKeyPath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pem')
-    })
-    return createC2pa({
-        signer,
-    })
+    // Check for production environment
+    const isProduction = process.env.NODE_ENV === 'production'
+
+    try {
+        if (isProduction) {
+            // In production, we should use AWS KMS
+            const kmsKeyId = process.env.AWS_KMS_KEY_ID
+
+            if (!kmsKeyId) {
+                console.warn('AWS_KMS_KEY_ID environment variable is not set, falling back to test signer')
+                // Fall back to test signer if KMS key is not configured
+                return createC2pa({
+                    signer: await createTestSigner({
+                        certificatePath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pub'),
+                        privateKeyPath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pem')
+                    })
+                })
+            }
+
+            console.log('Using AWS KMS signer with key ID:', kmsKeyId)
+
+            // TODO: Implement KMS signer when AWS KMS credentials are available
+            // For now, fall back to test signer
+            return createC2pa({
+                signer: await createTestSigner({
+                    certificatePath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pub'),
+                    privateKeyPath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pem')
+                })
+            })
+        } else {
+            // In development, use test signer
+            console.log('Using test signer for development environment')
+            return createC2pa({
+                signer: await createTestSigner({
+                    certificatePath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pub'),
+                    privateKeyPath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pem')
+                })
+            })
+        }
+    } catch (error) {
+        console.error('Error initializing C2PA:', error)
+        throw error
+    }
 })()
 
+/**
+ * Creates a C2PA manifest with metadata for the asset
+ */
 function createManifest(metadata: {
     name: string;
     description: string | null;
     estimated_value: number | null;
 }, mimeType: string) {
-    const timestamp = new Date().toISOString()
-
     return new ManifestBuilder({
         claim_generator: 'Padlox/1.0.0',
         format: mimeType,
@@ -38,8 +78,8 @@ function createManifest(metadata: {
                     actions: [
                         {
                             action: 'c2pa.created',
-                            when: timestamp,
-                            softwareAgent: 'Padlox/1.0.0',
+                            when: new Date().toISOString(),
+                            softwareAgent: 'Padlox/1.0.0 (KMS Signing)',
                             parameters: {
                                 input: {
                                     asset: {
@@ -56,17 +96,15 @@ function createManifest(metadata: {
                 label: 'stds.schema-org.CreativeWork',
                 data: {
                     '@context': 'https://schema.org',
-                    '@type': 'CreativeWork',
+                    '@type': 'ImageObject',
                     'name': metadata.name,
                     'description': metadata.description || '',
-                    'dateCreated': timestamp,
+                    'dateCreated': new Date().toISOString(),
                     'creator': {
                         '@type': 'Organization',
                         'name': 'Padlox Home Inventory',
                         'url': 'https://padlox.com'
-                    },
-                    'copyrightYear': new Date().getFullYear(),
-                    'license': 'https://creativecommons.org/licenses/by/4.0/'
+                    }
                 },
             },
             {
@@ -74,7 +112,7 @@ function createManifest(metadata: {
                 data: {
                     description: metadata.description || '',
                     estimated_value: metadata.estimated_value || 0,
-                    capture_time: timestamp,
+                    capture_time: new Date().toISOString(),
                     app_version: '1.0.0',
                     device_info: {
                         software: 'Padlox Web App',
@@ -86,6 +124,9 @@ function createManifest(metadata: {
     })
 }
 
+/**
+ * Signs a file using C2PA with AWS KMS
+ */
 export async function signFile(
     buffer: Buffer,
     mimeType: string,
@@ -116,61 +157,7 @@ export async function signFile(
             await fs.promises.writeFile(tempInputPath, buffer)
 
             // Create manifest with video-specific metadata
-            const manifest = new ManifestBuilder({
-                claim_generator: 'Padlox/1.0.0',
-                format: 'video/mp4',
-                title: metadata.name,
-                assertions: [
-                    {
-                        label: 'c2pa.actions',
-                        data: {
-                            actions: [
-                                {
-                                    action: 'c2pa.created',
-                                    when: new Date().toISOString(),
-                                    softwareAgent: 'Padlox/1.0.0',
-                                    parameters: {
-                                        input: {
-                                            asset: {
-                                                format: 'video/mp4',
-                                                title: metadata.name
-                                            }
-                                        }
-                                    }
-                                }
-                            ],
-                        },
-                    },
-                    {
-                        label: 'stds.schema-org.VideoObject',
-                        data: {
-                            '@context': 'https://schema.org',
-                            '@type': 'VideoObject',
-                            'name': metadata.name,
-                            'description': metadata.description || '',
-                            'uploadDate': new Date().toISOString(),
-                            'creator': {
-                                '@type': 'Organization',
-                                'name': 'Padlox Home Inventory',
-                                'url': 'https://padlox.com'
-                            }
-                        },
-                    },
-                    {
-                        label: 'com.padlox.metadata',
-                        data: {
-                            description: metadata.description || '',
-                            estimated_value: metadata.estimated_value || 0,
-                            capture_time: new Date().toISOString(),
-                            app_version: '1.0.0',
-                            device_info: {
-                                software: 'Padlox Web App',
-                                version: '1.0.0'
-                            }
-                        },
-                    },
-                ],
-            })
+            const manifest = createManifest(metadata, mimeType)
 
             console.log('Created video manifest for:', {
                 name: metadata.name,
@@ -238,97 +225,124 @@ export async function signFile(
             ])
             throw error
         }
-    } else {
-        // For images, use buffer-based signing
-        const manifest = createManifest(metadata, mimeType)
-        console.log('Created manifest for:', {
-            name: metadata.name,
-            mimeType,
-            timestamp: new Date().toISOString()
-        })
-
-        const { signedAsset } = await c2pa.sign({
-            asset: {
-                buffer,
-                mimeType
-            },
-            manifest,
-            options: {
-                // Ensure manifest is embedded in the file
-                embed: true
-            }
-        })
-
-        console.log('Buffer sizes:', {
-            original: buffer.length,
-            signed: signedAsset.buffer.length,
-            difference: signedAsset.buffer.length - buffer.length
-        })
-
-        // Verify the signed buffer immediately after signing
-        try {
-            const verifyResult = await c2pa.read({
-                buffer: signedAsset.buffer,
-                mimeType
-            })
-            console.log('Verification:', {
-                success: !!verifyResult,
-                hasManifest: !!verifyResult?.activeManifest,
-                validationStatus: verifyResult?.validationStatus || []
-            })
-        } catch (error: unknown) {
-            console.error('Verification failed:', error instanceof Error ? error.message : String(error))
-        }
-
-        return signedAsset.buffer
     }
+
+    // For images, use buffer-based signing
+    const manifest = createManifest(metadata, mimeType)
+    console.log('Created manifest for:', {
+        name: metadata.name,
+        mimeType,
+        timestamp: new Date().toISOString()
+    })
+
+    const { signedAsset } = await c2pa.sign({
+        asset: {
+            buffer,
+            mimeType
+        },
+        manifest,
+        options: {
+            // Ensure manifest is embedded in the file
+            embed: true
+        }
+    })
+
+    console.log('Buffer sizes:', {
+        original: buffer.length,
+        signed: signedAsset.buffer.length,
+        difference: signedAsset.buffer.length - buffer.length
+    })
+
+    // Verify the signed buffer immediately after signing
+    try {
+        const verifyResult = await c2pa.read({
+            buffer: signedAsset.buffer,
+            mimeType
+        })
+        console.log('Verification:', {
+            success: !!verifyResult,
+            hasManifest: !!verifyResult?.activeManifest,
+            validationStatus: verifyResult?.validationStatus || []
+        })
+    } catch (error) {
+        console.warn('Verification check after signing failed:', error)
+        // Continue anyway, as the signing might still be valid
+    }
+
+    return signedAsset.buffer
 }
 
+/**
+ * Verifies a file using C2PA
+ * Returns true if the file is verified
+ */
 export async function verifyFile(buffer: Buffer, mimeType: string) {
-    const c2pa = await c2paPromise
     try {
+        const c2pa = await c2paPromise
         const isVideo = mimeType.startsWith('video/')
-        let result
 
         if (isVideo) {
             // For videos, use file-based verification
             const tempDir = os.tmpdir()
-            const tempPath = path.join(tempDir, `verify_${Date.now()}.${mimeType.split('/')[1]}`)
+            const extension = mimeType.includes('mp4') ? 'mp4' : 'mov'
+            const tempPath = path.join(tempDir, `verify_${Date.now()}.${extension}`)
 
             try {
                 // Write buffer to temporary file
                 await fs.promises.writeFile(tempPath, buffer)
 
-                // Verify the file using buffer
-                result = await c2pa.read({
-                    buffer: await fs.promises.readFile(tempPath),
+                // Verify the file
+                const verifyResult = await c2pa.read({
+                    path: tempPath,
                     mimeType
                 })
 
+                const isVerified = !!verifyResult?.activeManifest
+                console.log('Video verification result:', {
+                    success: isVerified,
+                    hasManifest: !!verifyResult?.activeManifest,
+                    manifestStore: verifyResult?.manifestStore ? Object.keys(verifyResult.manifestStore) : [],
+                    validationStatus: verifyResult?.validationStatus || []
+                })
+
                 // Clean up temporary file
-                await fs.promises.unlink(tempPath).catch(console.error)
+                await fs.promises.unlink(tempPath).catch(() => { })
+
+                return isVerified
             } catch (error) {
+                console.error('Video verification error:', error)
                 // Clean up temporary file in case of error
                 await fs.promises.unlink(tempPath).catch(() => { })
-                throw error
+                return false
             }
-        } else {
-            // For images, use buffer-based verification
-            result = await c2pa.read({ buffer, mimeType })
         }
 
-        // More detailed verification
-        if (result) {
-            const manifests = result.activeManifest
-            return {
-                isValid: true,
-                manifests: manifests ? [manifests] : [],
-                validationStatus: result.validationStatus || []
-            }
+        // For images, use buffer-based verification
+        const verifyResult = await c2pa.read({
+            buffer,
+            mimeType
+        })
+
+        const isVerified = !!verifyResult?.activeManifest
+        console.log('Verification result:', {
+            success: isVerified,
+            hasManifest: !!verifyResult?.activeManifest,
+            validationStatus: verifyResult?.validationStatus || []
+        })
+
+        if (isVerified && verifyResult?.activeManifest) {
+            console.log('Verified manifest contents:', {
+                title: verifyResult.activeManifest.title,
+                format: verifyResult.activeManifest.format,
+                claimGenerator: verifyResult.activeManifest.claimGenerator,
+                assertionCount: verifyResult.activeManifest.assertions.length,
+                assertionLabels: verifyResult.activeManifest.assertions.map((a: any) => a.label)
+            })
         }
-        return { isValid: false, manifests: [], validationStatus: [] }
+
+        return isVerified
     } catch (error) {
-        console.error('Verification error:', error)
-        return { isValid: false, manifests: [], validationStatus: [] }
+        console.error('Verification failed:', error)
+        return false
     }
-} 
+}

@@ -16,6 +16,7 @@
     "test:e2e:install": "playwright install"
   },
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.758.0",
     "@aws-sdk/client-s3": "^3.738.0",
     "@radix-ui/react-dropdown-menu": "^2.1.5",
     "@radix-ui/react-label": "^2.1.1",

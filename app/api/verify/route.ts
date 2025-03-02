@@ -1,7 +1,16 @@
 import { NextResponse } from 'next/server'
-import { verifyFile } from '@/utils/server/c2pa'
+import { createClient } from '@/utils/supabase/server'
+import { verifyFile } from '@/utils/server/mediaSigningService'
 
 export async function POST(request: Request) {
+    // Verify authentication
+    const supabase = await createClient()
+    const { data: { user }, error } = await supabase.auth.getUser()
+
+    if (error || !user) {
+        return new NextResponse('Unauthorized', { status: 401 })
+    }
+
     try {
         const formData = await request.formData()
         const file = formData.get('file') as File
@@ -15,19 +24,19 @@ export async function POST(request: Request) {
         const buffer = Buffer.from(arrayBuffer)
 
         // Verify the file using the server-side utility
-        const result = await verifyFile(buffer, file.type)
+        const isVerified = await verifyFile(buffer, file.type)
 
-        return NextResponse.json(result)
+        // Return verification result
+        return NextResponse.json({
+            verified: isVerified,
+            fileName: file.name,
+            mimeType: file.type,
+            size: buffer.length
+        })
     } catch (error: unknown) {
         console.error('Verification error:', error)
         return new NextResponse(
-            JSON.stringify({
-                error: 'Verification failed',
-                details: (error as Error)?.message,
-                isValid: false,
-                manifests: [],
-                validationStatus: []
-            }),
+            JSON.stringify({ error: 'Verification failed', details: (error as Error)?.message }),
             {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' }
