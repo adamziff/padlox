@@ -1,0 +1,51 @@
+---
+description: Use PNPM Package Manager
+globs: *.json, *.js, *.ts, *.tsx, *.jsx
+---
+ # Use PNPM Package Manager
+
+Enforces the use of pnpm as the package manager and prevents the use of npm.
+
+<rule>
+name: use-pnpm
+description: Enforces using pnpm instead of npm for package management
+filters:
+  - type: file_extension
+    pattern: "package\\.json$|\\.js$|\\.ts$|\\.tsx$|\\.jsx$"
+  - type: content
+    pattern: "npm (install|run|exec|i|add)"
+  - type: event
+    pattern: "file_edit|file_create"
+
+actions:
+  - type: reject
+    conditions:
+      - pattern: "npm (install|run|exec|i|add)"
+        message: "Please use pnpm instead of npm. Replace npm commands with their pnpm equivalents."
+
+  - type: suggest
+    message: |
+      Use pnpm commands instead of npm:
+      - Instead of 'npm install': use 'pnpm install'
+      - Instead of 'npm run': use 'pnpm run'
+      - Instead of 'npm exec': use 'pnpm exec'
+      - Instead of 'npm i': use 'pnpm add'
+      - Instead of 'npm add': use 'pnpm add'
+
+      Benefits of pnpm:
+      - Faster installation
+      - Disk space efficient
+      - Strict dependency management
+      - Better monorepo support
+
+examples:
+  - input: "npm install react"
+    output: "pnpm add react"
+  - input: "npm run build"
+    output: "pnpm run build"
+  - input: "npm i -D typescript"
+    output: "pnpm add -D typescript"
+metadata:
+  priority: high
+  version: 1.0
+</rule>
