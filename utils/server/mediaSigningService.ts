@@ -19,30 +19,34 @@ export const c2paPromise = (async () => {
 
     try {
         if (isProduction) {
+            // For now, don't sign anything in production
+            console.log('Production environment detected - C2PA signing disabled')
+            return undefined;
+
             // In production, we should use AWS KMS
-            const kmsKeyId = process.env.AWS_KMS_KEY_ID
+            // const kmsKeyId = process.env.AWS_KMS_KEY_ID
 
-            if (!kmsKeyId) {
-                console.warn('AWS_KMS_KEY_ID environment variable is not set, falling back to test signer')
-                // Fall back to test signer if KMS key is not configured
-                return createC2pa({
-                    signer: await createTestSigner({
-                        certificatePath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pub'),
-                        privateKeyPath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pem')
-                    })
-                })
-            }
+            // if (!kmsKeyId) {
+            //     console.warn('AWS_KMS_KEY_ID environment variable is not set, falling back to test signer')
+            //     // Fall back to test signer if KMS key is not configured
+            //     return createC2pa({
+            //         signer: await createTestSigner({
+            //             certificatePath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pub'),
+            //             privateKeyPath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pem')
+            //         })
+            //     })
+            // }
 
-            console.log('Using AWS KMS signer with key ID:', kmsKeyId)
+            // console.log('Using AWS KMS signer with key ID:', kmsKeyId)
 
-            // TODO: Implement KMS signer when AWS KMS credentials are available
-            // For now, fall back to test signer
-            return createC2pa({
-                signer: await createTestSigner({
-                    certificatePath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pub'),
-                    privateKeyPath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pem')
-                })
-            })
+            // // TODO: Implement KMS signer when AWS KMS credentials are available
+            // // For now, fall back to test signer
+            // return createC2pa({
+            //     signer: await createTestSigner({
+            //         certificatePath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pub'),
+            //         privateKeyPath: path.join(process.cwd(), 'c2pa-test-certs', 'es256.pem')
+            //     })
+            // })
         } else {
             // In development, use test signer
             console.log('Using test signer for development environment')
@@ -138,6 +142,13 @@ export async function signFile(
     }
 ) {
     const c2pa = await c2paPromise
+
+    // If c2pa is undefined (in production), return the original buffer
+    if (!c2pa) {
+        console.log('C2PA signing is disabled - returning original buffer')
+        return buffer
+    }
+
     const isVideo = mimeType.startsWith('video/')
 
     if (isVideo) {
@@ -279,6 +290,13 @@ export async function signFile(
 export async function verifyFile(buffer: Buffer, mimeType: string) {
     try {
         const c2pa = await c2paPromise
+
+        // If c2pa is undefined (in production), return false (not verified)
+        if (!c2pa) {
+            console.log('C2PA verification is disabled in production')
+            return false
+        }
+
         const isVideo = mimeType.startsWith('video/')
 
         if (isVideo) {

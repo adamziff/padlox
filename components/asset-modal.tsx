@@ -1,7 +1,6 @@
 import { Asset } from '@/types/asset'
 import Image from 'next/image'
 import { Button } from './ui/button'
-import { Label } from './ui/label'
 import { formatCurrency } from '@/utils/format'
 import { CrossIcon, TrashIcon, DownloadIcon } from './icons'
 import { useState } from 'react'
