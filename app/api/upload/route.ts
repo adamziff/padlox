@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
-import { signFile } from '@/utils/server/c2pa'
+import { signFile } from '@/utils/server/mediaSigningService'
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION!,
@@ -30,8 +30,10 @@ export async function POST(request: Request) {
             return new NextResponse('No file provided', { status: 400 })
         }
 
-        // First, sign the file
+        // Convert file to buffer
         const buffer = Buffer.from(await file.arrayBuffer())
+
+        // Sign the file (for images only - videos will return the original buffer)
         const signedBuffer = await signFile(buffer, file.type, file.name, {
             name: metadata.name || file.name,
             description: metadata.description || null,
@@ -42,12 +44,15 @@ export async function POST(request: Request) {
         const timestamp = Date.now()
         const key = `${user.id}/${timestamp}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
 
-        console.log('Uploading signed file to S3:', {
+        const isVideo = file.type.startsWith('video/')
+
+        console.log('Uploading file to S3:', {
             bucket: process.env.AWS_BUCKET_NAME,
             key,
             contentType: file.type,
             originalSize: buffer.length,
-            signedSize: signedBuffer.length
+            signedSize: signedBuffer.length,
+            isVideo: isVideo
         })
 
         const command = new PutObjectCommand({
@@ -60,7 +65,7 @@ export async function POST(request: Request) {
                 'original-filename': file.name,
                 'user-id': user.id,
                 'upload-timestamp': timestamp.toString(),
-                'c2pa-signed': 'true',
+                'c2pa-signed': isVideo ? 'false' : 'true',
                 'original-size': buffer.length.toString(),
                 'signed-size': signedBuffer.length.toString()
             },
@@ -73,12 +78,13 @@ export async function POST(request: Request) {
         // Return both the full URL and the key
         const url = `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${key}`
 
-        console.log('Signed file uploaded successfully:', {
+        console.log('File uploaded successfully:', {
             key,
             url,
             contentType: file.type,
             originalSize: buffer.length,
-            signedSize: signedBuffer.length
+            signedSize: signedBuffer.length,
+            isVideo: isVideo
         })
 
         return NextResponse.json(

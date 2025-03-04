@@ -46,21 +46,21 @@ export function MediaPreview({ file, onSave, onRetry, onCancel }: MediaPreviewPr
 
         setIsSaving(true)
         try {
-            // Check video format requirements
-            if (isVideo && !file.type.includes('mp4')) {
-                throw new Error('Only MP4 videos are supported for content credentials. Please record or upload an MP4 video.')
+            let fileToUpload = file;
+
+            // Only sign photos, not videos
+            if (!isVideo) {
+                // Sign the file with C2PA
+                fileToUpload = await signMediaFile(file, {
+                    name: name.trim(),
+                    description: description.trim() || null,
+                    estimated_value: estimatedValue ? parseFloat(estimatedValue) : null
+                });
             }
 
-            // Sign the file with C2PA
-            const signedFile = await signMediaFile(file, {
-                name: name.trim(),
-                description: description.trim() || null,
-                estimated_value: estimatedValue ? parseFloat(estimatedValue) : null
-            })
-
-            // Upload the signed file with metadata
+            // Upload the file with metadata
             const formData = new FormData()
-            formData.append('file', signedFile)
+            formData.append('file', fileToUpload)
             formData.append('metadata', JSON.stringify({
                 name: name.trim(),
                 description: description.trim() || null,

@@ -151,91 +151,10 @@ export async function signFile(
 
     const isVideo = mimeType.startsWith('video/')
 
+    // Skip signing for videos, just return the original buffer
     if (isVideo) {
-        // Only support MP4 videos with H.264 codec
-        if (!mimeType.includes('mp4')) {
-            throw new Error('Only MP4 videos (H.264) are currently supported for content credentials')
-        }
-
-        // For videos, use file-based signing with proper extension
-        const tempDir = os.tmpdir()
-        const extension = 'mp4'
-        const tempInputPath = path.join(tempDir, `input_${Date.now()}.${extension}`)
-        const tempOutputPath = path.join(tempDir, `output_${Date.now()}.${extension}`)
-
-        try {
-            // Write buffer to temporary file
-            await fs.promises.writeFile(tempInputPath, buffer)
-
-            // Create manifest with video-specific metadata
-            const manifest = createManifest(metadata, mimeType)
-
-            console.log('Created video manifest for:', {
-                name: metadata.name,
-                mimeType: 'video/mp4',
-                extension,
-                size: buffer.length
-            })
-
-            // Sign the file using file paths
-            const { signedAsset } = await c2pa.sign({
-                asset: {
-                    path: tempInputPath,
-                    mimeType: 'video/mp4'
-                },
-                manifest,
-                options: {
-                    outputPath: tempOutputPath,
-                    embed: true
-                }
-            })
-
-            // Read the signed file back into a buffer
-            const signedBuffer = await fs.promises.readFile(tempOutputPath)
-
-            console.log('Video buffer sizes:', {
-                original: buffer.length,
-                signed: signedBuffer.length,
-                difference: signedBuffer.length - buffer.length
-            })
-
-            // Verify the signed video immediately
-            try {
-                const verifyResult = await c2pa.read({
-                    path: tempOutputPath,
-                    mimeType: 'video/mp4'
-                })
-
-                if (!verifyResult?.activeManifest) {
-                    throw new Error('No manifest found in signed video')
-                }
-
-                console.log('Video verification:', {
-                    success: !!verifyResult,
-                    hasManifest: !!verifyResult?.activeManifest,
-                    manifestStore: verifyResult?.manifestStore,
-                    validationStatus: verifyResult?.validationStatus || []
-                })
-
-                // Clean up temporary files
-                await Promise.all([
-                    fs.promises.unlink(tempInputPath),
-                    fs.promises.unlink(tempOutputPath)
-                ]).catch(console.error)
-
-                return signedBuffer
-            } catch (error: unknown) {
-                console.error('Video verification failed:', error instanceof Error ? error.message : String(error))
-                throw new Error('Failed to verify signed video')
-            }
-        } catch (error) {
-            // Clean up temporary files in case of error
-            await Promise.all([
-                fs.promises.unlink(tempInputPath).catch(() => { }),
-                fs.promises.unlink(tempOutputPath).catch(() => { })
-            ])
-            throw error
-        }
+        console.log('Skipping C2PA signing for video - returning original buffer')
+        return buffer
     }
 
     // For images, use buffer-based signing
@@ -299,40 +218,10 @@ export async function verifyFile(buffer: Buffer, mimeType: string) {
 
         const isVideo = mimeType.startsWith('video/')
 
+        // Skip verification for videos, they're not signed
         if (isVideo) {
-            // For videos, use file-based verification
-            const tempDir = os.tmpdir()
-            const extension = mimeType.includes('mp4') ? 'mp4' : 'mov'
-            const tempPath = path.join(tempDir, `verify_${Date.now()}.${extension}`)
-
-            try {
-                // Write buffer to temporary file
-                await fs.promises.writeFile(tempPath, buffer)
-
-                // Verify the file
-                const verifyResult = await c2pa.read({
-                    path: tempPath,
-                    mimeType
-                })
-
-                const isVerified = !!verifyResult?.activeManifest
-                console.log('Video verification result:', {
-                    success: isVerified,
-                    hasManifest: !!verifyResult?.activeManifest,
-                    manifestStore: verifyResult?.manifestStore ? Object.keys(verifyResult.manifestStore) : [],
-                    validationStatus: verifyResult?.validationStatus || []
-                })
-
-                // Clean up temporary file
-                await fs.promises.unlink(tempPath).catch(() => { })
-
-                return isVerified
-            } catch (error) {
-                console.error('Video verification error:', error)
-                // Clean up temporary file in case of error
-                await fs.promises.unlink(tempPath).catch(() => { })
-                return false
-            }
+            console.log('Skipping C2PA verification for video - videos are not signed')
+            return false
         }
 
         // For images, use buffer-based verification
