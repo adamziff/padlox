@@ -1,20 +1,27 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/utils/supabase/client'
-import { CameraCapture } from '@/components/camera-capture'
-import { MediaPreview } from '@/components/media-preview'
-import { AssetModal } from '@/components/asset-modal'
+import { CameraCapture } from './camera-capture'
+import { MediaPreview } from './media-preview'
+import { AssetModal } from './asset-modal'
 import { uploadToS3 } from '@/utils/s3'
-import { Button } from '@/components/ui/button'
+import { Button } from './ui/button'
 import { formatCurrency } from '@/utils/format'
 import { Asset } from '@/types/asset'
 import { AssetWithMuxData } from '@/types/mux'
-import { TrashIcon, ImageIcon, VideoIcon, SpinnerIcon } from '@/components/icons'
+import { TrashIcon, ImageIcon, VideoIcon, SpinnerIcon } from './icons'
 import { NavBar } from '@/components/nav-bar'
 import { generateVideoPoster } from '@/utils/video'
 import { User } from '@supabase/supabase-js'
+
+// Only keep necessary console.log statements, remove excessive logging
+function safeLog(message: string, ...args: any[]) {
+    if (process.env.NODE_ENV !== 'production') {
+        console.log(message, ...args);
+    }
+}
 
 type DashboardClientProps = {
     initialAssets: AssetWithMuxData[]
@@ -29,9 +36,70 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set())
     const [isSelectionMode, setIsSelectionMode] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
-    const [mediaErrors, setMediaErrors] = useState<Record<string, boolean>>({})
+    const [mediaErrors, setMediaErrors] = useState<Record<string, string>>({})
     const [videoPosterUrls, setVideoPosterUrls] = useState<Record<string, string | null>>({})
+    const [thumbnailTokens, setThumbnailTokens] = useState<Record<string, string>>({})
     const supabase = createClient()
+
+    // Setup real-time subscription for assets table
+    useEffect(() => {
+        const channel = supabase
+            .channel('assets-changes')
+            .on('postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'assets',
+                    filter: `user_id=eq.${user.id}`
+                },
+                (payload) => {
+                    safeLog('Received real-time update:', payload.eventType);
+
+                    // Handle different types of changes
+                    if (payload.eventType === 'INSERT') {
+                        setAssets(prevAssets => [payload.new as AssetWithMuxData, ...prevAssets]);
+                    }
+                    else if (payload.eventType === 'UPDATE') {
+                        setAssets(prevAssets =>
+                            prevAssets.map(asset =>
+                                asset.id === payload.new.id
+                                    ? { ...asset, ...payload.new as AssetWithMuxData }
+                                    : asset
+                            )
+                        );
+
+                        // If the selected asset was updated, update it too
+                        if (selectedAsset && selectedAsset.id === payload.new.id) {
+                            setSelectedAsset({ ...selectedAsset, ...payload.new as AssetWithMuxData });
+                        }
+
+                        // Clear any media errors for this asset
+                        if (mediaErrors[payload.new.id]) {
+                            setMediaErrors(prev => {
+                                const next = { ...prev };
+                                delete next[payload.new.id];
+                                return next;
+                            });
+                        }
+                    }
+                    else if (payload.eventType === 'DELETE') {
+                        setAssets(prevAssets =>
+                            prevAssets.filter(asset => asset.id !== payload.old.id)
+                        );
+
+                        // If the selected asset was deleted, close the modal
+                        if (selectedAsset && selectedAsset.id === payload.old.id) {
+                            setSelectedAsset(null);
+                        }
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            channel.unsubscribe();
+        };
+    }, [supabase, user.id, selectedAsset, mediaErrors]);
 
     async function handleCapture(file: File) {
         try {
@@ -273,68 +341,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         setAssets(prevAssets => prevAssets.filter(asset => asset.id !== deletedAssetId));
     }
 
-    // Process any pending webhook events for this user's videos
-    async function processPendingWebhooks() {
-        try {
-            const { data, error } = await supabase.rpc('update_user_videos_from_webhooks');
-
-            if (error) {
-                console.error('Error processing webhook events:', error);
-                alert('Error processing videos: Could not process pending webhook events.');
-                return;
-            }
-
-            const fixedCount = data?.fixed_count || 0;
-
-            if (fixedCount > 0) {
-                console.log(`Processed ${fixedCount} webhook events`);
-                alert(`Videos updated: Processed ${fixedCount} pending video${fixedCount === 1 ? '' : 's'}`);
-
-                // Refresh the asset list
-                const { data: updatedAssets, error: refreshError } = await supabase
-                    .from('assets')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-
-                if (!refreshError && updatedAssets) {
-                    setAssets(updatedAssets as AssetWithMuxData[]);
-
-                    // Clear any media errors that might have been set on videos that are now ready
-                    const updatedMediaErrors = { ...mediaErrors };
-                    let hasChanges = false;
-
-                    updatedAssets.forEach(asset => {
-                        // Clear errors for any Mux videos that are now ready
-                        if (asset.media_type === 'video' &&
-                            'mux_processing_status' in asset &&
-                            asset.mux_processing_status === 'ready' &&
-                            updatedMediaErrors[asset.id]) {
-                            delete updatedMediaErrors[asset.id];
-                            hasChanges = true;
-                        }
-                    });
-
-                    if (hasChanges) {
-                        setMediaErrors(updatedMediaErrors);
-                    }
-
-                    // If there's a selected asset, refresh it with the latest data
-                    if (selectedAsset) {
-                        const updatedSelectedAsset = updatedAssets.find(a => a.id === selectedAsset.id);
-                        if (updatedSelectedAsset) {
-                            setSelectedAsset(updatedSelectedAsset as AssetWithMuxData);
-                        }
-                    }
-                }
-            } else {
-                // No need to show an alert for 0 processed
-                console.log('No pending webhook events to process');
-            }
-        } catch (error) {
-            console.error('Error in processPendingWebhooks:', error);
-        }
-    }
-
     // Add function to handle media errors
     function handleMediaError(assetId: string, url: string, type: 'image' | 'video', error: unknown) {
         console.error(`Error loading ${type}:`, {
@@ -343,25 +349,14 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             error,
             timestamp: new Date().toISOString()
         })
-        setMediaErrors(prev => ({ ...prev, [assetId]: true }))
+        setMediaErrors(prev => ({ ...prev, [assetId]: 'Failed to load media' }))
     }
 
     // Add function to generate and cache video posters
-    async function generateAndCacheVideoPoster(assetId: string, videoUrl: string) {
+    async function generateAndCacheVideoPoster(assetId: string, videoUrl: string): Promise<string | null> {
         try {
-            // Skip Mux videos - they need authentication and we handle them differently
-            const asset = assets.find(a => a.id === assetId);
-            if (asset?.mux_playback_id) {
-                // Return null to indicate we're not generating a poster for this
-                return null;
-            }
-
-            // Only proceed for direct video URLs
-            console.log(`Generating poster for video: ${assetId}`);
-
-            // Don't attempt to generate posters for Mux streams (they need auth)
+            // Skip Mux videos - they need authentication
             if (videoUrl.includes('stream.mux.com')) {
-                console.log('Skipping poster generation for Mux stream');
                 return null;
             }
 
@@ -383,9 +378,59 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             return poster;
         } catch (error) {
             console.error('Error generating video poster:', error);
-            throw error;
+            return null;
         }
     }
+
+    // Add a function to fetch the thumbnail token for a specific asset
+    async function fetchThumbnailToken(playbackId: string) {
+        try {
+            const response = await fetch(`/api/mux/token?playbackId=${playbackId}&_=${Date.now()}`);
+
+            if (!response.ok) {
+                throw new Error(`Failed to get token: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (data.tokens?.thumbnail) {
+                setThumbnailTokens(prev => ({
+                    ...prev,
+                    [playbackId]: data.tokens.thumbnail
+                }));
+                return data.tokens.thumbnail;
+            }
+
+            return null;
+        } catch (err) {
+            console.error('Error fetching thumbnail token:', err);
+            return null;
+        }
+    }
+
+    // Update the fetchThumbnailToken call when assets change
+    useEffect(() => {
+        // Find all assets with ready Mux videos that need tokens
+        const muxAssets = assets.filter(
+            asset => asset.mux_playback_id &&
+                asset.mux_processing_status === 'ready' &&
+                !thumbnailTokens[asset.mux_playback_id]
+        );
+
+        // Fetch tokens for each asset
+        muxAssets.forEach(asset => {
+            if (asset.mux_playback_id) {
+                fetchThumbnailToken(asset.mux_playback_id);
+            }
+        });
+    }, [assets, thumbnailTokens]);
+
+    // Ensure mux_playback_id is defined before using it
+    const getThumbnailUrl = (asset: AssetWithMuxData) => {
+        if (!asset.mux_playback_id) return '';
+
+        return `https://image.mux.com/${asset.mux_playback_id}/thumbnail.jpg?width=640&fit_mode=preserve${thumbnailTokens[asset.mux_playback_id] ? `&token=${thumbnailTokens[asset.mux_playback_id]}` : ''
+            }`;
+    };
 
     return (
         <div className="min-h-screen flex flex-col">
@@ -423,12 +468,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                         >
                             Add New Asset
                         </Button>
-                        <Button
-                            variant="outline"
-                            onClick={processPendingWebhooks}
-                        >
-                            Process Pending Videos
-                        </Button>
                     </div>
                 </div>
 
@@ -458,8 +497,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                         return (
                             <div
                                 key={asset.id}
-                                className={`group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer hover:opacity-90 transition-opacity ${selectedAssets.has(asset.id) ? 'ring-2 ring-primary' : ''
-                                    }`}
+                                className={`group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer hover:opacity-90 transition-opacity ${selectedAssets.has(asset.id) ? 'ring-2 ring-primary' : ''}`}
                                 onClick={(e) => handleAssetClick(asset, e)}
                             >
                                 {isSelectionMode && (
@@ -504,25 +542,58 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                     </div>
                                 ) : asset.media_type === 'video' ? (
                                     <div className="relative w-full h-full">
-                                        {videoPosterUrls[asset.id] === null && !mediaErrors[asset.id] && !asset.mux_playback_id && (
-                                            <div className="absolute inset-0 flex items-center justify-center bg-black/10 z-10">
-                                                <div className="text-white text-sm">Loading preview...</div>
-                                            </div>
-                                        )}
-
-                                        {/* For Mux videos - display a placeholder with a play icon */}
+                                        {/* For Mux videos - display a thumbnail from Mux */}
                                         {asset.mux_playback_id ? (
-                                            <div className="relative w-full h-full bg-black flex items-center justify-center">
-                                                {/* Display a thumbnail with play icon */}
-                                                <div className="w-12 h-12 bg-primary/80 rounded-full flex items-center justify-center">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                        <polygon points="5 3 19 12 5 21 5 3" />
-                                                    </svg>
+                                            <div className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden">
+                                                {/* Use Mux thumbnail if available */}
+                                                {asset.mux_processing_status === 'ready' ? (
+                                                    <>
+                                                        <Image
+                                                            src={getThumbnailUrl(asset)}
+                                                            alt={asset.name || 'Video thumbnail'}
+                                                            fill
+                                                            className="object-cover hover:scale-105 transition-transform"
+                                                            sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                                                            onError={() => {
+                                                                // If thumbnail still fails, fetch a token and retry once
+                                                                if (asset.mux_playback_id && !thumbnailTokens[asset.mux_playback_id]) {
+                                                                    fetchThumbnailToken(asset.mux_playback_id);
+                                                                } else {
+                                                                    setMediaErrors(prev => ({
+                                                                        ...prev,
+                                                                        [asset.id]: 'Failed to load thumbnail'
+                                                                    }));
+                                                                }
+                                                            }}
+                                                        />
+                                                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                            <div className="w-12 h-12 bg-primary/80 rounded-full flex items-center justify-center">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <polygon points="5 3 19 12 5 21 5 3" />
+                                                                </svg>
+                                                            </div>
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {/* Fallback for processing videos */}
+                                                        <div className="text-white text-center">
+                                                            <div className="animate-spin h-8 w-8 mx-auto mb-2">
+                                                                <SpinnerIcon />
+                                                            </div>
+                                                            <span>Processing</span>
+                                                        </div>
+                                                    </>
+                                                )}
+
+                                                {/* Video icon indicator */}
+                                                <div className="absolute bottom-2 right-2 bg-black/50 rounded-full p-1.5 z-10">
+                                                    <VideoIcon size={14} />
                                                 </div>
 
-                                                {/* Status indicator */}
+                                                {/* Processing status indicator */}
                                                 {asset.mux_processing_status !== 'ready' && (
-                                                    <div className="absolute top-2 right-2 rounded-full bg-black/50 px-2 py-1">
+                                                    <div className="absolute top-2 right-2 rounded-full bg-black/60 px-2 py-1 z-10">
                                                         <span className="text-xs text-white">Processing</span>
                                                     </div>
                                                 )}
@@ -547,32 +618,22 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                                     }
                                                 }}
                                                 onError={(e) => {
-                                                    const target = e.target as HTMLVideoElement;
-                                                    // Only show error if we haven't successfully loaded a poster
-                                                    if (videoPosterUrls[asset.id] === null) {
-                                                        handleMediaError(
-                                                            asset.id,
-                                                            asset.media_url,
-                                                            'video',
-                                                            {
-                                                                networkState: target.networkState,
-                                                                readyState: target.readyState,
-                                                                error: target.error?.message,
-                                                                code: target.error?.code
-                                                            }
-                                                        );
-                                                    }
+                                                    handleMediaError(
+                                                        asset.id,
+                                                        asset.media_url,
+                                                        'video',
+                                                        e
+                                                    );
                                                 }}
                                                 preload="metadata"
                                                 muted
                                                 playsInline
-                                                controlsList="nodownload"
-                                                webkit-playsinline="true"
-                                                x-webkit-airplay="allow"
                                             />
                                         ) : (
-                                            <div className="flex items-center justify-center h-full bg-muted">
-                                                <div className="animate-pulse h-full w-full bg-muted-foreground/20"></div>
+                                            <div className="flex items-center justify-center h-full">
+                                                <div className="text-center">
+                                                    <p className="text-muted-foreground">Video</p>
+                                                </div>
                                             </div>
                                         )}
                                         <div className="absolute bottom-2 right-2 bg-black/50 rounded-full p-1.5">
@@ -592,11 +653,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                                     asset.id,
                                                     asset.media_url,
                                                     'image',
-                                                    {
-                                                        complete: false,
-                                                        naturalWidth: 0,
-                                                        naturalHeight: 0
-                                                    }
+                                                    null
                                                 )
                                             }}
                                             sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
@@ -632,5 +689,5 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 )}
             </div>
         </div>
-    )
-} 
+    );
+}

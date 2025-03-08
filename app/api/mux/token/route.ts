@@ -4,6 +4,13 @@ import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { createMuxPlaybackJWT } from '@/utils/mux';
 import jwt from 'jsonwebtoken';
 
+// Helper for controlled logging
+function log(message: string, ...args: any[]) {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[TokenAPI] ${message}`, ...args);
+  }
+}
+
 // Create a service client to bypass RLS when needed
 function getServiceClient() {
   if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -23,15 +30,13 @@ async function createTokensForPlayback(playbackId: string, userId: string) {
 
   try {
     // Create playback token (audience = 'v')
-    console.log(`Creating playback token for playback ID: ${playbackId}`);
+    log(`Creating tokens for playback ID: ${playbackId}`);
     const playbackToken = await createMuxPlaybackJWT(playbackId, userId, 'v');
     
     // Create thumbnail token (audience = 't')
-    console.log(`Creating thumbnail token for playback ID: ${playbackId}`);
     const thumbnailToken = await createMuxPlaybackJWT(playbackId, userId, 't');
     
     // Create storyboard token (audience = 's')
-    console.log(`Creating storyboard token for playback ID: ${playbackId}`);
     const storyboardToken = await createMuxPlaybackJWT(playbackId, userId, 's');
     
     // Return all three tokens
@@ -66,7 +71,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: 'Missing playback ID' }, { status: 400 });
     }
 
-    console.log(`Generating JWT tokens for playback ID: ${playbackId}, user: ${user.id}`);
+    log(`Generating tokens for playback ID: ${playbackId}`);
 
     // Try to access with user session first
     let { data: assets, error: queryError } = await supabase
@@ -78,7 +83,7 @@ export async function GET(request: Request) {
 
     // If user can't find the asset, try with service role as a fallback
     if ((queryError || !assets || assets.length === 0) && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.log('User-level lookup failed, trying service role');
+      log('User-level lookup failed, trying service role');
       const serviceClient = getServiceClient();
       
       if (serviceClient) {
@@ -93,11 +98,11 @@ export async function GET(request: Request) {
           
           // Double-check this is the user's asset
           if (assetUserId === user.id) {
-            console.log('Asset found via service role, belongs to correct user');
+            log('Asset found via service role');
             assets = serviceResult.data;
             queryError = null;
           } else {
-            console.error('Asset belongs to different user:', { assetUserId, requestingUserId: user.id });
+            console.error('Asset belongs to different user');
           }
         }
       }
@@ -109,18 +114,18 @@ export async function GET(request: Request) {
     }
 
     if (!assets || assets.length === 0) {
-      console.error('Access denied or video not found:', { playbackId, userId: user.id });
+      console.error('Access denied or video not found');
       return NextResponse.json({ message: 'Video not found or access denied' }, { status: 404 });
     }
 
-    console.log('Asset found, ID:', assets[0].id);
+    log('Asset found, generating tokens');
 
     // Generate tokens for all required purposes
     try {
       const tokens = await createTokensForPlayback(playbackId, user.id);
-      console.log('RSA-signed JWT tokens generated successfully for all purposes');
+      log('Tokens generated successfully');
 
-      // Return all tokens to the client - include only necessary data to keep response size small
+      // Return all tokens to the client
       return NextResponse.json({ 
         token: tokens.playback,  // For backward compatibility
         tokens: tokens,

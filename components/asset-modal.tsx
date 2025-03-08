@@ -30,16 +30,29 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
 
         setIsDeleting(true)
         try {
-            // Delete from Supabase
-            const { error: dbError } = await supabase
-                .from('assets')
-                .delete()
-                .eq('id', asset.id)
+            if (hasMuxData) {
+                // Delete using the Mux API endpoint
+                const response = await fetch('/api/mux/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ assetId: asset.id }),
+                });
 
-            if (dbError) throw dbError
+                if (!response.ok) {
+                    const data = await response.json();
+                    throw new Error(data.error || 'Failed to delete Mux asset');
+                }
+            } else {
+                // For non-Mux assets, delete from Supabase and S3
+                const { error: dbError } = await supabase
+                    .from('assets')
+                    .delete()
+                    .eq('id', asset.id)
 
-            // If this is a Mux video, we don't need to delete from S3
-            if (!hasMuxData) {
+                if (dbError) throw dbError
+
                 // Delete from S3
                 const key = asset.media_url.split('/').pop()
                 const response = await fetch('/api/delete', {
@@ -126,15 +139,17 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                     <div className="flex justify-between items-center p-4 border-b">
                         <h2 className="text-xl font-semibold">{asset.name}</h2>
                         <div className="flex items-center gap-2">
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={handleDownload}
-                                aria-label="Download asset"
-                                disabled={!!hasMuxData}
-                            >
-                                <DownloadIcon />
-                            </Button>
+                            {/* Only show download button for images, not videos */}
+                            {asset.media_type === 'image' && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={handleDownload}
+                                    aria-label="Download asset"
+                                >
+                                    <DownloadIcon />
+                                </Button>
+                            )}
                             <Button
                                 variant="destructive"
                                 size="icon"
@@ -142,7 +157,11 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                                 aria-label="Delete asset"
                                 disabled={isDeleting}
                             >
-                                <TrashIcon className="h-4 w-4" />
+                                {isDeleting ? (
+                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"></div>
+                                ) : (
+                                    <TrashIcon className="h-4 w-4" />
+                                )}
                             </Button>
                             <Button
                                 variant="ghost"

@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: process.env.NEXT_PUBLIC_AWS_BUCKET_NAME + '.s3.' + process.env.NEXT_PUBLIC_AWS_REGION + '.amazonaws.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'image.mux.com',
+        pathname: '/**',
+      },
     ],
   },
   // Moved from experimental to root level config as per Next.js 15

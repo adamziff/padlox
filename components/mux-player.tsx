@@ -4,10 +4,17 @@ import { useState, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { createClient } from '@/utils/supabase/client';
 
+// Helper for controlled logging
+function log(message: string, ...args: any[]) {
+    if (process.env.NODE_ENV !== 'production') {
+        console.log(`[MuxPlayer] ${message}`, ...args);
+    }
+}
+
 // Dynamically import the Mux Player component to avoid any SSR issues
 const MuxPlayerComponent = dynamic(
     () => import('@mux/mux-player-react').then(mod => {
-        console.log('Mux Player loaded successfully');
+        log('Mux Player loaded successfully');
         return mod;
     }).catch(err => {
         console.error('Error loading @mux/mux-player-react:', err);
@@ -46,7 +53,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
             setError(null);
 
             // Get signed JWTs for this playback ID
-            console.log(`Requesting JWT tokens for playbackId: ${playbackId} (attempt ${retryCount + 1})`);
+            log(`Requesting tokens for playbackId: ${playbackId}`);
 
             // Add a cache-busting parameter to prevent caching issues
             const response = await fetch(`/api/mux/token?playbackId=${playbackId}&_=${Date.now()}`);
@@ -62,35 +69,13 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
 
             const data = await response.json();
 
-            // Debug logging for the response
-            console.log('Token API response structure:', Object.keys(data));
-            console.log('Has tokens object:', !!data.tokens);
-            console.log('Has token property:', !!data.token);
-
-            // Test the URL that will be constructed
-            if (data.token) {
-                const testUrl = `https://stream.mux.com/${playbackId}.m3u8?token=${data.token}`;
-                console.log('Example stream URL that will be used:',
-                    testUrl.substring(0, 50) + '...' + testUrl.substring(testUrl.length - 20));
-            }
-
             if (!data.token && (!data.tokens || !data.tokens.playback)) {
                 throw new Error('No valid token in response');
             }
 
             // Check if we have all tokens or just the main one
             if (data.tokens && data.tokens.playback) {
-                console.log('Using separate RSA-signed tokens for different purposes');
-
-                // Log token previews for debugging (first and last 10 chars)
-                const previewToken = (token: string) => token ?
-                    `${token.substring(0, 10)}...${token.substring(token.length - 10)}` : 'undefined';
-
-                console.log('RSA token previews:');
-                console.log('- Playback:', previewToken(data.tokens.playback));
-                console.log('- Thumbnail:', previewToken(data.tokens.thumbnail));
-                console.log('- Storyboard:', previewToken(data.tokens.storyboard));
-
+                log('Received tokens for playback, thumbnail, and storyboard');
                 setTokens({
                     playback: data.tokens.playback,
                     thumbnail: data.tokens.thumbnail,
@@ -98,9 +83,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
                 });
             } else if (data.token) {
                 // Set all token types to the same token for backward compatibility
-                console.log('Using single token for all purposes');
-                console.log('Token preview:', `${data.token.substring(0, 10)}...${data.token.substring(data.token.length - 10)}`);
-
+                log('Using single token for all purposes');
                 setTokens({
                     playback: data.token,
                     thumbnail: data.token,
@@ -130,7 +113,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
 
     // Function to retry loading
     const handleRetry = () => {
-        console.log('Retrying token fetch and player loading');
+        log('Retrying token fetch');
         setRetryCount(count => count + 1);
     };
 
@@ -185,9 +168,6 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
                 onError={(error: any) => {
                     console.error('Mux player error:', error);
 
-                    // Log the entire error object to see what's happening
-                    console.error('Full error object:', JSON.stringify(error, null, 2));
-
                     // Check if it's an auth error
                     const errorMsg = error?.message || error?.toString() || '';
                     const isAuthError =
@@ -197,26 +177,17 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
                         errorMsg.includes('403');
 
                     if (isAuthError) {
-                        console.error("Authentication error detected:", errorMsg);
-                        console.log("URL should look like: https://stream.mux.com/" + playbackId + ".m3u8?token=[JWT]");
-                        console.log("Retrying with fresh tokens...");
+                        log("Authentication error detected, retrying with fresh tokens");
                         handleRetry();
                     } else {
                         setError('Video playback error. Please try again later.');
                     }
                 }}
                 onLoadStart={() => {
-                    console.log('Mux player load started with tokens:', {
-                        hasPlaybackToken: !!tokens.playback,
-                        hasThumbnailToken: !!tokens.thumbnail,
-                        hasStoryboardToken: !!tokens.storyboard
-                    });
-
-                    // Log the kind of URL that will be created
-                    console.log(`Player will use: https://stream.mux.com/${playbackId}.m3u8?token=[JWT]`);
+                    log('Playback starting');
                 }}
                 onLoadedData={() => {
-                    console.log('Mux player loaded data successfully');
+                    log('Video loaded successfully');
                 }}
                 metadata={{
                     video_id: playbackId,
@@ -232,7 +203,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
                 muted={false}
                 thumbnailTime={0}
                 defaultHiddenCaptions={true}
-                debug={true} // Enable debug mode to see more information in the console
+                debug={false} // Disable debug mode in production
             />
         </div>
     );

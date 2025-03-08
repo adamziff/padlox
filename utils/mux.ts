@@ -1,6 +1,13 @@
 import jwt from 'jsonwebtoken';
 import { MuxAsset } from '@/types/mux';
 
+// Helper for controlled logging
+function log(message: string, ...args: any[]) {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[MuxUtil] ${message}`, ...args);
+  }
+}
+
 // Function to create a signed JWT for playback using RSA signing keys
 export async function createMuxPlaybackJWT(playbackId: string, userId: string, audience: 'v' | 't' | 's' = 'v'): Promise<string> {
   // Check if we have the signing keys
@@ -36,33 +43,10 @@ export async function createMuxPlaybackJWT(playbackId: string, userId: string, a
       customer_id: userId  // Optional custom field
     };
 
-    console.log(`Creating ${audience} JWT with payload:`, { 
-      sub: payload.sub,
-      aud: payload.aud,
-      exp: payload.exp,
-      kid: payload.kid ? 'Set' : 'Missing',
-      customer_id: payload.customer_id
-    });
+    log(`Creating ${audience} JWT for playback ID: ${playbackId}`);
 
     // Sign the JWT with RS256 algorithm - Mux requires this for signing keys
-    console.log(`Creating JWT for playback ID: ${playbackId} with signing key ID: ${process.env.MUX_SIGNING_KEY_ID}`);
     const token = jwt.sign(payload, privateKey, { algorithm: 'RS256' });
-    
-    // Log a snippet of the token for debugging
-    const tokenPreview = token.substring(0, 20) + '...' + token.substring(token.length - 20);
-    console.log(`Generated ${audience} token (preview): ${tokenPreview}`);
-    
-    // Validate the token by decoding it
-    try {
-      const decoded = jwt.decode(token);
-      console.log('JWT successfully decoded:', {
-        aud: (decoded as any)?.aud, 
-        exp: (decoded as any)?.exp,
-        hasKid: !!(decoded as any)?.kid
-      });
-    } catch (e) {
-      console.warn('Warning: Could not decode token for validation');
-    }
     
     return token;
   } catch (error) {
@@ -80,6 +64,8 @@ export async function createMuxUpload(): Promise<{
   try {
     // Create Basic Auth credentials
     const auth = Buffer.from(`${process.env.MUX_TOKEN_ID}:${process.env.MUX_TOKEN_SECRET}`).toString('base64');
+    
+    log('Creating new Mux upload');
     
     // Create direct upload using the Mux REST API - use exactly what the API expects
     const response = await fetch('https://api.mux.com/video/v1/uploads', {
@@ -103,7 +89,7 @@ export async function createMuxUpload(): Promise<{
     }
     
     const data = await response.json();
-    console.log('Mux upload response:', JSON.stringify(data, null, 2));
+    log('Mux upload created successfully');
     
     // The upload response has a different structure than the asset response
     const uploadData = data.data;
@@ -151,6 +137,8 @@ export async function getMuxAssetDetails(assetId: string): Promise<MuxAsset> {
   try {
     // Create Basic Auth credentials
     const auth = Buffer.from(`${process.env.MUX_TOKEN_ID}:${process.env.MUX_TOKEN_SECRET}`).toString('base64');
+    
+    log(`Fetching details for Mux asset: ${assetId}`);
     
     // Fetch asset details using the Mux REST API
     const response = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
