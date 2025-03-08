@@ -25,7 +25,7 @@ export async function createMuxUpload(): Promise<{
     // Create Basic Auth credentials
     const auth = Buffer.from(`${process.env.MUX_TOKEN_ID}:${process.env.MUX_TOKEN_SECRET}`).toString('base64');
     
-    // Create direct upload using the Mux REST API
+    // Create direct upload using the Mux REST API - use exactly what the API expects
     const response = await fetch('https://api.mux.com/video/v1/uploads', {
       method: 'POST',
       headers: {
@@ -35,24 +35,35 @@ export async function createMuxUpload(): Promise<{
       body: JSON.stringify({
         cors_origin: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
         new_asset_settings: {
-          playback_policy: ['signed'],
-          mp4_support: 'standard'
+          playback_policy: 'signed'
         }
       })
     });
 
     if (!response.ok) {
-      throw new Error(`Mux API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text().catch(() => 'No error details available');
+      console.error('Mux API error details:', errorText);
+      throw new Error(`Mux API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
     
     const data = await response.json();
-    console.log('Mux upload response:', data);
+    console.log('Mux upload response:', JSON.stringify(data, null, 2));
+    
+    // The upload response has a different structure than the asset response
+    const uploadData = data.data;
+    
+    // Get the upload ID which will be used as the asset ID for now
+    // The actual asset ID will be available through the webhook later
+    const uploadId = uploadData.id;
+    
+    // We don't have a playback ID yet, but we'll update it when the asset is ready
+    const playbackId = '';
     
     // Return the upload data
     return {
-      uploadUrl: data.data.url,
-      assetId: data.data.asset_id || '',
-      playbackId: data.data.new_asset_settings?.playback_ids?.[0]?.id || '',
+      uploadUrl: uploadData.url,
+      assetId: uploadId,
+      playbackId: playbackId,
     };
   } catch (error) {
     console.error('Error creating Mux upload:', error);

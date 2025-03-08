@@ -6,7 +6,10 @@ import { createClient } from '@/utils/supabase/client';
 
 // Dynamically import the Mux Player component to avoid any SSR issues
 const MuxPlayerComponent = dynamic(
-    () => import('@mux/mux-player-react'),
+    () => import('@mux/mux-player-react').catch(err => {
+        console.error('Error loading @mux/mux-player-react:', err);
+        return () => <div>Error loading player</div>;
+    }),
     { ssr: false }
 );
 
@@ -29,14 +32,22 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
                 setLoading(true);
 
                 // Get a signed JWT for this playback ID
+                console.log('Requesting JWT token for playbackId:', playbackId);
                 const response = await fetch(`/api/mux/token?playbackId=${playbackId}`);
 
                 if (!response.ok) {
-                    throw new Error('Failed to get playback token');
+                    const errorText = await response.text().catch(() => '');
+                    throw new Error(`Failed to get playback token: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ''}`);
                 }
 
-                const { token } = await response.json();
-                setJwt(token);
+                const data = await response.json();
+                console.log('Received JWT token response');
+
+                if (!data.token) {
+                    throw new Error('No token in response');
+                }
+
+                setJwt(data.token);
             } catch (err) {
                 console.error('Error fetching JWT for playback:', err);
                 setError(err instanceof Error ? err.message : 'Failed to load video');
@@ -47,9 +58,13 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
 
         if (playbackId) {
             fetchJwt();
+        } else {
+            setError('No playback ID provided');
+            setLoading(false);
         }
     }, [playbackId]);
 
+    // Handle loading and error states
     if (error) {
         return (
             <div className="flex items-center justify-center bg-muted h-full w-full rounded-lg">
@@ -88,6 +103,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
                     console.error('Mux player error:', error);
                     setError('Video playback error. Please try again later.');
                 }}
+                primaryColor="#0866FF"
             />
         </div>
     );

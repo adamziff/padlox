@@ -53,6 +53,13 @@ export interface Database {
                     media_type: 'image' | 'video'
                     is_signed: boolean
                     signature_data: Json | null
+                    // Mux specific fields
+                    mux_asset_id: string | null
+                    mux_playback_id: string | null
+                    mux_processing_status: 'preparing' | 'ready' | 'error' | null
+                    mux_max_resolution: string | null
+                    mux_aspect_ratio: string | null
+                    mux_duration: number | null
                 }
                 Insert: {
                     id?: string
@@ -65,6 +72,13 @@ export interface Database {
                     media_type: 'image' | 'video'
                     is_signed?: boolean
                     signature_data?: Json | null
+                    // Mux specific fields
+                    mux_asset_id?: string | null
+                    mux_playback_id?: string | null
+                    mux_processing_status?: 'preparing' | 'ready' | 'error' | null
+                    mux_max_resolution?: string | null
+                    mux_aspect_ratio?: string | null
+                    mux_duration?: number | null
                 }
                 Update: {
                     id?: string
@@ -77,6 +91,13 @@ export interface Database {
                     media_type?: 'image' | 'video'
                     is_signed?: boolean
                     signature_data?: Json | null
+                    // Mux specific fields
+                    mux_asset_id?: string | null
+                    mux_playback_id?: string | null
+                    mux_processing_status?: 'preparing' | 'ready' | 'error' | null
+                    mux_max_resolution?: string | null
+                    mux_aspect_ratio?: string | null
+                    mux_duration?: number | null
                 }
             }
         }

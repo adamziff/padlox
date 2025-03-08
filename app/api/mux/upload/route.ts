@@ -9,6 +9,7 @@ export async function POST(request: Request) {
     const { data: { user }, error } = await supabase.auth.getUser();
 
     if (error || !user) {
+      console.error('Authentication error:', error);
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
@@ -17,10 +18,16 @@ export async function POST(request: Request) {
       const { metadata } = await request.json();
 
       if (!metadata || !metadata.name) {
+        console.error('Invalid metadata:', metadata);
         return new NextResponse('Invalid metadata', { status: 400 });
       }
 
-      console.log('Creating Mux upload...');
+      console.log('Creating Mux upload with metadata:', metadata);
+      console.log('Environment:', { 
+        NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+        MUX_TOKEN_ID_SET: !!process.env.MUX_TOKEN_ID,
+        MUX_TOKEN_SECRET_SET: !!process.env.MUX_TOKEN_SECRET
+      });
       
       // Create a Mux upload
       const uploadData = await createMuxUpload();
@@ -41,7 +48,7 @@ export async function POST(request: Request) {
           estimated_value: metadata.estimated_value || null,
           media_url: '', // Will be updated once Mux processes the video
           media_type: 'video',
-          mux_asset_id: uploadData.assetId,
+          mux_asset_id: uploadData.assetId, // Store the upload ID here, will be updated by webhook
           mux_playback_id: uploadData.playbackId,
           mux_processing_status: 'preparing',
         }])

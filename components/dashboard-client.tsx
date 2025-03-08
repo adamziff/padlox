@@ -54,7 +54,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     estimated_value: null
                 };
 
-                console.log('Requesting Mux upload URL...');
+                console.log('Requesting Mux upload URL with metadata:', metadata);
 
                 // Get a direct upload URL from Mux
                 const response = await fetch('/api/mux/upload', {
@@ -65,24 +65,33 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     body: JSON.stringify({ metadata }),
                 });
 
+                // Try to get the error details from the response
+                let errorData: any = {};
                 let errorDetail = '';
 
                 if (!response.ok) {
                     try {
-                        const errorData = await response.json();
+                        errorData = await response.json();
                         console.error('Upload error details:', errorData);
-                        errorDetail = errorData.details || '';
+                        errorDetail = errorData.details ? ` - ${errorData.details}` : '';
                     } catch (e) {
                         console.error('Failed to parse error response:', e);
                     }
 
-                    throw new Error(`Failed to get upload URL: ${response.status} ${response.statusText}${errorDetail ? ` - ${errorDetail}` : ''}`);
+                    throw new Error(`Failed to get upload URL: ${response.status} ${response.statusText}${errorDetail}`);
                 }
 
-                const responseData = await response.json();
-                const { uploadUrl, asset } = responseData;
+                // Parse the successful response
+                let responseData;
+                try {
+                    responseData = await response.json();
+                    console.log('Got upload URL response:', responseData);
+                } catch (parseError) {
+                    console.error('Error parsing upload response:', parseError);
+                    throw new Error('Failed to parse upload response');
+                }
 
-                console.log('Got upload URL response:', { hasUrl: !!uploadUrl, hasAsset: !!asset });
+                const { uploadUrl, asset } = responseData;
 
                 if (!uploadUrl) {
                     throw new Error('No upload URL returned from the server');
@@ -90,13 +99,14 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
                 // Add the pending asset to the UI immediately
                 if (asset) {
+                    console.log('Adding asset to UI:', asset);
                     setAssets(prev => [asset, ...prev]);
                 } else {
                     console.warn('No asset data returned from server');
                 }
 
                 // Upload the file to Mux
-                console.log('Uploading video to Mux URL:', uploadUrl);
+                console.log('Uploading video to Mux URL:', uploadUrl, 'file type:', file.type, 'file size:', file.size);
 
                 try {
                     const uploadResponse = await fetch(uploadUrl, {

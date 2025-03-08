@@ -27,3 +27,5 @@ const nextConfig: NextConfig = {
     esmExternals: true, // For better ESM compatibility
   }
 };
+
+export default nextConfig;

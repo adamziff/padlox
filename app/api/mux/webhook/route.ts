@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     // Access Supabase to update the asset status
     const supabase = await createClient();
     
-    // Find the asset by the Mux asset ID
+    // Find the asset by the Mux asset ID - first try direct match
     const { data: assets, error: findError } = await supabase
       .from('assets')
       .select('*')
@@ -55,13 +55,38 @@ export async function POST(request: Request) {
       return new NextResponse('Database error', { status: 500 });
     }
     
+    // If not found and we have an upload ID, try that
+    let asset;
     if (!assets || assets.length === 0) {
-      console.error('Asset not found for Mux asset ID:', event.data.id);
-      return new NextResponse('Asset not found', { status: 404 });
+      console.log('Asset not found by Mux asset ID, checking upload ID');
+      
+      if (event.data.upload_id) {
+        const { data: uploadAssets, error: uploadFindError } = await supabase
+          .from('assets')
+          .select('*')
+          .eq('mux_asset_id', event.data.upload_id)
+          .limit(1);
+          
+        if (uploadFindError) {
+          console.error('Database error finding asset by upload ID:', uploadFindError);
+          return new NextResponse('Database error', { status: 500 });
+        }
+        
+        if (uploadAssets && uploadAssets.length > 0) {
+          console.log('Found asset by upload ID:', uploadAssets[0].id);
+          asset = uploadAssets[0];
+        } else {
+          console.error('Asset not found for Mux asset ID or upload ID');
+          return new NextResponse('Asset not found', { status: 404 });
+        }
+      } else {
+        console.error('Asset not found and no upload ID available');
+        return new NextResponse('Asset not found', { status: 404 });
+      }
+    } else {
+      asset = assets[0];
+      console.log('Found asset by Mux asset ID:', asset.id);
     }
-    
-    const asset = assets[0];
-    console.log('Found asset to update:', asset.id);
     
     const playbackId = event.data.playback_ids?.[0]?.id;
     
@@ -84,7 +109,8 @@ export async function POST(request: Request) {
         mux_max_resolution: event.data.max_stored_resolution,
         mux_aspect_ratio: event.data.aspect_ratio,
         mux_duration: event.data.duration,
-        media_url: streamUrl // Update the media_url to point to the Mux stream
+        media_url: streamUrl, // Update the media_url to point to the Mux stream
+        mux_asset_id: event.data.id // Update with the actual asset ID
       })
       .eq('id', asset.id);
     

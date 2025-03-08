@@ -30,6 +30,7 @@ export interface MuxWebhookEvent {
     aspect_ratio?: string;
     max_stored_resolution?: string;
     max_stored_frame_rate?: number;
+    upload_id?: string;
   };
 }
 
