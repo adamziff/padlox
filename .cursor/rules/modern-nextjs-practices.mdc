@@ -1,33 +1,68 @@
 ---
 description: Modern Next.js 15 Best Practices
-globs: *.tsx
+globs: *.{js,jsx,ts,tsx}
 ---
-
 # Modern Next.js 15 Best Practices
 
-Advises using the new app directory, server components, and best practices for Next.js 15.
+Comprehensive guidelines for building high-quality, performant Next.js 15 applications leveraging the latest features.
 
 <rule>
 name: modern_nextjs
-description: Encourage best practices for Next.js 15 dev
+description: Comprehensive best practices for Next.js 15 development
 filters:
   - type: file_extension
-    pattern: "\\.tsx$"
+    pattern: "\\.(js|jsx|ts|tsx)$"
   - type: content
-    pattern: "(?i)import.*react"
+    pattern: "(?i)(import.*?next|import.*?react|createContext|useState|useEffect)"
 
 actions:
   - type: suggest
     message: |
-      1. Use the /app directory and the new app router.
-      2. Avoid the old /pages directory in new code.
-      3. Favor server components for logic, and client components only if needed (e.g., user interaction).
-      4. Use TypeScript with strict mode on for better type safety and error detection.
-      5. Maintain good SEO with Next.js 15's built-in metadata configurations.
+      ## Next.js 15 Architecture & Structure
+      1. Use the App Router (`/app` directory) for all new development.
+      2. Structure routes using nested folders with page.tsx/route.ts files.
+      3. Adopt the React Server Components paradigm by default:
+         - Prefer Server Components for most UI
+         - Use Client Components only when necessary (interactivity, browser APIs, React hooks)
+         - Add "use client" directive at the top of client component files
+      4. Follow the nested layouts pattern for shared UI between routes.
+      5. Keep API routes in `/app/api/[route]/route.ts` using the new Route Handlers.
+
+      ## Data Fetching & State Management
+      1. Use React Server Components for direct data fetching, avoiding client-side fetch when possible.
+      2. Leverage Next.js's automatic request deduplication with `fetch` and its caching/revalidation options.
+      3. Implement proper data mutation patterns with Server Actions for form submissions.
+      4. Consider Suspense boundaries for progressively loading UI.
+      5. Use the `use` hook for handling promises in Client Components.
+
+      ## Performance Optimization
+      1. Enable Image and Font optimization with `next/image` and `next/font`.
+      2. Implement proper Suspense boundaries for loading states.
+      3. Use the new partial prerendering for faster initial load with streaming hydration.
+      4. Utilize route groups for code organization without affecting URL structure.
+      5. Implement parallel routes for complex layouts with independent loading states.
+
+      ## TypeScript & Development
+      1. Use TypeScript with strict mode enabled for improved type safety.
+      2. Adopt proper metadata API for SEO optimization through `metadata` objects.
+      3. Implement proper error handling with error.tsx files.
+      4. Optimize loading states with loading.tsx files.
+      5. Leverage the new `useOptimistic` hook for optimistic updates.
+
+      ## Deployment & Build
+      1. Consider output modes: 'standalone' for self-hosted or 'export' for static sites.
+      2. Use Edge Runtime for globally distributed, low-latency server functions.
+      3. Implement proper environment variable management via `.env.local` files.
+      4. Consider Vercel Analytics/OpenTelemetry for monitoring application performance.
+      5. Set up proper caching strategies for static/dynamic content using Next.js's built-in caching mechanisms.
 examples:
-  - input: "A new file in /pages or referencing outdated next/router approaches"
-    output: "Migrate to the new /app router. Use server components and Next.js 15 conventions."
+  - input: "import { useRouter } from 'next/router'"
+    output: "Consider migrating to App Router. Replace with `import { useRouter } from 'next/navigation'` for client components or use server-side redirects for server components."
+  - input: "function Component() { const [state, setState] = useState(); return <div>{state}</div> }"
+    output: "This should be a Client Component. Add 'use client' directive at the top of the file."
+  - input: "export async function getServerSideProps()"
+    output: "Replace with Server Components or Route Handlers. The pages directory API is deprecated in Next.js 15."
 metadata:
-  priority: medium
-  version: 1.0
-</rule> 
+  priority: high
+  version: 1.1
+</rule>

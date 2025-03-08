@@ -64,6 +64,28 @@ export async function POST(request: Request) {
         });
         throw dbError;
       }
+      
+      // Log the created asset
+      console.log('Created asset in database:', {
+        id: asset.id,
+        name: asset.name,
+        media_type: asset.media_type,
+        mux_asset_id: asset.mux_asset_id,
+        database_url: process.env.NEXT_PUBLIC_SUPABASE_URL
+      });
+      
+      // Verify the asset was created by doing a select
+      const { data: verifyAsset, error: verifyError } = await supabase
+        .from('assets')
+        .select('id, name, media_type, mux_asset_id')
+        .eq('id', asset.id)
+        .single();
+        
+      if (verifyError) {
+        console.error('Error verifying asset creation:', verifyError);
+      } else {
+        console.log('Verified asset exists:', verifyAsset);
+      }
 
       return NextResponse.json({
         uploadUrl: uploadData.uploadUrl,

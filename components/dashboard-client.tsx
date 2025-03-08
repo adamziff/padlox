@@ -269,8 +269,70 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         }
     }
 
-    function handleAssetDeleted(deletedAssetId: string) {
-        setAssets(prev => prev.filter(asset => asset.id !== deletedAssetId))
+    async function handleAssetDeleted(deletedAssetId: string) {
+        setAssets(prevAssets => prevAssets.filter(asset => asset.id !== deletedAssetId));
+    }
+
+    // Process any pending webhook events for this user's videos
+    async function processPendingWebhooks() {
+        try {
+            const { data, error } = await supabase.rpc('update_user_videos_from_webhooks');
+
+            if (error) {
+                console.error('Error processing webhook events:', error);
+                alert('Error processing videos: Could not process pending webhook events.');
+                return;
+            }
+
+            const fixedCount = data?.fixed_count || 0;
+
+            if (fixedCount > 0) {
+                console.log(`Processed ${fixedCount} webhook events`);
+                alert(`Videos updated: Processed ${fixedCount} pending video${fixedCount === 1 ? '' : 's'}`);
+
+                // Refresh the asset list
+                const { data: updatedAssets, error: refreshError } = await supabase
+                    .from('assets')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (!refreshError && updatedAssets) {
+                    setAssets(updatedAssets as AssetWithMuxData[]);
+
+                    // Clear any media errors that might have been set on videos that are now ready
+                    const updatedMediaErrors = { ...mediaErrors };
+                    let hasChanges = false;
+
+                    updatedAssets.forEach(asset => {
+                        // Clear errors for any Mux videos that are now ready
+                        if (asset.media_type === 'video' &&
+                            'mux_processing_status' in asset &&
+                            asset.mux_processing_status === 'ready' &&
+                            updatedMediaErrors[asset.id]) {
+                            delete updatedMediaErrors[asset.id];
+                            hasChanges = true;
+                        }
+                    });
+
+                    if (hasChanges) {
+                        setMediaErrors(updatedMediaErrors);
+                    }
+
+                    // If there's a selected asset, refresh it with the latest data
+                    if (selectedAsset) {
+                        const updatedSelectedAsset = updatedAssets.find(a => a.id === selectedAsset.id);
+                        if (updatedSelectedAsset) {
+                            setSelectedAsset(updatedSelectedAsset as AssetWithMuxData);
+                        }
+                    }
+                }
+            } else {
+                // No need to show an alert for 0 processed
+                console.log('No pending webhook events to process');
+            }
+        } catch (error) {
+            console.error('Error in processPendingWebhooks:', error);
+        }
     }
 
     // Add function to handle media errors
@@ -287,15 +349,41 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
     // Add function to generate and cache video posters
     async function generateAndCacheVideoPoster(assetId: string, videoUrl: string) {
         try {
-            if (!videoPosterUrls[assetId]) {
-                const posterUrl = await generateVideoPoster(videoUrl);
-                setVideoPosterUrls(prev => ({
-                    ...prev,
-                    [assetId]: posterUrl
-                }));
+            // Skip Mux videos - they need authentication and we handle them differently
+            const asset = assets.find(a => a.id === assetId);
+            if (asset?.mux_playback_id) {
+                // Return null to indicate we're not generating a poster for this
+                return null;
             }
+
+            // Only proceed for direct video URLs
+            console.log(`Generating poster for video: ${assetId}`);
+
+            // Don't attempt to generate posters for Mux streams (they need auth)
+            if (videoUrl.includes('stream.mux.com')) {
+                console.log('Skipping poster generation for Mux stream');
+                return null;
+            }
+
+            // Mark as in progress
+            setVideoPosterUrls(prev => ({
+                ...prev,
+                [assetId]: null // null indicates in progress
+            }));
+
+            // Get a poster image from the video
+            const poster = await generateVideoPoster(videoUrl);
+
+            // Cache the poster URL
+            setVideoPosterUrls(prev => ({
+                ...prev,
+                [assetId]: poster
+            }));
+
+            return poster;
         } catch (error) {
-            console.error('Failed to generate video poster:', error);
+            console.error('Error generating video poster:', error);
+            throw error;
         }
     }
 
@@ -334,6 +422,12 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                             className="w-full sm:w-auto"
                         >
                             Add New Asset
+                        </Button>
+                        <Button
+                            variant="outline"
+                            onClick={processPendingWebhooks}
+                        >
+                            Process Pending Videos
                         </Button>
                     </div>
                 </div>
@@ -410,52 +504,77 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                     </div>
                                 ) : asset.media_type === 'video' ? (
                                     <div className="relative w-full h-full">
-                                        {videoPosterUrls[asset.id] === null && !mediaErrors[asset.id] && (
+                                        {videoPosterUrls[asset.id] === null && !mediaErrors[asset.id] && !asset.mux_playback_id && (
                                             <div className="absolute inset-0 flex items-center justify-center bg-black/10 z-10">
                                                 <div className="text-white text-sm">Loading preview...</div>
                                             </div>
                                         )}
-                                        <video
-                                            key={`${asset.media_url}-${mediaErrors[asset.id] ? 'retry' : 'initial'}`}
-                                            src={asset.media_url}
-                                            className="w-full h-full object-cover"
-                                            poster={videoPosterUrls[asset.id] || undefined}
-                                            onLoadedMetadata={() => {
-                                                if (videoPosterUrls[asset.id] === null) {
-                                                    generateAndCacheVideoPoster(asset.id, asset.media_url)
-                                                        .catch(() => {
-                                                            // Silently fail - we'll still show the video
-                                                            setVideoPosterUrls(prev => ({
-                                                                ...prev,
-                                                                [asset.id]: null // null indicates we tried and failed
-                                                            }));
-                                                        });
-                                                }
-                                            }}
-                                            onError={(e) => {
-                                                const target = e.target as HTMLVideoElement;
-                                                // Only show error if we haven't successfully loaded a poster
-                                                if (videoPosterUrls[asset.id] === null) {
-                                                    handleMediaError(
-                                                        asset.id,
-                                                        asset.media_url,
-                                                        'video',
-                                                        {
-                                                            networkState: target.networkState,
-                                                            readyState: target.readyState,
-                                                            error: target.error?.message,
-                                                            code: target.error?.code
-                                                        }
-                                                    );
-                                                }
-                                            }}
-                                            preload="metadata"
-                                            muted
-                                            playsInline
-                                            controlsList="nodownload"
-                                            webkit-playsinline="true"
-                                            x-webkit-airplay="allow"
-                                        />
+
+                                        {/* For Mux videos - display a placeholder with a play icon */}
+                                        {asset.mux_playback_id ? (
+                                            <div className="relative w-full h-full bg-black flex items-center justify-center">
+                                                {/* Display a thumbnail with play icon */}
+                                                <div className="w-12 h-12 bg-primary/80 rounded-full flex items-center justify-center">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <polygon points="5 3 19 12 5 21 5 3" />
+                                                    </svg>
+                                                </div>
+
+                                                {/* Status indicator */}
+                                                {asset.mux_processing_status !== 'ready' && (
+                                                    <div className="absolute top-2 right-2 rounded-full bg-black/50 px-2 py-1">
+                                                        <span className="text-xs text-white">Processing</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : asset.media_url ? (
+                                            /* For direct video URLs - only for non-Mux videos */
+                                            <video
+                                                key={`${asset.media_url}-${mediaErrors[asset.id] ? 'retry' : 'initial'}`}
+                                                src={asset.media_url}
+                                                className="w-full h-full object-cover"
+                                                poster={videoPosterUrls[asset.id] || undefined}
+                                                onLoadedMetadata={() => {
+                                                    if (videoPosterUrls[asset.id] === null) {
+                                                        generateAndCacheVideoPoster(asset.id, asset.media_url)
+                                                            .catch(() => {
+                                                                // Silently fail - we'll still show the video
+                                                                setVideoPosterUrls(prev => ({
+                                                                    ...prev,
+                                                                    [asset.id]: null // null indicates we tried and failed
+                                                                }));
+                                                            });
+                                                    }
+                                                }}
+                                                onError={(e) => {
+                                                    const target = e.target as HTMLVideoElement;
+                                                    // Only show error if we haven't successfully loaded a poster
+                                                    if (videoPosterUrls[asset.id] === null) {
+                                                        handleMediaError(
+                                                            asset.id,
+                                                            asset.media_url,
+                                                            'video',
+                                                            {
+                                                                networkState: target.networkState,
+                                                                readyState: target.readyState,
+                                                                error: target.error?.message,
+                                                                code: target.error?.code
+                                                            }
+                                                        );
+                                                    }
+                                                }}
+                                                preload="metadata"
+                                                muted
+                                                playsInline
+                                                controlsList="nodownload"
+                                                webkit-playsinline="true"
+                                                x-webkit-airplay="allow"
+                                            />
+                                        ) : (
+                                            <div className="flex items-center justify-center h-full bg-muted">
+                                                <div className="animate-pulse h-full w-full bg-muted-foreground/20"></div>
+                                            </div>
+                                        )}
                                         <div className="absolute bottom-2 right-2 bg-black/50 rounded-full p-1.5">
                                             <VideoIcon size={14} />
                                         </div>

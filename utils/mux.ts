@@ -1,18 +1,74 @@
 import jwt from 'jsonwebtoken';
 import { MuxAsset } from '@/types/mux';
 
-// Function to create a signed JWT for playback
-export async function createMuxPlaybackJWT(playbackId: string, userId: string): Promise<string> {
-  const payload = {
-    sub: playbackId,
-    aud: 'v',
-    exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour expiry
-    kid: process.env.MUX_TOKEN_ID!,
-    customer_id: userId,
-  };
+// Function to create a signed JWT for playback using RSA signing keys
+export async function createMuxPlaybackJWT(playbackId: string, userId: string, audience: 'v' | 't' | 's' = 'v'): Promise<string> {
+  // Check if we have the signing keys
+  if (!process.env.MUX_SIGNING_KEY_ID || !process.env.MUX_SIGNING_PRIVATE_KEY) {
+    console.error('Missing MUX_SIGNING_KEY_ID or MUX_SIGNING_PRIVATE_KEY environment variables');
+    throw new Error('Mux signing configuration error');
+  }
+  
+  // Validate inputs to avoid common errors
+  if (!playbackId) {
+    throw new Error('Invalid playback ID: cannot be empty');
+  }
+  
+  if (!userId) {
+    throw new Error('Invalid user ID: cannot be empty');
+  }
+  
+  try {
+    // Decode the base64 encoded private key
+    const privateKey = Buffer.from(process.env.MUX_SIGNING_PRIVATE_KEY, 'base64').toString('utf-8');
+    
+    // Format the JWT payload exactly as Mux expects
+    // The key requirements are:
+    // - sub: The playback ID
+    // - aud: Video playback ('v'), thumbnails ('t'), or storyboards ('s')
+    // - exp: Expiration timestamp
+    // - kid: The Mux signing key ID
+    const payload = {
+      sub: playbackId,     // The playback ID
+      aud: audience,       // 'v' = video playback, 't' = thumbnails, 's' = storyboards
+      exp: Math.floor(Date.now() / 1000) + 7200, // 2 hour expiry
+      kid: process.env.MUX_SIGNING_KEY_ID,
+      customer_id: userId  // Optional custom field
+    };
 
-  // Sign the JWT
-  return jwt.sign(payload, process.env.MUX_TOKEN_SECRET!, { algorithm: 'HS256' });
+    console.log(`Creating ${audience} JWT with payload:`, { 
+      sub: payload.sub,
+      aud: payload.aud,
+      exp: payload.exp,
+      kid: payload.kid ? 'Set' : 'Missing',
+      customer_id: payload.customer_id
+    });
+
+    // Sign the JWT with RS256 algorithm - Mux requires this for signing keys
+    console.log(`Creating JWT for playback ID: ${playbackId} with signing key ID: ${process.env.MUX_SIGNING_KEY_ID}`);
+    const token = jwt.sign(payload, privateKey, { algorithm: 'RS256' });
+    
+    // Log a snippet of the token for debugging
+    const tokenPreview = token.substring(0, 20) + '...' + token.substring(token.length - 20);
+    console.log(`Generated ${audience} token (preview): ${tokenPreview}`);
+    
+    // Validate the token by decoding it
+    try {
+      const decoded = jwt.decode(token);
+      console.log('JWT successfully decoded:', {
+        aud: (decoded as any)?.aud, 
+        exp: (decoded as any)?.exp,
+        hasKid: !!(decoded as any)?.kid
+      });
+    } catch (e) {
+      console.warn('Warning: Could not decode token for validation');
+    }
+    
+    return token;
+  } catch (error) {
+    console.error('Error signing JWT token:', error);
+    throw new Error(`Failed to generate video token: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 // Function to create a Mux direct upload URL using the REST API directly

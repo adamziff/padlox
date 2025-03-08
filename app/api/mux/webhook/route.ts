@@ -1,7 +1,101 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { createClient } from '@supabase/supabase-js';
+import { createClient as createServerClient } from '@/utils/supabase/server';
 import { verifyMuxWebhook } from '@/utils/mux';
 import { MuxWebhookEvent } from '@/types/mux';
+
+// Create a direct Supabase client with the service role key to bypass RLS for webhook events storage only
+function createServiceClient() {
+  // Only use this for the webhook_events table, not for user data
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.warn('No SUPABASE_SERVICE_ROLE_KEY available for webhook processing');
+    // Fall back to anon key in development for testing
+    return createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+  }
+
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+}
+
+// Utility function to diagnose database connection issues
+async function diagnoseDatabaseConnection(supabase: ReturnType<typeof createServiceClient>) {
+  try {
+    console.log('=== Database Connection Diagnostics ===');
+    
+    // Check if we can query a simple table
+    const { data: assets, error } = await supabase
+      .from('assets')
+      .select('count')
+      .limit(1);
+      
+    console.log('Simple query result:', assets, error);
+    
+    // Check if RLS policies might be preventing access
+    console.log('Testing for RLS issues...');
+    
+    // Most RLS policies allow service roles to bypass them
+    const serviceClient = process.env.SUPABASE_SERVICE_ROLE_KEY 
+      ? createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY
+        )
+      : null;
+      
+    if (serviceClient) {
+      console.log('Service role client created, testing access...');
+      const { data: serviceAssets, error: serviceError } = await serviceClient
+        .from('assets')
+        .select('count');
+        
+      console.log('Service role query:', serviceAssets, serviceError);
+    } else {
+      console.log('No service role key available');
+    }
+    
+    // Check RLS policy
+    try {
+      const { data: auth, error: authError } = await supabase.auth.getSession();
+      console.log('Auth session:', auth?.session ? 'Active' : 'None', authError);
+    } catch (e) {
+      console.error('Auth check error:', e);
+    }
+    
+    // Check database URL and anon key format
+    console.log('DB URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 15) + '...');
+    console.log('Anon key format check:', 
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.substring(0, 10) + '...' + 
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.substring(
+        (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length || 0) - 5
+      )
+    );
+    
+    console.log('=== End Diagnostics ===');
+  } catch (error) {
+    console.error('Error running diagnostics:', error);
+  }
+}
+
+// Add support for OPTIONS method (for CORS preflight requests)
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Mux-Signature',
+    },
+  });
+}
+
+// Add support for GET method (for webhook validation)
+export async function GET() {
+  return NextResponse.json({ message: 'Mux webhook endpoint is active' });
+}
 
 // Handle Mux webhook notifications
 export async function POST(request: Request) {
@@ -27,155 +121,120 @@ export async function POST(request: Request) {
     
     console.log('Webhook event type:', event.type);
     
-    // Only process video.asset.ready events
-    if (event.type !== 'video.asset.ready') {
-      console.log('Ignoring non-ready event');
-      return NextResponse.json({ received: true, type: event.type });
-    }
+    // We'll store all webhook events for processing, but we'll only act immediately on specific types
+    const serviceClient = createServiceClient();
     
-    console.log('Processing video.asset.ready event for asset:', event.data.id);
-    
-    if (!event.data.id) {
-      console.error('Missing asset ID in webhook payload');
-      return new NextResponse('Invalid payload', { status: 400 });
-    }
-    
-    // Access Supabase to update the asset status
-    const supabase = await createClient();
-
-    console.log("--- DETAILED WEBHOOK DEBUGGING ---");
-    
-    // First, get ALL video assets to see what's in there (limited to 10)
-    const { data: allVideos, error: videosError } = await supabase
-      .from('assets')
-      .select('id, media_type, mux_asset_id, created_at')
-      .eq('media_type', 'video')
-      .order('created_at', { ascending: false })
-      .limit(10);
-      
-    if (videosError) {
-      console.error('Error loading videos:', videosError);
-    } else {
-      console.log('ALL RECENT VIDEO ASSETS:', JSON.stringify(allVideos, null, 2));
-    }
-    
-    // Log the upload ID we're looking for
-    if (event.data.upload_id) {
-      console.log(`UPLOAD ID FROM WEBHOOK: "${event.data.upload_id}"`);
-      
-      // Try to find assets with similar IDs using a direct query
-      const { data: likeAssets, error: likeError } = await supabase
-        .from('assets')
-        .select('id, mux_asset_id')
-        .filter('mux_asset_id', 'ilike', `%${event.data.upload_id.substring(0, 10)}%`)
-        .limit(5);
-        
-      if (likeError) {
-        console.error('Error with pattern matching search:', likeError);
-      } else {
-        console.log('SIMILAR ID SEARCH RESULTS:', JSON.stringify(likeAssets, null, 2));
-      }
-    }
-    
-    // Simplify our search to just focus on the upload ID
-    let asset = null;
-    
-    if (event.data.upload_id) {
-      console.log('Looking for asset with mux_asset_id = upload_id:', event.data.upload_id);
-      
-      // SIMPLE EXACT MATCH
-      const { data: uploadAssets, error: uploadFindError } = await supabase
-        .from('assets')
-        .select('*')
-        .eq('mux_asset_id', event.data.upload_id)
+    // Store the webhook event for later processing
+    // First, check if a webhook_events table exists
+    try {
+      const { error: tableCheckError } = await serviceClient
+        .from('webhook_events')
+        .select('id')
         .limit(1);
         
-      if (uploadFindError) {
-        console.error('Database error finding asset by upload ID:', uploadFindError);
-        return new NextResponse('Database error', { status: 500 });
-      }
-      
-      if (uploadAssets && uploadAssets.length > 0) {
-        console.log('FOUND ASSET BY EXACT UPLOAD ID MATCH:', uploadAssets[0].id);
-        asset = uploadAssets[0];
-      } else {
-        console.log('No exact match found for upload_id, trying most recent prep asset');
+      // If the table doesn't exist, we'll need to create it
+      if (tableCheckError && tableCheckError.code === '42P01') { // Table doesn't exist
+        console.log('webhook_events table does not exist, attempting to create it');
         
-        // FALLBACK TO MOST RECENT PREPARING ASSET
-        const { data: recentAssets, error: recentError } = await supabase
-          .from('assets')
-          .select('*')
-          .eq('media_type', 'video')
-          .eq('mux_processing_status', 'preparing')
-          .order('created_at', { ascending: false })
-          .limit(1);
-          
-        if (recentError) {
-          console.error('Error finding recent preparing asset:', recentError);
-        } else if (recentAssets && recentAssets.length > 0) {
-          console.log('FOUND MOST RECENT PREPARING ASSET:', recentAssets[0].id);
-          console.log('Stored mux_asset_id:', recentAssets[0].mux_asset_id);
-          asset = recentAssets[0];
-        } else {
-          // EMERGENCY FALLBACK - GRAB MOST RECENT VIDEO ASSET REGARDLESS OF STATUS
-          console.log('No preparing assets found, trying most recent video asset');
-          
-          const { data: anyAssets, error: anyError } = await supabase
-            .from('assets')
-            .select('*')
-            .eq('media_type', 'video')
-            .order('created_at', { ascending: false })
-            .limit(1);
-            
-          if (anyError) {
-            console.error('Error finding any video asset:', anyError);
-          } else if (anyAssets && anyAssets.length > 0) {
-            console.log('FOUND MOST RECENT VIDEO ASSET AS FALLBACK:', anyAssets[0].id);
-            asset = anyAssets[0];
-          }
+        // Create the webhook_events table using SQL (we need service role for this)
+        const { error: createTableError } = await serviceClient.rpc('create_webhook_events_table');
+        
+        if (createTableError) {
+          console.error('Error creating webhook_events table:', createTableError);
+          // Continue anyway, we'll just return a message to Mux so it doesn't retry
         }
       }
+    } catch (e) {
+      console.error('Error checking webhook_events table:', e);
     }
     
-    if (!asset) {
-      console.error('No matching or recent video assets found');
-      return new NextResponse('Asset not found', { status: 404 });
+    // Store the webhook event
+    try {
+      const { error: insertError } = await serviceClient
+        .from('webhook_events')
+        .insert({
+          event_type: event.type,
+          event_id: event.id,
+          payload: event,
+          processed: false,
+          mux_asset_id: event.data.id,
+          mux_upload_id: event.data.upload_id || null
+        });
+        
+      if (insertError) {
+        console.error('Error storing webhook event:', insertError);
+      } else {
+        console.log('Successfully stored webhook event for later processing');
+      }
+    } catch (e) {
+      console.error('Error inserting webhook event:', e);
     }
     
-    const playbackId = event.data.playback_ids?.[0]?.id;
-    
-    if (!playbackId) {
-      console.error('No playback ID found in webhook payload');
-      return new NextResponse('No playback ID', { status: 400 });
+    // For video.asset.ready events, try to update the corresponding asset if we can
+    if (event.type === 'video.asset.ready' && event.data.upload_id) {
+      console.log('Processing video.asset.ready event for asset:', event.data.id);
+      console.log('Upload ID from webhook:', event.data.upload_id);
+      
+      try {
+        // Find the asset by mux_asset_id matching the upload_id using serviceClient
+        // This bypasses RLS just for the lookup
+        const { data: foundAsset, error: findError } = await serviceClient
+          .from('assets')
+          .select('id, user_id, mux_asset_id')
+          .eq('mux_asset_id', event.data.upload_id)
+          .maybeSingle();
+          
+        if (findError) {
+          console.error('Error finding asset by upload ID:', findError);
+        } else if (foundAsset) {
+          console.log('Found asset to update:', foundAsset.id, 'owned by user:', foundAsset.user_id);
+          
+          // Get playback ID
+          const playbackId = event.data.playback_ids?.[0]?.id;
+          
+          if (!playbackId) {
+            console.error('No playback ID found in webhook payload');
+          } else {
+            // Update the asset with the ready status and Mux metadata
+            const streamUrl = `https://stream.mux.com/${playbackId}.m3u8`;
+            
+            // Using service client to update by ID (bypassing RLS for this specific operation)
+            // This maintains security while allowing webhooks to update assets
+            const { error: updateError } = await serviceClient
+              .from('assets')
+              .update({
+                mux_processing_status: 'ready',
+                mux_playback_id: playbackId,
+                mux_max_resolution: event.data.max_stored_resolution,
+                mux_aspect_ratio: event.data.aspect_ratio,
+                mux_duration: event.data.duration,
+                media_url: streamUrl,
+                mux_asset_id: event.data.id // Update with the actual asset ID
+              })
+              .eq('id', foundAsset.id);
+              
+            if (updateError) {
+              console.error('Error updating asset:', updateError);
+            } else {
+              console.log('Successfully updated asset with stream URL:', streamUrl);
+            }
+          }
+        } else {
+          console.log('No asset found with mux_asset_id matching upload_id:', event.data.upload_id);
+          console.log('Event stored for later processing');
+        }
+      } catch (e) {
+        console.error('Error processing asset update:', e);
+      }
     }
     
-    console.log('Updating asset:', asset.id, 'with playback ID:', playbackId);
+    // Always acknowledge receipt of the webhook to Mux
+    return NextResponse.json({ 
+      received: true, 
+      type: event.type,
+      message: 'Webhook received and stored for processing'
+    });
     
-    // Construct the Mux streaming URL
-    const streamUrl = `https://stream.mux.com/${playbackId}.m3u8`; 
-    
-    // Update the asset with the ready status and Mux metadata
-    const { error: updateError } = await supabase
-      .from('assets')
-      .update({
-        mux_processing_status: 'ready',
-        mux_playback_id: playbackId,
-        mux_max_resolution: event.data.max_stored_resolution,
-        mux_aspect_ratio: event.data.aspect_ratio,
-        mux_duration: event.data.duration,
-        media_url: streamUrl, // Update the media_url to point to the Mux stream
-        mux_asset_id: event.data.id // Update with the actual asset ID
-      })
-      .eq('id', asset.id);
-    
-    if (updateError) {
-      console.error('Error updating asset:', updateError);
-      return new NextResponse('Database error', { status: 500 });
-    }
-    
-    console.log('Asset updated successfully with streamUrl:', streamUrl);
-    
-    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error processing Mux webhook:', error);
     return new NextResponse('Internal server error', { status: 500 });

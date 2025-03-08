@@ -161,37 +161,64 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                             {/* Media */}
                             <div className="aspect-square relative rounded-lg overflow-hidden bg-muted">
                                 {isVideo ? (
-                                    hasMuxData && 'mux_playback_id' in asset ? (
+                                    hasMuxData && 'mux_playback_id' in asset && asset.mux_playback_id ? (
                                         // Use MuxPlayer for Mux videos
                                         <MuxPlayer
-                                            playbackId={asset.mux_playback_id || ''}
+                                            playbackId={asset.mux_playback_id}
                                             title={asset.name}
                                             aspectRatio={asset.mux_aspect_ratio || '16/9'}
                                         />
+                                    ) : isMuxProcessing ? (
+                                        // Show a loading indicator for Mux videos still processing
+                                        <div className="flex items-center justify-center h-full text-muted-foreground">
+                                            <div className="text-center p-4">
+                                                <div className="animate-spin h-10 w-10 mx-auto mb-2">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                                                    </svg>
+                                                </div>
+                                                <p>Video is still processing...</p>
+                                            </div>
+                                        </div>
                                     ) : (
-                                        // Use regular video player for S3 videos
-                                        <video
-                                            src={asset.media_url}
-                                            controls
-                                            className="w-full h-full object-contain"
-                                            playsInline
-                                            preload="metadata"
-                                            controlsList="nodownload"
-                                            webkit-playsinline="true"
-                                            x-webkit-airplay="allow"
-                                        />
+                                        // Only render video tag if there's a valid URL and it's not a Mux video
+                                        asset.media_url ? (
+                                            <video
+                                                src={asset.media_url}
+                                                controls
+                                                className="w-full h-full object-contain"
+                                                playsInline
+                                                preload="metadata"
+                                                controlsList="nodownload"
+                                                webkit-playsinline="true"
+                                                x-webkit-airplay="allow"
+                                            />
+                                        ) : (
+                                            <div className="flex items-center justify-center h-full text-muted-foreground">
+                                                <div className="text-center p-4">
+                                                    <p>Video is not available</p>
+                                                </div>
+                                            </div>
+                                        )
                                     )
                                 ) : (
-                                    <div className="relative w-full h-full">
-                                        <Image
-                                            src={asset.media_url}
-                                            alt={asset.name}
-                                            fill
-                                            className="object-contain"
-                                            sizes="(max-width: 768px) 100vw, 50vw"
-                                            priority
-                                        />
-                                    </div>
+                                    // Only render image if there's a valid URL
+                                    asset.media_url ? (
+                                        <div className="relative w-full h-full">
+                                            <Image
+                                                src={asset.media_url}
+                                                alt={asset.name}
+                                                fill
+                                                className="object-contain"
+                                                sizes="(max-width: 768px) 100vw, 50vw"
+                                                priority
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center justify-center h-full text-muted-foreground">
+                                            <p>Image is not available</p>
+                                        </div>
+                                    )
                                 )}
                             </div>
 
