@@ -1,4 +1,3 @@
-import { withNextVideo } from "next-video/process";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -28,5 +27,3 @@ const nextConfig: NextConfig = {
     esmExternals: true, // For better ESM compatibility
   }
 };
-
-export default withNextVideo(nextConfig);
