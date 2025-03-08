@@ -10,21 +10,22 @@ import { uploadToS3 } from '@/utils/s3'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/utils/format'
 import { Asset } from '@/types/asset'
-import { TrashIcon, ImageIcon, VideoIcon } from '@/components/icons'
+import { AssetWithMuxData } from '@/types/mux'
+import { TrashIcon, ImageIcon, VideoIcon, SpinnerIcon } from '@/components/icons'
 import { NavBar } from '@/components/nav-bar'
 import { generateVideoPoster } from '@/utils/video'
 import { User } from '@supabase/supabase-js'
 
 type DashboardClientProps = {
-    initialAssets: Asset[]
+    initialAssets: AssetWithMuxData[]
     user: User
 }
 
 export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
     const [showCamera, setShowCamera] = useState(false)
     const [capturedFile, setCapturedFile] = useState<File | null>(null)
-    const [assets, setAssets] = useState<Asset[]>(initialAssets)
-    const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
+    const [assets, setAssets] = useState<AssetWithMuxData[]>(initialAssets)
+    const [selectedAsset, setSelectedAsset] = useState<AssetWithMuxData | null>(null)
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set())
     const [isSelectionMode, setIsSelectionMode] = useState(false)
     const [isDeleting, setIsDeleting] = useState(false)
@@ -33,8 +34,100 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
     const supabase = createClient()
 
     async function handleCapture(file: File) {
-        setCapturedFile(file)
-        setShowCamera(false)
+        try {
+            // If the file is a video, we upload it to Mux directly
+            if (file.type.startsWith('video/')) {
+                // Close the camera and show dashboard immediately
+                setShowCamera(false);
+
+                // Create a basic metadata object with a more descriptive name
+                const metadata = {
+                    name: `Video - ${new Date().toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: 'numeric',
+                        minute: 'numeric',
+                        hour12: true
+                    })}`,
+                    description: null,
+                    estimated_value: null
+                };
+
+                console.log('Requesting Mux upload URL...');
+
+                // Get a direct upload URL from Mux
+                const response = await fetch('/api/mux/upload', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ metadata }),
+                });
+
+                let errorDetail = '';
+
+                if (!response.ok) {
+                    try {
+                        const errorData = await response.json();
+                        console.error('Upload error details:', errorData);
+                        errorDetail = errorData.details || '';
+                    } catch (e) {
+                        console.error('Failed to parse error response:', e);
+                    }
+
+                    throw new Error(`Failed to get upload URL: ${response.status} ${response.statusText}${errorDetail ? ` - ${errorDetail}` : ''}`);
+                }
+
+                const responseData = await response.json();
+                const { uploadUrl, asset } = responseData;
+
+                console.log('Got upload URL response:', { hasUrl: !!uploadUrl, hasAsset: !!asset });
+
+                if (!uploadUrl) {
+                    throw new Error('No upload URL returned from the server');
+                }
+
+                // Add the pending asset to the UI immediately
+                if (asset) {
+                    setAssets(prev => [asset, ...prev]);
+                } else {
+                    console.warn('No asset data returned from server');
+                }
+
+                // Upload the file to Mux
+                console.log('Uploading video to Mux URL:', uploadUrl);
+
+                try {
+                    const uploadResponse = await fetch(uploadUrl, {
+                        method: 'PUT',
+                        body: file,
+                        headers: {
+                            'Content-Type': file.type,
+                        },
+                    });
+
+                    if (!uploadResponse.ok) {
+                        const errorText = await uploadResponse.text().catch(() => '');
+                        throw new Error(`Failed to upload to Mux: ${uploadResponse.status} ${uploadResponse.statusText}${errorText ? ` - ${errorText}` : ''}`);
+                    }
+
+                    console.log('Video successfully sent to Mux for processing');
+                } catch (uploadError) {
+                    console.error('Error during file upload to Mux:', uploadError);
+                    alert(`Error uploading video: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`);
+                    // Even if upload fails, we keep the asset in preparing state - it might timeout later
+                }
+            } else {
+                // For images, we follow the normal flow
+                setCapturedFile(file);
+                setShowCamera(false);
+            }
+        } catch (error) {
+            console.error('Error handling capture:', error);
+            alert(error instanceof Error ? error.message : 'Failed to process capture. Please try again.');
+            setShowCamera(false);
+        }
     }
 
     async function handleSave(url: string, metadata: {
@@ -81,7 +174,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             const transformedAsset = {
                 ...asset,
                 media_url: `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${asset.media_url}`
-            }
+            } as AssetWithMuxData;
 
             console.log('Asset saved successfully:', transformedAsset)
             setAssets(prev => [transformedAsset, ...prev])
@@ -158,7 +251,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         }
     }
 
-    function handleAssetClick(asset: Asset, event: React.MouseEvent) {
+    function handleAssetClick(asset: AssetWithMuxData, event: React.MouseEvent) {
         if (isSelectionMode) {
             toggleAssetSelection(asset.id, event)
         } else {
@@ -256,6 +349,8 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
                     {assets.map(asset => {
+                        const isProcessing = asset.mux_processing_status === 'preparing';
+
                         return (
                             <div
                                 key={asset.id}
@@ -274,7 +369,16 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                     </div>
                                 )}
 
-                                {mediaErrors[asset.id] ? (
+                                {isProcessing ? (
+                                    <div className="w-full h-full flex items-center justify-center">
+                                        <div className="text-center">
+                                            <div className="animate-spin h-10 w-10 mx-auto mb-2">
+                                                <SpinnerIcon />
+                                            </div>
+                                            <p className="text-sm text-muted-foreground">Video analysis in progress...</p>
+                                        </div>
+                                    </div>
+                                ) : mediaErrors[asset.id] ? (
                                     <div className="w-full h-full flex items-center justify-center text-muted-foreground">
                                         <div className="text-center p-4">
                                             <p className="text-sm">Failed to load media</p>

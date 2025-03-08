@@ -1125,18 +1125,34 @@ export const ImageIcon = ({ size = 16 }: { size?: number }) => {
 export const VideoIcon = ({ size = 16 }: { size?: number }) => {
     return (
         <svg
-            height={size}
-            strokeLinejoin="round"
-            viewBox="0 0 16 16"
             width={size}
-            style={{ color: 'currentcolor' }}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
         >
-            <path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M2.5 3C1.67157 3 1 3.67157 1 4.5V11.5C1 12.3284 1.67157 13 2.5 13H10.5C11.3284 13 12 12.3284 12 11.5V8.8757L14.4972 10.4664C14.815 10.6745 15.25 10.4471 15.25 10.0736V5.92643C15.25 5.55288 14.8115 5.32551 14.4972 5.53363L12 7.12429V4.5C12 3.67157 11.3284 3 10.5 3H2.5ZM2 4.5C2 4.22386 2.22386 4 2.5 4H10.5C10.7761 4 11 4.22386 11 4.5V11.5C11 11.7761 10.7761 12 10.5 12H2.5C2.22386 12 2 11.7761 2 11.5V4.5ZM14.25 7.05071V8.94929L12.5 7.75071V8.24929L14.25 7.05071Z"
-                fill="currentColor"
-            />
+            <polygon points="23 7 16 12 23 17 23 7" />
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+        </svg>
+    );
+};
+
+export const SpinnerIcon = ({ size = 16 }: { size?: number }) => {
+    return (
+        <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
         </svg>
     );
 };

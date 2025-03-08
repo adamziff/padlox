@@ -1,13 +1,15 @@
 import { Asset } from '@/types/asset'
+import { AssetWithMuxData } from '@/types/mux'
 import Image from 'next/image'
 import { Button } from './ui/button'
 import { formatCurrency } from '@/utils/format'
 import { CrossIcon, TrashIcon, DownloadIcon } from './icons'
 import { useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
+import { MuxPlayer } from './mux-player'
 
 interface AssetModalProps {
-    asset: Asset
+    asset: Asset | AssetWithMuxData
     onClose: () => void
     onDelete?: (id: string) => void
 }
@@ -16,6 +18,10 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
     const [isDeleting, setIsDeleting] = useState(false)
     const isVideo = asset.media_type === 'video'
     const supabase = createClient()
+
+    // Check if asset has Mux data
+    const hasMuxData = 'mux_playback_id' in asset && asset.mux_playback_id
+    const isMuxProcessing = 'mux_processing_status' in asset && asset.mux_processing_status === 'preparing'
 
     async function handleDelete() {
         if (!window.confirm('Are you sure you want to delete this asset? This action cannot be undone.')) {
@@ -32,18 +38,21 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
 
             if (dbError) throw dbError
 
-            // Delete from S3
-            const key = asset.media_url.split('/').pop()
-            const response = await fetch('/api/delete', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ key }),
-            })
+            // If this is a Mux video, we don't need to delete from S3
+            if (!hasMuxData) {
+                // Delete from S3
+                const key = asset.media_url.split('/').pop()
+                const response = await fetch('/api/delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ key }),
+                })
 
-            if (!response.ok) {
-                throw new Error('Failed to delete file from S3')
+                if (!response.ok) {
+                    throw new Error('Failed to delete file from S3')
+                }
             }
 
             onDelete?.(asset.id)
@@ -58,6 +67,12 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
 
     async function handleDownload() {
         try {
+            // For Mux videos, we can't easily provide direct downloads
+            if (hasMuxData) {
+                alert('Direct download from Mux is not currently supported.');
+                return;
+            }
+
             // Send the full media URL to let the server handle key extraction
             const response = await fetch('/api/download', {
                 method: 'POST',
@@ -116,6 +131,7 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                                 size="icon"
                                 onClick={handleDownload}
                                 aria-label="Download asset"
+                                disabled={!!hasMuxData}
                             >
                                 <DownloadIcon />
                             </Button>
@@ -145,16 +161,26 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                             {/* Media */}
                             <div className="aspect-square relative rounded-lg overflow-hidden bg-muted">
                                 {isVideo ? (
-                                    <video
-                                        src={asset.media_url}
-                                        controls
-                                        className="w-full h-full object-contain"
-                                        playsInline
-                                        preload="metadata"
-                                        controlsList="nodownload"
-                                        webkit-playsinline="true"
-                                        x-webkit-airplay="allow"
-                                    />
+                                    hasMuxData && 'mux_playback_id' in asset ? (
+                                        // Use MuxPlayer for Mux videos
+                                        <MuxPlayer
+                                            playbackId={asset.mux_playback_id || ''}
+                                            title={asset.name}
+                                            aspectRatio={asset.mux_aspect_ratio || '16/9'}
+                                        />
+                                    ) : (
+                                        // Use regular video player for S3 videos
+                                        <video
+                                            src={asset.media_url}
+                                            controls
+                                            className="w-full h-full object-contain"
+                                            playsInline
+                                            preload="metadata"
+                                            controlsList="nodownload"
+                                            webkit-playsinline="true"
+                                            x-webkit-airplay="allow"
+                                        />
+                                    )
                                 ) : (
                                     <div className="relative w-full h-full">
                                         <Image
@@ -183,6 +209,38 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                                         <h3 className="font-medium mb-2">Estimated Value</h3>
                                         <p className="text-muted-foreground">
                                             {formatCurrency(asset.estimated_value)}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Show Mux metadata if available */}
+                                {'mux_processing_status' in asset && asset.mux_processing_status && (
+                                    <div>
+                                        <h3 className="font-medium mb-2">Video Status</h3>
+                                        <p className="text-muted-foreground">
+                                            {asset.mux_processing_status === 'preparing'
+                                                ? 'Processing (please wait)'
+                                                : asset.mux_processing_status === 'ready'
+                                                    ? 'Ready'
+                                                    : 'Error'}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {'mux_max_resolution' in asset && asset.mux_max_resolution && (
+                                    <div>
+                                        <h3 className="font-medium mb-2">Video Resolution</h3>
+                                        <p className="text-muted-foreground">
+                                            {asset.mux_max_resolution}
+                                        </p>
+                                    </div>
+                                )}
+
+                                {'mux_duration' in asset && asset.mux_duration && (
+                                    <div>
+                                        <h3 className="font-medium mb-2">Duration</h3>
+                                        <p className="text-muted-foreground">
+                                            {Math.floor(asset.mux_duration / 60)}m {Math.round(asset.mux_duration % 60)}s
                                         </p>
                                     </div>
                                 )}
