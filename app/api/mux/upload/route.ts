@@ -15,7 +15,7 @@ export async function POST(request: Request) {
 
     try {
       // Get metadata from the request
-      const { metadata } = await request.json();
+      const { metadata, correlationId } = await request.json();
 
       if (!metadata || !metadata.name) {
         console.error('Invalid metadata:', metadata);
@@ -29,16 +29,22 @@ export async function POST(request: Request) {
         MUX_TOKEN_SECRET_SET: !!process.env.MUX_TOKEN_SECRET
       });
       
-      // Create a Mux upload
-      const uploadData = await createMuxUpload();
+      // Create a Mux upload with the correlation ID if provided
+      const uploadData = await createMuxUpload(correlationId);
       
-      console.log('Mux upload created:', uploadData);
+      console.log('Mux upload created:', {
+        assetId: uploadData.assetId,
+        correlationId: uploadData.correlationId
+      });
 
       if (!uploadData.uploadUrl) {
         throw new Error('No upload URL received from Mux');
       }
 
-      // Create a pending asset in Supabase
+      // Generate a unique client-side reference ID to help track this asset
+      const clientReferenceId = `ref_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Create a pending asset in Supabase with additional tracking fields
       const { data: asset, error: dbError } = await supabase
         .from('assets')
         .insert([{
@@ -48,9 +54,14 @@ export async function POST(request: Request) {
           estimated_value: metadata.estimated_value || null,
           media_url: '', // Will be updated once Mux processes the video
           media_type: 'video',
-          mux_asset_id: uploadData.assetId, // Store the upload ID here, will be updated by webhook
-          mux_playback_id: uploadData.playbackId,
+          mux_asset_id: uploadData.assetId, // Store the upload ID initially (important for webhook matching)
+          mux_playback_id: '', // This will be set by the webhook when processing is complete
           mux_processing_status: 'preparing',
+          // Add extra fields to help with tracking and recovery
+          client_reference_id: clientReferenceId,
+          mux_correlation_id: uploadData.correlationId,
+          created_at: new Date().toISOString(),
+          last_updated: new Date().toISOString()
         }])
         .select()
         .single();
@@ -71,13 +82,16 @@ export async function POST(request: Request) {
         name: asset.name,
         media_type: asset.media_type,
         mux_asset_id: asset.mux_asset_id,
+        assetId: uploadData.assetId,
+        correlationId: uploadData.correlationId,
+        clientReferenceId: clientReferenceId,
         database_url: process.env.NEXT_PUBLIC_SUPABASE_URL
       });
       
       // Verify the asset was created by doing a select
       const { data: verifyAsset, error: verifyError } = await supabase
         .from('assets')
-        .select('id, name, media_type, mux_asset_id')
+        .select('id, name, media_type, mux_asset_id, client_reference_id, mux_correlation_id')
         .eq('id', asset.id)
         .single();
         
@@ -91,6 +105,8 @@ export async function POST(request: Request) {
         uploadUrl: uploadData.uploadUrl,
         assetId: uploadData.assetId,
         playbackId: uploadData.playbackId,
+        correlationId: uploadData.correlationId,
+        clientReferenceId: clientReferenceId,
         asset: asset
       });
     } catch (innerError) {

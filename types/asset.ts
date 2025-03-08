@@ -7,4 +7,7 @@ export interface Asset {
     media_type: 'image' | 'video'
     created_at: string
     user_id: string
+    client_reference_id?: string
+    mux_correlation_id?: string
+    last_updated?: string
 } 

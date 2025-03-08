@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { Button } from './ui/button'
 import { formatCurrency } from '@/utils/format'
 import { CrossIcon, TrashIcon, DownloadIcon } from './icons'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { MuxPlayer } from './mux-player'
 
@@ -14,7 +14,9 @@ interface AssetModalProps {
     onDelete?: (id: string) => void
 }
 
-export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
+export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModalProps) {
+    // Track the asset state internally to handle real-time updates
+    const [asset, setAsset] = useState<Asset | AssetWithMuxData>(initialAsset)
     const [isDeleting, setIsDeleting] = useState(false)
     const isVideo = asset.media_type === 'video'
     const supabase = createClient()
@@ -22,6 +24,128 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
     // Check if asset has Mux data
     const hasMuxData = 'mux_playback_id' in asset && asset.mux_playback_id
     const isMuxProcessing = 'mux_processing_status' in asset && asset.mux_processing_status === 'preparing'
+    const isMuxReady = 'mux_processing_status' in asset && asset.mux_processing_status === 'ready'
+
+    // Set up a real-time subscription to update this asset if it changes
+    useEffect(() => {
+        console.log(`Setting up realtime subscription for asset: ${asset.id}`);
+
+        // Subscribe to changes on this specific asset
+        const channel = supabase
+            .channel(`asset-${asset.id}-changes`)
+            .on('postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'assets',
+                    filter: `id=eq.${asset.id}`
+                },
+                (payload) => {
+                    console.log('Asset modal received postgres update:',
+                        'for asset:', asset.id,
+                        'new status:', (payload.new as any)?.mux_processing_status,
+                        'old status:', (payload.old as any)?.mux_processing_status);
+
+                    // Create a fresh copy to ensure all properties are updated
+                    const updatedAsset = { ...payload.new } as AssetWithMuxData;
+
+                    // Update our local state with the changes
+                    setAsset(updatedAsset);
+                }
+            )
+            .on('broadcast', { event: 'asset-ready' }, (payload) => {
+                console.log('Asset modal received broadcast for asset:', payload);
+
+                // Check if the broadcast is for this asset
+                if (payload.payload && payload.payload.id === asset.id) {
+                    // Fetch the latest asset data
+                    supabase
+                        .from('assets')
+                        .select('*')
+                        .eq('id', asset.id)
+                        .single()
+                        .then(({ data, error }) => {
+                            if (!error && data) {
+                                console.log('Updated asset data from broadcast:', data);
+                                setAsset(data as AssetWithMuxData);
+                            }
+                        });
+                }
+            })
+            .subscribe((status) => {
+                console.log(`Asset subscription status for ${asset.id}:`, status);
+            });
+
+        // Set up a periodic check for asset updates
+        let refreshTimer: NodeJS.Timeout | null = null;
+
+        // Only set up the timer for processing assets
+        if (isMuxProcessing) {
+            console.log(`Setting up refresh timer for processing asset: ${asset.id}`);
+
+            refreshTimer = setInterval(() => {
+                console.log(`Checking status for asset: ${asset.id}`);
+
+                supabase
+                    .from('assets')
+                    .select('*')
+                    .eq('id', asset.id)
+                    .single()
+                    .then(({ data, error }) => {
+                        if (!error && data) {
+                            const freshAsset = data as AssetWithMuxData;
+
+                            // Only update if processing status changed
+                            if ('mux_processing_status' in freshAsset &&
+                                'mux_processing_status' in asset &&
+                                freshAsset.mux_processing_status !== asset.mux_processing_status) {
+
+                                console.log(`Manual refresh detected status change: ${asset.mux_processing_status} -> ${freshAsset.mux_processing_status}`);
+                                setAsset(freshAsset);
+
+                                // If asset is ready, clear the timer
+                                if (freshAsset.mux_processing_status === 'ready') {
+                                    if (refreshTimer) {
+                                        clearInterval(refreshTimer);
+                                        refreshTimer = null;
+                                    }
+                                }
+                            }
+                        }
+                    });
+            }, 5000); // Check every 5 seconds
+        }
+
+        // Cleanup on unmount
+        return () => {
+            console.log(`Cleaning up realtime subscription for asset: ${asset.id}`);
+            channel.unsubscribe();
+
+            if (refreshTimer) {
+                clearInterval(refreshTimer);
+            }
+        };
+    }, [asset.id, supabase, isMuxProcessing]);
+
+    // Update the asset when initialAsset changes (e.g., from parent component)
+    useEffect(() => {
+        setAsset(initialAsset);
+    }, [initialAsset]);
+
+    // Log asset state for debugging
+    useEffect(() => {
+        if (process.env.NODE_ENV !== 'production') {
+            console.log('Asset Modal - Current Asset State:', {
+                id: asset.id,
+                type: asset.media_type,
+                hasMuxData,
+                isMuxProcessing,
+                isMuxReady,
+                playbackId: 'mux_playback_id' in asset ? asset.mux_playback_id : 'N/A',
+                status: 'mux_processing_status' in asset ? asset.mux_processing_status : 'N/A'
+            });
+        }
+    }, [asset, hasMuxData, isMuxProcessing, isMuxReady]);
 
     async function handleDelete() {
         if (!window.confirm('Are you sure you want to delete this asset? This action cannot be undone.')) {
@@ -180,8 +304,8 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                             {/* Media */}
                             <div className="aspect-square relative rounded-lg overflow-hidden bg-muted">
                                 {isVideo ? (
-                                    hasMuxData && 'mux_playback_id' in asset && asset.mux_playback_id ? (
-                                        // Use MuxPlayer for Mux videos
+                                    hasMuxData && isMuxReady && asset.mux_playback_id ? (
+                                        // Use MuxPlayer for Mux videos that are ready
                                         <MuxPlayer
                                             playbackId={asset.mux_playback_id}
                                             title={asset.name}
@@ -197,6 +321,7 @@ export function AssetModal({ asset, onClose, onDelete }: AssetModalProps) {
                                                     </svg>
                                                 </div>
                                                 <p>Video is still processing...</p>
+                                                <p className="text-xs mt-2 text-muted-foreground">This may take a few minutes</p>
                                             </div>
                                         </div>
                                     ) : (

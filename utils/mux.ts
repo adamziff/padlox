@@ -2,9 +2,10 @@ import jwt from 'jsonwebtoken';
 import { MuxAsset } from '@/types/mux';
 
 // Helper for controlled logging
-function log(message: string, ...args: any[]) {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[MuxUtil] ${message}`, ...args);
+function log(message: string, ...args: unknown[]) {
+  // Only log in development and when MUX_LOG_LEVEL is set
+  if (process.env.NODE_ENV === 'development' && process.env.MUX_LOG_LEVEL === 'true') {
+    console.log(`[Mux] ${message}`, ...args);
   }
 }
 
@@ -56,18 +57,22 @@ export async function createMuxPlaybackJWT(playbackId: string, userId: string, a
 }
 
 // Function to create a Mux direct upload URL using the REST API directly
-export async function createMuxUpload(): Promise<{
+export async function createMuxUpload(correlationId?: string): Promise<{
   uploadUrl: string;
   assetId: string;
   playbackId: string;
+  correlationId: string;
 }> {
   try {
+    // Create a unique correlation ID if not provided
+    const uploadCorrelationId = correlationId || `upload_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
     // Create Basic Auth credentials
     const auth = Buffer.from(`${process.env.MUX_TOKEN_ID}:${process.env.MUX_TOKEN_SECRET}`).toString('base64');
     
-    log('Creating new Mux upload');
+    log(`Creating new Mux upload with correlation ID: ${uploadCorrelationId}`);
     
-    // Create direct upload using the Mux REST API - use exactly what the API expects
+    // Create direct upload using the Mux REST API with more metadata
     const response = await fetch('https://api.mux.com/video/v1/uploads', {
       method: 'POST',
       headers: {
@@ -77,7 +82,13 @@ export async function createMuxUpload(): Promise<{
       body: JSON.stringify({
         cors_origin: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
         new_asset_settings: {
-          playback_policies: ['signed']
+          playback_policies: ['signed'],
+          // Add metadata to help track uploads
+          metadata: {
+            correlation_id: uploadCorrelationId,
+            created_at: new Date().toISOString(),
+            app: 'padlox'
+          }
         }
       })
     });
@@ -101,11 +112,12 @@ export async function createMuxUpload(): Promise<{
     // We don't have a playback ID yet, but we'll update it when the asset is ready
     const playbackId = '';
     
-    // Return the upload data
+    // Return the upload data with the correlation ID
     return {
       uploadUrl: uploadData.url,
       assetId: uploadId,
       playbackId: playbackId,
+      correlationId: uploadCorrelationId
     };
   } catch (error) {
     console.error('Error creating Mux upload:', error);
@@ -158,4 +170,4 @@ export async function getMuxAssetDetails(assetId: string): Promise<MuxAsset> {
     console.error('Error getting Mux asset details:', error);
     throw new Error('Failed to get Mux asset details');
   }
-} 
+}

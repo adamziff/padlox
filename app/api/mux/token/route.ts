@@ -5,7 +5,7 @@ import { createMuxPlaybackJWT } from '@/utils/mux';
 
 // Helper for controlled logging
 function log(message: string, ...args: unknown[]) {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV === 'development' && process.env.DEBUG === 'true') {
     console.log(`[TokenAPI] ${message}`, ...args);
   }
 }

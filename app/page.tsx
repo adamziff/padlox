@@ -8,6 +8,10 @@ export default async function Home() {
   const { data: { session } } = await supabase.auth.getSession();
   const isLoggedIn = !!session;
 
+  // Stupid idea for a tagline:
+  // You're Naked
+  // Well not exactly, but you're not covered where you should be
+
   return (
     <div className="min-h-screen flex flex-col">
       <NavBar />

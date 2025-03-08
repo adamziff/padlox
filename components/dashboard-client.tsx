@@ -38,10 +38,20 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
     const [mediaErrors, setMediaErrors] = useState<Record<string, string>>({})
     const [videoPosterUrls, setVideoPosterUrls] = useState<Record<string, string | null>>({})
     const [thumbnailTokens, setThumbnailTokens] = useState<Record<string, string>>({})
+    const [activeUploads, setActiveUploads] = useState<{
+        [id: string]: {
+            assetId: string;
+            status: 'uploading' | 'processing' | 'complete' | 'error';
+            message: string;
+            startTime: number;
+        }
+    }>({})
     const supabase = createClient()
 
     // Setup real-time subscription for assets table
     useEffect(() => {
+        console.log('Setting up realtime subscription for user:', user.id);
+
         const channel = supabase
             .channel('assets-changes')
             .on('postgres_changes',
@@ -52,31 +62,89 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     filter: `user_id=eq.${user.id}`
                 },
                 (payload) => {
-                    safeLog('Received real-time update:', payload.eventType);
+                    // Handle postgres change notification
+                    console.log('Received postgres update from Supabase:', payload.eventType,
+                        'for asset:', (payload.new as any)?.id,
+                        'status:', (payload.new as any)?.mux_processing_status);
 
                     // Handle different types of changes
                     if (payload.eventType === 'INSERT') {
                         setAssets(prevAssets => [payload.new as AssetWithMuxData, ...prevAssets]);
                     }
                     else if (payload.eventType === 'UPDATE') {
-                        setAssets(prevAssets =>
-                            prevAssets.map(asset =>
-                                asset.id === payload.new.id
-                                    ? { ...asset, ...payload.new as AssetWithMuxData }
-                                    : asset
-                            )
-                        );
+                        const updatedAsset = payload.new as AssetWithMuxData;
+                        const oldAsset = payload.old as AssetWithMuxData;
 
-                        // If the selected asset was updated, update it too
-                        if (selectedAsset && selectedAsset.id === payload.new.id) {
-                            setSelectedAsset({ ...selectedAsset, ...payload.new as AssetWithMuxData });
+                        // Log important changes for debugging
+                        if (updatedAsset.mux_processing_status !== oldAsset.mux_processing_status) {
+                            console.log(`Asset ${updatedAsset.id} status changed: ${oldAsset.mux_processing_status} -> ${updatedAsset.mux_processing_status}`);
+
+                            // If status changed to ready, update active uploads
+                            if (updatedAsset.mux_processing_status === 'ready') {
+                                console.log('Asset is now ready - updating UI:', updatedAsset.id);
+                                setActiveUploads(prev => {
+                                    const newUploads = { ...prev };
+                                    // Find any upload matching this asset ID
+                                    Object.keys(newUploads).forEach(uploadId => {
+                                        if (newUploads[uploadId].assetId === updatedAsset.id) {
+                                            newUploads[uploadId] = {
+                                                ...newUploads[uploadId],
+                                                status: 'complete',
+                                                message: 'Video processing complete!'
+                                            };
+                                            // Auto-remove this notification after 3 seconds
+                                            setTimeout(() => {
+                                                setActiveUploads(current => {
+                                                    const updated = { ...current };
+                                                    delete updated[uploadId];
+                                                    return updated;
+                                                });
+                                            }, 3000);
+                                        }
+                                    });
+                                    return newUploads;
+                                });
+                            }
+                        }
+
+                        // Force a fresh copy of the asset to ensure all properties are updated
+                        const freshAsset = {
+                            ...updatedAsset
+                        };
+
+                        // Update the asset in the list forcefully
+                        setAssets(prevAssets => {
+                            // First check if the asset exists to avoid unnecessary re-renders
+                            const assetExists = prevAssets.some(a => a.id === updatedAsset.id);
+                            if (!assetExists) {
+                                return prevAssets;
+                            }
+
+                            return prevAssets.map(asset =>
+                                asset.id === updatedAsset.id
+                                    ? freshAsset
+                                    : asset
+                            );
+                        });
+
+                        // If the selected asset was updated, update it too with the fresh copy
+                        if (selectedAsset && selectedAsset.id === updatedAsset.id) {
+                            setSelectedAsset(freshAsset);
+                        }
+
+                        // If status changed to ready, fetch thumbnail token
+                        if (updatedAsset.mux_processing_status === 'ready' &&
+                            updatedAsset.mux_playback_id &&
+                            !thumbnailTokens[updatedAsset.mux_playback_id]) {
+                            console.log(`Fetching thumbnail token for newly ready asset: ${updatedAsset.id}`);
+                            fetchThumbnailToken(updatedAsset.mux_playback_id);
                         }
 
                         // Clear any media errors for this asset
-                        if (mediaErrors[payload.new.id]) {
+                        if (mediaErrors[updatedAsset.id]) {
                             setMediaErrors(prev => {
                                 const next = { ...prev };
-                                delete next[payload.new.id];
+                                delete next[updatedAsset.id];
                                 return next;
                             });
                         }
@@ -93,12 +161,146 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     }
                 }
             )
-            .subscribe();
+            .on('broadcast', { event: 'asset-ready' }, (payload) => {
+                // Handle broadcast message
+                console.log('Received broadcast for asset-ready:', payload);
 
+                if (payload.payload && payload.payload.id) {
+                    const assetId = payload.payload.id;
+
+                    // Check if we have this asset
+                    const assetExists = assets.some(a => a.id === assetId);
+                    if (!assetExists) {
+                        return;
+                    }
+
+                    // Fetch the latest asset data
+                    supabase
+                        .from('assets')
+                        .select('*')
+                        .eq('id', assetId)
+                        .single()
+                        .then(({ data, error }) => {
+                            if (!error && data) {
+                                const updatedAsset = data as AssetWithMuxData;
+                                console.log('Asset data from broadcast:', updatedAsset);
+
+                                // Update asset in list
+                                setAssets(prevAssets =>
+                                    prevAssets.map(a =>
+                                        a.id === assetId ? updatedAsset : a
+                                    )
+                                );
+
+                                // Update selected asset if needed
+                                if (selectedAsset && selectedAsset.id === assetId) {
+                                    setSelectedAsset(updatedAsset);
+                                }
+
+                                // Update upload notification if needed
+                                if (updatedAsset.mux_processing_status === 'ready') {
+                                    setActiveUploads(prev => {
+                                        const newUploads = { ...prev };
+
+                                        // Find any uploads for this asset
+                                        Object.keys(newUploads).forEach(uploadId => {
+                                            if (newUploads[uploadId].assetId === assetId) {
+                                                newUploads[uploadId] = {
+                                                    ...newUploads[uploadId],
+                                                    status: 'complete',
+                                                    message: 'Video processing complete!'
+                                                };
+
+                                                // Remove after a delay
+                                                setTimeout(() => {
+                                                    setActiveUploads(current => {
+                                                        const updated = { ...current };
+                                                        delete updated[uploadId];
+                                                        return updated;
+                                                    });
+                                                }, 3000);
+                                            }
+                                        });
+
+                                        return newUploads;
+                                    });
+                                }
+                            }
+                        });
+                }
+            })
+            .subscribe((status) => {
+                console.log('Real-time subscription status:', status);
+            });
+
+        // Log the channel setup
+        console.log('Realtime channel configured:', channel.topic);
+
+        // Set up a periodic check for any preparing assets to handle cases where real-time updates fail
+        const checkInterval = setInterval(() => {
+            setAssets(prevAssets => {
+                const preparingAssets = prevAssets.filter(
+                    asset => asset.mux_processing_status === 'preparing' && asset.mux_asset_id
+                );
+
+                if (preparingAssets.length > 0) {
+                    console.log('Found preparing assets, checking status:', preparingAssets.length);
+
+                    // For each preparing asset, check if it should be refreshed
+                    preparingAssets.forEach(asset => {
+                        // Skip if we checked recently (within last 30 seconds)
+                        const lastCheckedKey = `last_checked_${asset.id}`;
+                        const lastChecked = parseInt(localStorage.getItem(lastCheckedKey) || '0', 10);
+                        const now = Date.now();
+
+                        if (now - lastChecked > 30000) { // 30 seconds 
+                            // Mark this asset as checked
+                            localStorage.setItem(lastCheckedKey, now.toString());
+
+                            // Fetch the latest status from the API
+                            supabase
+                                .from('assets')
+                                .select('*')
+                                .eq('id', asset.id)
+                                .single()
+                                .then(({ data, error }) => {
+                                    if (!error && data) {
+                                        const updatedAsset = data as AssetWithMuxData;
+
+                                        // If status changed, update the asset
+                                        if (updatedAsset.mux_processing_status !== asset.mux_processing_status) {
+                                            console.log(`Manual refresh detected status change for asset ${asset.id}: ${asset.mux_processing_status} -> ${updatedAsset.mux_processing_status}`);
+
+                                            // Update assets state
+                                            setAssets(prevState =>
+                                                prevState.map(a =>
+                                                    a.id === asset.id ? updatedAsset : a
+                                                )
+                                            );
+
+                                            // Update selected asset if needed
+                                            if (selectedAsset && selectedAsset.id === asset.id) {
+                                                setSelectedAsset(updatedAsset);
+                                            }
+                                        }
+                                    }
+                                });
+                        }
+                    });
+                }
+
+                // Don't change the assets here
+                return prevAssets;
+            });
+        }, 15000); // Check every 15 seconds
+
+        // Cleanup on unmount
         return () => {
+            console.log('Cleaning up real-time subscription');
             channel.unsubscribe();
+            clearInterval(checkInterval);
         };
-    }, [supabase, user.id, selectedAsset, mediaErrors]);
+    }, [user.id, selectedAsset, mediaErrors, thumbnailTokens, fetchThumbnailToken, supabase, activeUploads]);
 
     async function handleCapture(file: File) {
         try {
@@ -106,6 +308,23 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             if (file.type.startsWith('video/')) {
                 // Close the camera and show dashboard immediately
                 setShowCamera(false);
+
+                // Create a unique upload ID for tracking this upload
+                const uploadId = `upload_${Date.now()}`;
+
+                // Show the upload warning
+                setActiveUploads(prev => ({
+                    ...prev,
+                    [uploadId]: {
+                        assetId: '',  // Will set this after response
+                        status: 'uploading',
+                        message: 'Uploading video... Please do not refresh the page.',
+                        startTime: Date.now()
+                    }
+                }));
+
+                // Create a unique correlation ID to track this upload across page refreshes
+                const correlationId = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
                 // Create a basic metadata object with a more descriptive name
                 const metadata = {
@@ -121,7 +340,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     estimated_value: null
                 };
 
-                console.log('Requesting Mux upload URL with metadata:', metadata);
+                console.log('Requesting Mux upload URL with metadata:', metadata, 'correlationId:', correlationId);
 
                 // Get a direct upload URL from Mux
                 const response = await fetch('/api/mux/upload', {
@@ -129,7 +348,10 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ metadata }),
+                    body: JSON.stringify({
+                        metadata,
+                        correlationId
+                    }),
                 });
 
                 // Try to get the error details from the response
@@ -158,16 +380,36 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     throw new Error('Failed to parse upload response');
                 }
 
-                const { uploadUrl, asset } = responseData;
+                const { uploadUrl, asset, clientReferenceId } = responseData;
 
                 if (!uploadUrl) {
                     throw new Error('No upload URL returned from the server');
                 }
 
-                // Add the pending asset to the UI immediately
+                // After getting response, update the upload tracking
                 if (asset) {
-                    console.log('Adding asset to UI:', asset);
+                    console.log('Adding asset to UI:', asset, 'clientReferenceId:', clientReferenceId);
+                    // Store the reference ID in local storage to help with recovery if page refreshes
+                    if (clientReferenceId) {
+                        try {
+                            localStorage.setItem('lastUploadReference', clientReferenceId);
+                            localStorage.setItem('lastUploadTime', Date.now().toString());
+                        } catch (e) {
+                            console.warn('Could not store upload reference in localStorage:', e);
+                        }
+                    }
                     setAssets(prev => [asset, ...prev]);
+
+                    // Update the active upload with the asset ID
+                    setActiveUploads(prev => ({
+                        ...prev,
+                        [uploadId]: {
+                            ...prev[uploadId],
+                            assetId: asset.id,
+                            status: 'processing',
+                            message: 'Video uploaded. Processing in progress... Please do not refresh the page.'
+                        }
+                    }));
                 } else {
                     console.warn('No asset data returned from server');
                 }
@@ -201,11 +443,93 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 setShowCamera(false);
             }
         } catch (error) {
+            // On error, update the upload status
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+            // Find the active upload and mark it as error
+            const uploadIds = Object.keys(activeUploads);
+            if (uploadIds.length > 0) {
+                const latestUploadId = uploadIds[uploadIds.length - 1];
+
+                setActiveUploads(prev => ({
+                    ...prev,
+                    [latestUploadId]: {
+                        ...prev[latestUploadId],
+                        status: 'error',
+                        message: `Error: ${errorMessage}`
+                    }
+                }));
+
+                // Remove the error after 5 seconds
+                setTimeout(() => {
+                    setActiveUploads(prev => {
+                        const newUploads = { ...prev };
+                        delete newUploads[latestUploadId];
+                        return newUploads;
+                    });
+                }, 5000);
+            }
+
             console.error('Error handling capture:', error);
             alert(error instanceof Error ? error.message : 'Failed to process capture. Please try again.');
             setShowCamera(false);
         }
     }
+
+    // Add a recovery mechanism for uploads after page refresh
+    useEffect(() => {
+        // Check if there was a recent upload that might need recovery
+        try {
+            const lastUploadReference = localStorage.getItem('lastUploadReference');
+            const lastUploadTime = localStorage.getItem('lastUploadTime');
+
+            // Only attempt recovery for recent uploads (within the last hour)
+            if (lastUploadReference && lastUploadTime) {
+                const timeSinceUpload = Date.now() - Number(lastUploadTime);
+                if (timeSinceUpload < 3600000) { // 1 hour
+                    console.log('Found recent upload, checking if recovery is needed:', lastUploadReference);
+
+                    // Check if this upload is already in our assets list
+                    const existingAsset = assets.find(a =>
+                        (a as any).client_reference_id === lastUploadReference
+                    );
+
+                    if (!existingAsset) {
+                        console.log('Upload not found in current assets, querying database');
+                        // The asset might exist in the database but not in our current state
+                        supabase
+                            .from('assets')
+                            .select('*')
+                            .eq('client_reference_id', lastUploadReference)
+                            .eq('user_id', user.id)
+                            .single()
+                            .then(({ data, error }) => {
+                                if (data && !error) {
+                                    console.log('Found uploaded asset in database, adding to UI:', data);
+                                    setAssets(prev => {
+                                        // Check if it's already been added
+                                        if (prev.some(a => a.id === data.id)) {
+                                            return prev;
+                                        }
+                                        return [data as AssetWithMuxData, ...prev];
+                                    });
+                                } else if (error) {
+                                    console.log('No existing upload found, clearing recovery data');
+                                    localStorage.removeItem('lastUploadReference');
+                                    localStorage.removeItem('lastUploadTime');
+                                }
+                            });
+                    }
+                } else {
+                    // Upload is too old, clear the recovery data
+                    localStorage.removeItem('lastUploadReference');
+                    localStorage.removeItem('lastUploadTime');
+                }
+            }
+        } catch (e) {
+            console.warn('Error checking for upload recovery:', e);
+        }
+    }, [assets, supabase, user.id]);
 
     async function handleSave(url: string, metadata: {
         name: string
@@ -430,6 +754,56 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         return `https://image.mux.com/${asset.mux_playback_id}/thumbnail.jpg?width=640&fit_mode=preserve${thumbnailTokens[asset.mux_playback_id] ? `&token=${thumbnailTokens[asset.mux_playback_id]}` : ''
             }`;
     };
+
+    // Update the UploadWarning component to be responsive and dark mode compatible
+    function UploadWarning() {
+        const activeUploadsList = Object.entries(activeUploads);
+
+        if (activeUploadsList.length === 0) return null;
+
+        return (
+            <div className="fixed bottom-0 left-0 right-0 sm:bottom-4 sm:right-4 sm:left-auto z-50 flex flex-col gap-2 p-2 sm:p-0 max-w-full sm:max-w-md">
+                {activeUploadsList.map(([uploadId, upload]) => (
+                    <div
+                        key={uploadId}
+                        className={`
+                            rounded-lg p-3 sm:p-4 shadow-lg w-full 
+                            ${upload.status === 'error'
+                                ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-100'
+                                : upload.status === 'complete'
+                                    ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100'
+                                    : 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-100'
+                            }
+                        `}
+                    >
+                        <div className="flex items-center gap-3">
+                            {upload.status === 'error' ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            ) : upload.status === 'complete' ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                            ) : (
+                                <div className="animate-spin h-5 w-5 flex-shrink-0">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                </div>
+                            )}
+                            <div className="flex-grow">
+                                <p className="font-medium text-sm sm:text-base break-words">{upload.message}</p>
+                                {upload.status === 'processing' && (
+                                    <p className="text-xs mt-1 opacity-80">This might take a minute or two. We'll notify you when it's ready.</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen flex flex-col">
@@ -687,6 +1061,9 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     />
                 )}
             </div>
+
+            {/* Add the upload warning popup */}
+            <UploadWarning />
         </div>
     );
 }

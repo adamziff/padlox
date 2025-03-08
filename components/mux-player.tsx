@@ -3,9 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 
-// Helper for controlled logging
+// Helper for controlled logging - only log when DEBUG is set
 function log(message: string, ...args: unknown[]) {
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_DEBUG === 'true') {
         console.log(`[MuxPlayer] ${message}`, ...args);
     }
 }
@@ -49,15 +49,24 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title }: MuxPlayer
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
+    const [lastTokenFetchTime, setLastTokenFetchTime] = useState<number>(0);
 
     // Function to fetch the JWT tokens
     const fetchTokens = useCallback(async () => {
         try {
+            // Don't fetch tokens too frequently (prevent rate limiting)
+            const now = Date.now();
+            if (now - lastTokenFetchTime < 5000 && lastTokenFetchTime > 0 && retryCount < 3) {
+                log(`Skipping token fetch, last fetch was ${(now - lastTokenFetchTime) / 1000}s ago`);
+                return;
+            }
+
+            setLastTokenFetchTime(now);
             setLoading(true);
             setError(null);
 
             // Get signed JWTs for this playback ID
-            log(`Requesting tokens for playbackId: ${playbackId}`);
+            log(`Requesting tokens for playbackId: ${playbackId} (retry ${retryCount})`);
 
             // Add a cache-busting parameter to prevent caching issues
             const response = await fetch(`/api/mux/token?playbackId=${playbackId}&_=${Date.now()}`);
@@ -66,27 +75,33 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title }: MuxPlayer
                 let errorMessage = `${response.status} ${response.statusText}`;
                 try {
                     const errorData = await response.json();
-                    errorMessage = errorData.message || errorMessage;
-                } catch { }
-                throw new Error(`Failed to get playback token: ${errorMessage}`);
+                    errorMessage += `: ${errorData.message || 'Unknown error'}`;
+                    log(`Token API error: ${errorMessage}`);
+                } catch (e) {
+                    // If we can't parse the error as JSON, just use the status text
+                }
+                throw new Error(`Failed to fetch token: ${errorMessage}`);
             }
 
             const data = await response.json();
 
+            // Check if we received tokens
             if (!data.token && (!data.tokens || !data.tokens.playback)) {
-                throw new Error('No valid token in response');
+                throw new Error('No playback token returned from API');
             }
 
-            // Check if we have all tokens or just the main one
-            if (data.tokens && data.tokens.playback) {
-                log('Received tokens for playback, thumbnail, and storyboard');
+            log(`Tokens received successfully for ${playbackId}`);
+
+            // Set tokens based on what the API returns
+            if (data.tokens) {
+                log('Using separate tokens for playback, thumbnail, and storyboard');
                 setTokens({
                     playback: data.tokens.playback,
                     thumbnail: data.tokens.thumbnail,
                     storyboard: data.tokens.storyboard
                 });
-            } else if (data.token) {
-                // Set all token types to the same token for backward compatibility
+            } else {
+                // Backward compatibility: Use the single token for all purposes
                 log('Using single token for all purposes');
                 setTokens({
                     playback: data.token,
@@ -95,17 +110,17 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title }: MuxPlayer
                 });
             }
 
-            return data.token || (data.tokens && data.tokens.playback);
-        } catch (err) {
-            console.error('Error fetching JWT for playback:', err);
-            setError(err instanceof Error ? err.message : 'Failed to load video');
-            return null;
+            setError(null);
+        } catch (e) {
+            const errorMessage = e instanceof Error ? e.message : 'Unknown error fetching token';
+            log(`Error fetching tokens: ${errorMessage}`);
+            setError(`Failed to get video authorization: ${errorMessage}`);
         } finally {
             setLoading(false);
         }
-    }, [playbackId]);
+    }, [playbackId, retryCount, lastTokenFetchTime]);
 
-    // Initial fetch on mount
+    // Initial fetch on mount and when retry is triggered
     useEffect(() => {
         if (playbackId) {
             fetchTokens();
