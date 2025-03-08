@@ -43,8 +43,8 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                 (payload) => {
                     console.log('Asset modal received postgres update:',
                         'for asset:', asset.id,
-                        'new status:', (payload.new as any)?.mux_processing_status,
-                        'old status:', (payload.old as any)?.mux_processing_status);
+                        'new status:', (payload.new as { mux_processing_status?: string })?.mux_processing_status,
+                        'old status:', (payload.old as { mux_processing_status?: string })?.mux_processing_status);
 
                     // Create a fresh copy to ensure all properties are updated
                     const updatedAsset = { ...payload.new } as AssetWithMuxData;
@@ -125,7 +125,7 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                 clearInterval(refreshTimer);
             }
         };
-    }, [asset.id, supabase, isMuxProcessing]);
+    }, [asset.id, supabase, isMuxProcessing, asset]);
 
     // Update the asset when initialAsset changes (e.g., from parent component)
     useEffect(() => {

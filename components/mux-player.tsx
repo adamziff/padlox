@@ -77,8 +77,9 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title }: MuxPlayer
                     const errorData = await response.json();
                     errorMessage += `: ${errorData.message || 'Unknown error'}`;
                     log(`Token API error: ${errorMessage}`);
-                } catch (e) {
-                    // If we can't parse the error as JSON, just use the status text
+                } catch (error) {
+                    // If we can't parse the error as JSON, log it and use the status text
+                    console.error('Error parsing error response:', error);
                 }
                 throw new Error(`Failed to fetch token: ${errorMessage}`);
             }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/utils/supabase/client'
 import { CameraCapture } from './camera-capture'
@@ -14,13 +14,6 @@ import { TrashIcon, ImageIcon, VideoIcon, SpinnerIcon } from './icons'
 import { NavBar } from '@/components/nav-bar'
 import { generateVideoPoster } from '@/utils/video'
 import { User } from '@supabase/supabase-js'
-
-// Only keep necessary console.log statements, remove excessive logging
-function safeLog(message: string, ...args: unknown[]) {
-    if (process.env.NODE_ENV !== 'production') {
-        console.log(message, ...args);
-    }
-}
 
 type DashboardClientProps = {
     initialAssets: AssetWithMuxData[]
@@ -48,6 +41,31 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
     }>({})
     const supabase = createClient()
 
+    // Define fetchThumbnailToken before the useEffect that uses it
+    const fetchThumbnailToken = useCallback(async (playbackId: string) => {
+        try {
+            const response = await fetch(`/api/mux/token?playbackId=${playbackId}&_=${Date.now()}`);
+
+            if (!response.ok) {
+                throw new Error(`Failed to get token: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if (data.tokens?.thumbnail) {
+                setThumbnailTokens(prev => ({
+                    ...prev,
+                    [playbackId]: data.tokens.thumbnail
+                }));
+                return data.tokens.thumbnail;
+            }
+
+            return null;
+        } catch (err) {
+            console.error('Error fetching thumbnail token:', err);
+            return null;
+        }
+    }, []);
+
     // Setup real-time subscription for assets table
     useEffect(() => {
         console.log('Setting up realtime subscription for user:', user.id);
@@ -64,8 +82,8 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 (payload) => {
                     // Handle postgres change notification
                     console.log('Received postgres update from Supabase:', payload.eventType,
-                        'for asset:', (payload.new as any)?.id,
-                        'status:', (payload.new as any)?.mux_processing_status);
+                        'for asset:', (payload.new as { id?: string })?.id,
+                        'status:', (payload.new as { mux_processing_status?: string })?.mux_processing_status);
 
                     // Handle different types of changes
                     if (payload.eventType === 'INSERT') {
@@ -165,8 +183,8 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 // Handle broadcast message
                 console.log('Received broadcast for asset-ready:', payload);
 
-                if (payload.payload && payload.payload.id) {
-                    const assetId = payload.payload.id;
+                if (payload.payload && typeof payload.payload === 'object' && 'id' in payload.payload) {
+                    const assetId = payload.payload.id as string;
 
                     // Check if we have this asset
                     const assetExists = assets.some(a => a.id === assetId);
@@ -300,7 +318,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             channel.unsubscribe();
             clearInterval(checkInterval);
         };
-    }, [user.id, selectedAsset, mediaErrors, thumbnailTokens, fetchThumbnailToken, supabase, activeUploads]);
+    }, [user.id, selectedAsset, mediaErrors, thumbnailTokens, fetchThumbnailToken, supabase, activeUploads, assets]);
 
     async function handleCapture(file: File) {
         try {
@@ -491,7 +509,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
                     // Check if this upload is already in our assets list
                     const existingAsset = assets.find(a =>
-                        (a as any).client_reference_id === lastUploadReference
+                        'client_reference_id' in a && a.client_reference_id === lastUploadReference
                     );
 
                     if (!existingAsset) {
@@ -529,7 +547,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         } catch (e) {
             console.warn('Error checking for upload recovery:', e);
         }
-    }, [assets, supabase, user.id]);
+    }, [assets, supabase, user.id, thumbnailTokens, fetchThumbnailToken]);
 
     async function handleSave(url: string, metadata: {
         name: string
@@ -705,31 +723,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         }
     }
 
-    // Add a function to fetch the thumbnail token for a specific asset
-    async function fetchThumbnailToken(playbackId: string) {
-        try {
-            const response = await fetch(`/api/mux/token?playbackId=${playbackId}&_=${Date.now()}`);
-
-            if (!response.ok) {
-                throw new Error(`Failed to get token: ${response.status}`);
-            }
-
-            const data = await response.json();
-            if (data.tokens?.thumbnail) {
-                setThumbnailTokens(prev => ({
-                    ...prev,
-                    [playbackId]: data.tokens.thumbnail
-                }));
-                return data.tokens.thumbnail;
-            }
-
-            return null;
-        } catch (err) {
-            console.error('Error fetching thumbnail token:', err);
-            return null;
-        }
-    }
-
     // Update the fetchThumbnailToken call when assets change
     useEffect(() => {
         // Find all assets with ready Mux videos that need tokens
@@ -745,7 +738,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 fetchThumbnailToken(asset.mux_playback_id);
             }
         });
-    }, [assets, thumbnailTokens]);
+    }, [assets, thumbnailTokens, fetchThumbnailToken]);
 
     // Ensure mux_playback_id is defined before using it
     const getThumbnailUrl = (asset: AssetWithMuxData) => {
@@ -795,7 +788,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                             <div className="flex-grow">
                                 <p className="font-medium text-sm sm:text-base break-words">{upload.message}</p>
                                 {upload.status === 'processing' && (
-                                    <p className="text-xs mt-1 opacity-80">This might take a minute or two. We'll notify you when it's ready.</p>
+                                    <p className="text-sm mt-1 opacity-80">Don&apos;t worry, we&apos;ll notify you when it&apos;s ready.</p>
                                 )}
                             </div>
                         </div>

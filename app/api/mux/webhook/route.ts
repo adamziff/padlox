@@ -140,7 +140,7 @@ export async function POST(request: Request) {
       // Extract upload ID and correlation ID for lookup
       const uploadId = event.data.upload_id;
       // Use type assertion for metadata which isn't in the type definition
-      const correlationId = ((event.data as any).metadata?.correlation_id) || null;
+      const correlationId = ((event.data as { metadata?: { correlation_id?: string } }).metadata?.correlation_id) || null;
       
       console.log('Asset details from webhook:', {
         assetId: event.data.id,
