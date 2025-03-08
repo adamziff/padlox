@@ -2,10 +2,9 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { createMuxPlaybackJWT } from '@/utils/mux';
-import jwt from 'jsonwebtoken';
 
 // Helper for controlled logging
-function log(message: string, ...args: any[]) {
+function log(message: string, ...args: unknown[]) {
   if (process.env.NODE_ENV !== 'production') {
     console.log(`[TokenAPI] ${message}`, ...args);
   }

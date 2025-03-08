@@ -9,7 +9,6 @@ import { AssetModal } from './asset-modal'
 import { uploadToS3 } from '@/utils/s3'
 import { Button } from './ui/button'
 import { formatCurrency } from '@/utils/format'
-import { Asset } from '@/types/asset'
 import { AssetWithMuxData } from '@/types/mux'
 import { TrashIcon, ImageIcon, VideoIcon, SpinnerIcon } from './icons'
 import { NavBar } from '@/components/nav-bar'
@@ -17,7 +16,7 @@ import { generateVideoPoster } from '@/utils/video'
 import { User } from '@supabase/supabase-js'
 
 // Only keep necessary console.log statements, remove excessive logging
-function safeLog(message: string, ...args: any[]) {
+function safeLog(message: string, ...args: unknown[]) {
     if (process.env.NODE_ENV !== 'production') {
         console.log(message, ...args);
     }
@@ -134,7 +133,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 });
 
                 // Try to get the error details from the response
-                let errorData: any = {};
+                let errorData: Record<string, unknown> = {};
                 let errorDetail = '';
 
                 if (!response.ok) {

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { createClient as createServerClient } from '@/utils/supabase/server';
 import { verifyMuxWebhook } from '@/utils/mux';
 import { MuxWebhookEvent } from '@/types/mux';
 
@@ -20,64 +19,6 @@ function createServiceClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
-}
-
-// Utility function to diagnose database connection issues
-async function diagnoseDatabaseConnection(supabase: ReturnType<typeof createServiceClient>) {
-  try {
-    console.log('=== Database Connection Diagnostics ===');
-    
-    // Check if we can query a simple table
-    const { data: assets, error } = await supabase
-      .from('assets')
-      .select('count')
-      .limit(1);
-      
-    console.log('Simple query result:', assets, error);
-    
-    // Check if RLS policies might be preventing access
-    console.log('Testing for RLS issues...');
-    
-    // Most RLS policies allow service roles to bypass them
-    const serviceClient = process.env.SUPABASE_SERVICE_ROLE_KEY 
-      ? createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.SUPABASE_SERVICE_ROLE_KEY
-        )
-      : null;
-      
-    if (serviceClient) {
-      console.log('Service role client created, testing access...');
-      const { data: serviceAssets, error: serviceError } = await serviceClient
-        .from('assets')
-        .select('count');
-        
-      console.log('Service role query:', serviceAssets, serviceError);
-    } else {
-      console.log('No service role key available');
-    }
-    
-    // Check RLS policy
-    try {
-      const { data: auth, error: authError } = await supabase.auth.getSession();
-      console.log('Auth session:', auth?.session ? 'Active' : 'None', authError);
-    } catch (e) {
-      console.error('Auth check error:', e);
-    }
-    
-    // Check database URL and anon key format
-    console.log('DB URL:', process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 15) + '...');
-    console.log('Anon key format check:', 
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.substring(0, 10) + '...' + 
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.substring(
-        (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.length || 0) - 5
-      )
-    );
-    
-    console.log('=== End Diagnostics ===');
-  } catch (error) {
-    console.error('Error running diagnostics:', error);
-  }
 }
 
 // Add support for OPTIONS method (for CORS preflight requests)

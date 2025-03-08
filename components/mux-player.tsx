@@ -1,15 +1,18 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { createClient } from '@/utils/supabase/client';
 
 // Helper for controlled logging
-function log(message: string, ...args: any[]) {
+function log(message: string, ...args: unknown[]) {
     if (process.env.NODE_ENV !== 'production') {
         console.log(`[MuxPlayer] ${message}`, ...args);
     }
 }
+
+// Create fallback component with display name
+const FallbackComponent = () => <div>Error loading player</div>;
+FallbackComponent.displayName = 'MuxPlayerFallback';
 
 // Dynamically import the Mux Player component to avoid any SSR issues
 const MuxPlayerComponent = dynamic(
@@ -18,10 +21,13 @@ const MuxPlayerComponent = dynamic(
         return mod;
     }).catch(err => {
         console.error('Error loading @mux/mux-player-react:', err);
-        return () => <div>Error loading player</div>;
+        return FallbackComponent;
     }),
     { ssr: false }
 );
+
+// Add display name to the component
+MuxPlayerComponent.displayName = 'MuxPlayerComponent';
 
 interface MuxPlayerProps {
     playbackId: string;
@@ -30,7 +36,7 @@ interface MuxPlayerProps {
     title?: string;
 }
 
-export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: MuxPlayerProps) {
+export function MuxPlayer({ playbackId, aspectRatio = '16/9', title }: MuxPlayerProps) {
     const [tokens, setTokens] = useState<{
         playback: string | undefined;
         thumbnail: string | undefined;
@@ -43,11 +49,9 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
-    const playerRef = useRef<any>(null);
-    const supabase = createClient();
 
     // Function to fetch the JWT tokens
-    async function fetchTokens() {
+    const fetchTokens = useCallback(async () => {
         try {
             setLoading(true);
             setError(null);
@@ -99,7 +103,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
         } finally {
             setLoading(false);
         }
-    }
+    }, [playbackId]);
 
     // Initial fetch on mount
     useEffect(() => {
@@ -109,7 +113,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
             setError('No playback ID provided');
             setLoading(false);
         }
-    }, [playbackId, retryCount]);
+    }, [playbackId, retryCount, fetchTokens]);
 
     // Function to retry loading
     const handleRetry = () => {
@@ -153,7 +157,6 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
             style={{ aspectRatio }}
         >
             <MuxPlayerComponent
-                ref={playerRef}
                 playbackId={playbackId}
                 streamType="on-demand"
                 tokens={{
@@ -165,11 +168,11 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', poster, title }: M
                     height: "100%",
                     width: "100%"
                 }}
-                onError={(error: any) => {
-                    console.error('Mux player error:', error);
+                onError={(evt) => {
+                    console.error('Mux player error:', evt);
 
                     // Check if it's an auth error
-                    const errorMsg = error?.message || error?.toString() || '';
+                    const errorMsg = evt.toString() || '';
                     const isAuthError =
                         errorMsg.includes('Authorization') ||
                         errorMsg.includes('auth') ||

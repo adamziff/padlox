@@ -1,14 +1,10 @@
 // This is a Server Component by default (no 'use client' directive)
-import { cookies } from 'next/headers'
-import { createServerClient } from '@supabase/ssr'
 import { DashboardClient } from '@/components/dashboard-client'
-import { Asset } from '@/types/asset'
 import { redirect } from 'next/navigation'
-import { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/utils/supabase/server'
 import { Suspense } from 'react'
-import { type Asset as AssetType } from '@/types/asset'
 import { AssetWithMuxData } from '@/types/mux'
+import { SupabaseClient } from '@supabase/supabase-js'
 
 // Use async/await for server-side data fetching
 export default async function Dashboard() {
@@ -36,7 +32,7 @@ export default async function Dashboard() {
     }
 
     // Transform assets to include absolute media_url if it's not a Mux video
-    const transformedAssets = (assets || []).map((asset: any) => {
+    const transformedAssets = (assets || []).map((asset: AssetWithMuxData) => {
         // Check if this is a Mux video (has mux_asset_id)
         if ('mux_asset_id' in asset && asset.mux_asset_id) {
             // For Mux videos, the media_url is stored as empty until processing is complete
