@@ -40,7 +40,8 @@ export async function updateSession(request: NextRequest) {
     // Allow access to auth-related pages and homepage for unauthenticated users
     const isPublicPage = request.nextUrl.pathname.startsWith('/login') ||
         request.nextUrl.pathname.startsWith('/auth') ||
-        request.nextUrl.pathname === '/'
+        request.nextUrl.pathname === '/' ||
+        request.nextUrl.pathname === '/api/mux/webhook'
 
     console.log('Is public page:', isPublicPage)
 

@@ -42,50 +42,104 @@ export async function POST(request: Request) {
     
     // Access Supabase to update the asset status
     const supabase = await createClient();
+
+    console.log("--- DETAILED WEBHOOK DEBUGGING ---");
     
-    // Find the asset by the Mux asset ID - first try direct match
-    const { data: assets, error: findError } = await supabase
+    // First, get ALL video assets to see what's in there (limited to 10)
+    const { data: allVideos, error: videosError } = await supabase
       .from('assets')
-      .select('*')
-      .eq('mux_asset_id', event.data.id)
-      .limit(1);
-    
-    if (findError) {
-      console.error('Database error finding asset:', findError);
-      return new NextResponse('Database error', { status: 500 });
+      .select('id, media_type, mux_asset_id, created_at')
+      .eq('media_type', 'video')
+      .order('created_at', { ascending: false })
+      .limit(10);
+      
+    if (videosError) {
+      console.error('Error loading videos:', videosError);
+    } else {
+      console.log('ALL RECENT VIDEO ASSETS:', JSON.stringify(allVideos, null, 2));
     }
     
-    // If not found and we have an upload ID, try that
-    let asset;
-    if (!assets || assets.length === 0) {
-      console.log('Asset not found by Mux asset ID, checking upload ID');
+    // Log the upload ID we're looking for
+    if (event.data.upload_id) {
+      console.log(`UPLOAD ID FROM WEBHOOK: "${event.data.upload_id}"`);
       
-      if (event.data.upload_id) {
-        const { data: uploadAssets, error: uploadFindError } = await supabase
+      // Try to find assets with similar IDs using a direct query
+      const { data: likeAssets, error: likeError } = await supabase
+        .from('assets')
+        .select('id, mux_asset_id')
+        .filter('mux_asset_id', 'ilike', `%${event.data.upload_id.substring(0, 10)}%`)
+        .limit(5);
+        
+      if (likeError) {
+        console.error('Error with pattern matching search:', likeError);
+      } else {
+        console.log('SIMILAR ID SEARCH RESULTS:', JSON.stringify(likeAssets, null, 2));
+      }
+    }
+    
+    // Simplify our search to just focus on the upload ID
+    let asset = null;
+    
+    if (event.data.upload_id) {
+      console.log('Looking for asset with mux_asset_id = upload_id:', event.data.upload_id);
+      
+      // SIMPLE EXACT MATCH
+      const { data: uploadAssets, error: uploadFindError } = await supabase
+        .from('assets')
+        .select('*')
+        .eq('mux_asset_id', event.data.upload_id)
+        .limit(1);
+        
+      if (uploadFindError) {
+        console.error('Database error finding asset by upload ID:', uploadFindError);
+        return new NextResponse('Database error', { status: 500 });
+      }
+      
+      if (uploadAssets && uploadAssets.length > 0) {
+        console.log('FOUND ASSET BY EXACT UPLOAD ID MATCH:', uploadAssets[0].id);
+        asset = uploadAssets[0];
+      } else {
+        console.log('No exact match found for upload_id, trying most recent prep asset');
+        
+        // FALLBACK TO MOST RECENT PREPARING ASSET
+        const { data: recentAssets, error: recentError } = await supabase
           .from('assets')
           .select('*')
-          .eq('mux_asset_id', event.data.upload_id)
+          .eq('media_type', 'video')
+          .eq('mux_processing_status', 'preparing')
+          .order('created_at', { ascending: false })
           .limit(1);
           
-        if (uploadFindError) {
-          console.error('Database error finding asset by upload ID:', uploadFindError);
-          return new NextResponse('Database error', { status: 500 });
-        }
-        
-        if (uploadAssets && uploadAssets.length > 0) {
-          console.log('Found asset by upload ID:', uploadAssets[0].id);
-          asset = uploadAssets[0];
+        if (recentError) {
+          console.error('Error finding recent preparing asset:', recentError);
+        } else if (recentAssets && recentAssets.length > 0) {
+          console.log('FOUND MOST RECENT PREPARING ASSET:', recentAssets[0].id);
+          console.log('Stored mux_asset_id:', recentAssets[0].mux_asset_id);
+          asset = recentAssets[0];
         } else {
-          console.error('Asset not found for Mux asset ID or upload ID');
-          return new NextResponse('Asset not found', { status: 404 });
+          // EMERGENCY FALLBACK - GRAB MOST RECENT VIDEO ASSET REGARDLESS OF STATUS
+          console.log('No preparing assets found, trying most recent video asset');
+          
+          const { data: anyAssets, error: anyError } = await supabase
+            .from('assets')
+            .select('*')
+            .eq('media_type', 'video')
+            .order('created_at', { ascending: false })
+            .limit(1);
+            
+          if (anyError) {
+            console.error('Error finding any video asset:', anyError);
+          } else if (anyAssets && anyAssets.length > 0) {
+            console.log('FOUND MOST RECENT VIDEO ASSET AS FALLBACK:', anyAssets[0].id);
+            asset = anyAssets[0];
+          }
         }
-      } else {
-        console.error('Asset not found and no upload ID available');
-        return new NextResponse('Asset not found', { status: 404 });
       }
-    } else {
-      asset = assets[0];
-      console.log('Found asset by Mux asset ID:', asset.id);
+    }
+    
+    if (!asset) {
+      console.error('No matching or recent video assets found');
+      return new NextResponse('Asset not found', { status: 404 });
     }
     
     const playbackId = event.data.playback_ids?.[0]?.id;
