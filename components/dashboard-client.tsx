@@ -99,29 +99,37 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
                             // If status changed to ready, update active uploads
                             if (updatedAsset.mux_processing_status === 'ready') {
-                                console.log('Asset is now ready - updating UI:', updatedAsset.id);
+                                console.log('Asset is now ready - updating UI and aggressively clearing notifications:', updatedAsset.id);
+
+                                // Immediately remove any upload notifications for this asset
                                 setActiveUploads(prev => {
+                                    // Log current upload notifications for debugging
+                                    console.log('Current active uploads:', Object.entries(prev).map(([id, u]) => ({ id, assetId: u.assetId })));
+
                                     const newUploads = { ...prev };
-                                    // Find any upload matching this asset ID
+                                    let found = false;
+
+                                    // Find and remove any uploads for this asset
                                     Object.keys(newUploads).forEach(uploadId => {
                                         if (newUploads[uploadId].assetId === updatedAsset.id) {
-                                            newUploads[uploadId] = {
-                                                ...newUploads[uploadId],
-                                                status: 'complete',
-                                                message: 'Video processing complete!'
-                                            };
-                                            // Auto-remove this notification after 3 seconds
-                                            setTimeout(() => {
-                                                setActiveUploads(current => {
-                                                    const updated = { ...current };
-                                                    delete updated[uploadId];
-                                                    return updated;
-                                                });
-                                            }, 3000);
+                                            console.log(`Found and removing upload notification for ready asset: ${updatedAsset.id}`);
+                                            delete newUploads[uploadId];
+                                            found = true;
                                         }
                                     });
+
+                                    if (!found) {
+                                        console.log(`No upload notifications found for asset: ${updatedAsset.id}`);
+                                    }
+
                                     return newUploads;
                                 });
+
+                                // If status changed to ready, fetch thumbnail token
+                                if (updatedAsset.mux_playback_id && !thumbnailTokens[updatedAsset.mux_playback_id]) {
+                                    console.log(`Fetching thumbnail token for newly ready asset: ${updatedAsset.id}`);
+                                    fetchThumbnailToken(updatedAsset.mux_playback_id);
+                                }
                             }
                         }
 
@@ -217,28 +225,28 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
                                 // Update upload notification if needed
                                 if (updatedAsset.mux_processing_status === 'ready') {
-                                    setActiveUploads(prev => {
-                                        const newUploads = { ...prev };
+                                    console.log('Asset from broadcast is now ready - aggressively clearing notifications:', assetId);
 
-                                        // Find any uploads for this asset
+                                    // Immediately remove any upload notifications for this asset
+                                    setActiveUploads(prev => {
+                                        // Log current upload notifications for debugging
+                                        console.log('Current active uploads from broadcast:', Object.entries(prev).map(([id, u]) => ({ id, assetId: u.assetId })));
+
+                                        const newUploads = { ...prev };
+                                        let found = false;
+
+                                        // Find and remove any uploads for this asset
                                         Object.keys(newUploads).forEach(uploadId => {
                                             if (newUploads[uploadId].assetId === assetId) {
-                                                newUploads[uploadId] = {
-                                                    ...newUploads[uploadId],
-                                                    status: 'complete',
-                                                    message: 'Video processing complete!'
-                                                };
-
-                                                // Remove after a delay
-                                                setTimeout(() => {
-                                                    setActiveUploads(current => {
-                                                        const updated = { ...current };
-                                                        delete updated[uploadId];
-                                                        return updated;
-                                                    });
-                                                }, 3000);
+                                                console.log(`Found and removing upload notification for broadcast ready asset: ${assetId}`);
+                                                delete newUploads[uploadId];
+                                                found = true;
                                             }
                                         });
+
+                                        if (!found) {
+                                            console.log(`No upload notifications found for broadcast asset: ${assetId}`);
+                                        }
 
                                         return newUploads;
                                     });
@@ -330,13 +338,13 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 // Create a unique upload ID for tracking this upload
                 const uploadId = `upload_${Date.now()}`;
 
-                // Show the upload warning
+                // Show the upload warning with clearer messaging
                 setActiveUploads(prev => ({
                     ...prev,
                     [uploadId]: {
                         assetId: '',  // Will set this after response
                         status: 'uploading',
-                        message: 'Uploading video... Please do not refresh the page.',
+                        message: 'Uploading video to server... Please do not refresh until upload completes.',
                         startTime: Date.now()
                     }
                 }));
@@ -418,16 +426,25 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     }
                     setAssets(prev => [asset, ...prev]);
 
-                    // Update the active upload with the asset ID
-                    setActiveUploads(prev => ({
-                        ...prev,
-                        [uploadId]: {
-                            ...prev[uploadId],
-                            assetId: asset.id,
-                            status: 'processing',
-                            message: 'Video uploaded. Processing in progress... Please do not refresh the page.'
+                    // Update the active upload with the asset ID - be very clear for debugging
+                    console.log(`Setting assetId ${asset.id} for upload ${uploadId} in notification`);
+                    setActiveUploads(prev => {
+                        // Check if this uploadId actually exists
+                        if (!prev[uploadId]) {
+                            console.warn(`Upload ${uploadId} not found in activeUploads!`);
+                            return prev;
                         }
-                    }));
+
+                        return {
+                            ...prev,
+                            [uploadId]: {
+                                ...prev[uploadId],
+                                assetId: asset.id,
+                                status: 'processing',
+                                message: 'Video uploaded. Processing is happening in the background - you can continue using the app.'
+                            }
+                        };
+                    });
                 } else {
                     console.warn('No asset data returned from server');
                 }
@@ -798,6 +815,99 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         );
     }
 
+    // Also add a timeout to auto-dismiss processing notifications after 3 minutes
+    // This is a fallback in case webhook processing fails
+    useEffect(() => {
+        // Set up a timer to automatically dismiss processing notifications after 3 minutes
+        const processingUploads = Object.entries(activeUploads).filter(
+            ([, upload]) => upload.status === 'processing'
+        );
+
+        processingUploads.forEach(([uploadId, upload]) => {
+            const elapsed = Date.now() - upload.startTime;
+            const maxProcessingTime = 3 * 60 * 1000; // 3 minutes
+
+            if (elapsed > maxProcessingTime) {
+                console.log(`Auto-dismissing stale processing notification for ${upload.assetId}`);
+                setActiveUploads(prev => {
+                    const newUploads = { ...prev };
+                    delete newUploads[uploadId];
+                    return newUploads;
+                });
+            }
+        });
+
+        return () => { };
+    }, [activeUploads]);
+
+    // Add a direct effect to check for and remove notifications for ready assets
+    useEffect(() => {
+        // This effect specifically monitors assets for status changes
+        console.log('Checking assets for completed uploads...');
+
+        // Find all uploads that have corresponding assets that are now ready
+        const uploadsToRemove: string[] = [];
+
+        // For each active upload notification, check if its asset is now ready
+        Object.entries(activeUploads).forEach(([uploadId, upload]) => {
+            // Skip if no assetId assigned yet
+            if (!upload.assetId) return;
+
+            // Find this asset in the assets list
+            const matchingAsset = assets.find(asset => asset.id === upload.assetId);
+            if (matchingAsset && 'mux_processing_status' in matchingAsset && matchingAsset.mux_processing_status === 'ready') {
+                console.log(`Found ready asset for active upload - removing notification: ${upload.assetId}`);
+                uploadsToRemove.push(uploadId);
+            }
+        });
+
+        // Remove the identified uploads
+        if (uploadsToRemove.length > 0) {
+            console.log(`Removing ${uploadsToRemove.length} completed upload notifications`);
+            setActiveUploads(prev => {
+                const newUploads = { ...prev };
+                uploadsToRemove.forEach(id => {
+                    delete newUploads[id];
+                });
+                return newUploads;
+            });
+        }
+    }, [assets, activeUploads]);
+
+    // Add a debug effect to log notification state
+    useEffect(() => {
+        // Log notification state when it changes
+        if (Object.keys(activeUploads).length > 0) {
+            console.log('Active uploads state changed:',
+                Object.entries(activeUploads).map(([id, upload]) => ({
+                    id,
+                    assetId: upload.assetId,
+                    status: upload.status,
+                    elapsedSeconds: Math.floor((Date.now() - upload.startTime) / 1000)
+                }))
+            );
+        }
+    }, [activeUploads]);
+
+    // Also add a special function to clear notifications if we get into a stuck state
+    // This is just for debugging - we shouldn't need it in production
+    const DEBUG_clearAllNotifications = () => {
+        // You can call this from browser console with:
+        // document.dispatchEvent(new CustomEvent('debug-clear-notifications'));
+        setActiveUploads({});
+        console.log('All notifications cleared by debug function');
+    };
+
+    useEffect(() => {
+        // Listen for a debug clear event
+        const handleDebugClear = () => DEBUG_clearAllNotifications();
+        document.addEventListener('debug-clear-notifications', handleDebugClear);
+
+        return () => {
+            document.removeEventListener('debug-clear-notifications', handleDebugClear);
+        };
+    }, []);
+
     return (
         <div className="min-h-screen flex flex-col">
             <NavBar />
@@ -1059,4 +1169,4 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             <UploadWarning />
         </div>
     );
-}
+} 
