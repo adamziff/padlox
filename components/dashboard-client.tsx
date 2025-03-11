@@ -688,6 +688,13 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
     }
 
     function handleAssetClick(asset: AssetWithMuxData, event: React.MouseEvent) {
+        // Don't process clicks on videos that are still processing
+        if (asset.media_type === 'video' && asset.mux_processing_status === 'preparing') {
+            // Prevent any interaction for videos that are still processing
+            console.log('Ignoring click on processing video asset:', asset.id);
+            return;
+        }
+
         if (isSelectionMode) {
             toggleAssetSelection(asset.id, event)
         } else {
@@ -969,11 +976,13 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
                     {assets.map(asset => {
                         const isProcessing = asset.mux_processing_status === 'preparing';
+                        const isVideo = asset.media_type === 'video';
+                        const isClickable = !(isVideo && isProcessing);
 
                         return (
                             <div
                                 key={asset.id}
-                                className={`group relative aspect-square rounded-lg overflow-hidden bg-muted cursor-pointer hover:opacity-90 transition-opacity ${selectedAssets.has(asset.id) ? 'ring-2 ring-primary' : ''}`}
+                                className={`group relative aspect-square rounded-lg overflow-hidden bg-muted ${isClickable ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed'} transition-opacity ${selectedAssets.has(asset.id) ? 'ring-2 ring-primary' : ''}`}
                                 onClick={(e) => handleAssetClick(asset, e)}
                             >
                                 {isSelectionMode && (
