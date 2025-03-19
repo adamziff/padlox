@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { MuxAsset } from '@/types/mux';
+import crypto from 'crypto';
 
 // Helper for controlled logging
 function log(message: string, ...args: unknown[]) {
@@ -132,12 +133,38 @@ export function verifyMuxWebhook(
   secret: string
 ): boolean {
   try {
-    // Verify the signature using the secret
-    jwt.verify(signature, secret, {
-      algorithms: ['HS256'],
-    });
-    
-    return true;
+    // Extract timestamp and signature from the header
+    const signatureParts = signature.split(',');
+    if (signatureParts.length !== 2) {
+      console.error('Invalid signature format, expected t=[timestamp],v1=[signature]');
+      return false;
+    }
+
+    // Extract timestamp and v1 signature
+    const timestampPart = signatureParts[0];
+    const signaturePart = signatureParts[1];
+
+    if (!timestampPart.startsWith('t=') || !signaturePart.startsWith('v1=')) {
+      console.error('Invalid signature format, expected t=[timestamp],v1=[signature]');
+      return false;
+    }
+
+    const timestamp = timestampPart.substring(2);
+    const receivedSignature = signaturePart.substring(3);
+
+    // Create the string to sign (timestamp.payload)
+    const signedPayload = `${timestamp}.${payload}`;
+
+    // Calculate expected signature using HMAC with SHA-256
+    const hmac = crypto.createHmac('sha256', secret);
+    hmac.update(signedPayload);
+    const expectedSignature = hmac.digest('hex');
+
+    // Perform a timing-safe comparison of the signatures
+    return crypto.timingSafeEqual(
+      Buffer.from(expectedSignature),
+      Buffer.from(receivedSignature)
+    );
   } catch (error) {
     console.error('Invalid Mux webhook signature:', error);
     return false;

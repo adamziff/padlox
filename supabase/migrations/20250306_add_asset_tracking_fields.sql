@@ -1,3 +1,17 @@
+-- Create a table to store Mux webhook events
+CREATE TABLE IF NOT EXISTS public.webhook_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    event_type TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    processed BOOLEAN DEFAULT false NOT NULL,
+    processed_at TIMESTAMPTZ,
+    mux_asset_id TEXT,
+    mux_upload_id TEXT,
+    processing_error TEXT
+);
+
 -- Migration to add new tracking fields to assets table
 -- This helps with reliability when page refreshes happen during video uploads
 
