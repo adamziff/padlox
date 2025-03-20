@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { createClient } from '@/utils/supabase/client'
-import { CameraCapture } from './camera-capture'
+import { CameraCaptureWrapper } from './camera-capture-wrapper'
 import { MediaPreview } from './media-preview'
 import { AssetModal } from './asset-modal'
 import { uploadToS3 } from '@/utils/s3'
@@ -955,7 +955,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 </div>
 
                 {showCamera && (
-                    <CameraCapture
+                    <CameraCaptureWrapper
                         onCapture={handleCapture}
                         onClose={() => setShowCamera(false)}
                     />

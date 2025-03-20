@@ -41,6 +41,7 @@
     "postgres": "^3.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-media-recorder": "^1.7.1",
     "resend": "^4.1.2",
     "sharp": "^0.33.5",
     "sonner": "^1.7.4",
