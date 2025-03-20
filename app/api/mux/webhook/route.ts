@@ -71,12 +71,40 @@ export async function POST(request: Request) {
     
     console.log('Received webhook from Mux:', rawBody.substring(0, 200) + '...');
     
-    // Verify the webhook signature in production
-    if (process.env.NODE_ENV === 'production') {
-      if (!verifyMuxWebhook(rawBody, muxSignature, process.env.MUX_TOKEN_SECRET!)) {
+    // Verify the webhook signature unless explicitly disabled
+    const skipSignatureVerification = process.env.MUX_SKIP_SIGNATURE_VERIFICATION === 'true';
+    
+    if (!skipSignatureVerification) {
+      // Use the webhook signing secret, not the API token secret
+      const webhookSecret = process.env.MUX_WEBHOOK_SECRET;
+      
+      if (!webhookSecret) {
+        console.error('Missing MUX_WEBHOOK_SECRET environment variable');
+        return new NextResponse('Server configuration error', { status: 500 });
+      }
+      
+      console.log('Webhook verification attempt with secret of length:', webhookSecret.length);
+      
+      // Try Mux webhook verification
+      if (!verifyMuxWebhook(rawBody, muxSignature, webhookSecret)) {
+        // If verification fails, log more details
         console.error('Invalid Mux webhook signature');
+        console.log('Signature header:', muxSignature);
+        console.log('First 15 characters of webhook body:', rawBody.substring(0, 15) + '...');
+        
+        // Create a test event for debugging - do NOT leave in production
+        const debugInfo = {
+          header: muxSignature,
+          timestamp: muxSignature.split(',')[0].substring(2),
+          bodyPreview: rawBody.substring(0, 100)
+        };
+        console.log('Debug info:', JSON.stringify(debugInfo));
+        
         return new NextResponse('Invalid signature', { status: 401 });
       }
+      console.log('Mux webhook signature verified successfully');
+    } else {
+      console.log('WARNING: Skipping Mux webhook signature verification');
     }
     
     // Parse the webhook payload
@@ -87,50 +115,51 @@ export async function POST(request: Request) {
     // We'll store all webhook events for processing, but we'll only act immediately on specific types
     const serviceClient = createServiceClient();
     
-    // Store the webhook event for later processing
-    // First, check if a webhook_events table exists
+    // Check if webhook_events table exists
+    let webhookTableExists = false;
     try {
       const { error: tableCheckError } = await serviceClient
         .from('webhook_events')
         .select('id')
         .limit(1);
         
-      // If the table doesn't exist, we'll need to create it
-      if (tableCheckError && tableCheckError.code === '42P01') { // Table doesn't exist
-        console.log('webhook_events table does not exist, attempting to create it');
-        
-        // Create the webhook_events table using SQL (we need service role for this)
-        const { error: createTableError } = await serviceClient.rpc('create_webhook_events_table');
-        
-        if (createTableError) {
-          console.error('Error creating webhook_events table:', createTableError);
-          // Continue anyway, we'll just return a message to Mux so it doesn't retry
-        }
+      if (tableCheckError && tableCheckError.code === '42P01') {
+        console.error('ERROR: webhook_events table does not exist. Webhook data will not be stored.');
+        console.error('Create the table manually before processing webhooks.');
+        webhookTableExists = false;
+      } else if (tableCheckError) {
+        console.error('Error checking webhook_events table:', tableCheckError);
+        webhookTableExists = false;
+      } else {
+        webhookTableExists = true;
       }
     } catch (e) {
       console.error('Error checking webhook_events table:', e);
+      webhookTableExists = false;
     }
     
-    // Store the webhook event
-    try {
-      const { error: insertError } = await serviceClient
-        .from('webhook_events')
-        .insert({
-          event_type: event.type,
-          event_id: event.id,
-          payload: event,
-          processed: false,
-          mux_asset_id: event.data.id,
-          mux_upload_id: event.data.upload_id || null
-        });
-        
-      if (insertError) {
-        console.error('Error storing webhook event:', insertError);
-      } else {
-        console.log('Successfully stored webhook event for later processing');
+    // Store the webhook event if the table exists
+    if (webhookTableExists) {
+      try {
+        const { error: insertError } = await serviceClient
+          .from('webhook_events')
+          .insert({
+            event_type: event.type,
+            event_id: event.id,
+            payload: event,
+            processed: false,
+            mux_asset_id: event.data.id,
+            mux_upload_id: event.data.upload_id || null
+          });
+          
+        if (insertError) {
+          console.error('Error storing webhook event:', insertError);
+        } else {
+          console.log('Successfully stored webhook event for later processing');
+        }
+      } catch (e) {
+        console.error('Error inserting webhook event:', e);
       }
-    } catch (e) {
-      console.error('Error inserting webhook event:', e);
     }
     
     // For video.asset.ready events, try to update the corresponding asset if we can
@@ -150,27 +179,29 @@ export async function POST(request: Request) {
       });
       
       try {
-        // IMPORTANT: Always store the webhook event in the database first
+        // IMPORTANT: Always store the webhook event in the database first for video.asset.ready events
         // This ensures we can process it later even if immediate processing fails
-        try {
-          const { error: storeError } = await serviceClient
-            .from('webhook_events')
-            .insert({
-              event_type: event.type,
-              event_id: event.id,
-              payload: event,
-              mux_asset_id: event.data.id,
-              mux_upload_id: uploadId,
-              mux_correlation_id: correlationId
-            });
-            
-          if (storeError) {
-            console.error('Error storing webhook event for later processing:', storeError);
-          } else {
-            console.log('Successfully stored webhook event for later processing');
+        if (webhookTableExists) {
+          try {
+            const { error: storeError } = await serviceClient
+              .from('webhook_events')
+              .insert({
+                event_type: event.type,
+                event_id: event.id,
+                payload: event,
+                mux_asset_id: event.data.id,
+                mux_upload_id: uploadId,
+                mux_correlation_id: correlationId
+              });
+              
+            if (storeError) {
+              console.error('Error storing webhook event for later processing:', storeError);
+            } else {
+              console.log('Successfully stored asset.ready webhook event');
+            }
+          } catch (storeErr) {
+            console.error('Exception storing webhook event:', storeErr);
           }
-        } catch (storeErr) {
-          console.error('Exception storing webhook event:', storeErr);
         }
       
         // Now try to process it immediately using multiple lookup strategies
@@ -292,16 +323,18 @@ export async function POST(request: Request) {
               
               // Mark the webhook as processed now that we've updated the asset
               try {
-                await serviceClient
-                  .from('webhook_events')
-                  .update({ 
-                    processed: true, 
-                    processed_at: new Date().toISOString(),
-                    asset_id: foundAsset.id 
-                  })
-                  .eq('event_id', event.id);
-                  
-                console.log('Marked webhook event as processed');
+                if (webhookTableExists) {
+                  await serviceClient
+                    .from('webhook_events')
+                    .update({ 
+                      processed: true, 
+                      processed_at: new Date().toISOString(),
+                      asset_id: foundAsset.id 
+                    })
+                    .eq('event_id', event.id);
+                    
+                  console.log('Marked webhook event as processed');
+                }
               } catch (markError) {
                 console.error('Error marking webhook as processed:', markError);
               }

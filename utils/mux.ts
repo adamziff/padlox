@@ -133,10 +133,14 @@ export function verifyMuxWebhook(
   secret: string
 ): boolean {
   try {
+    console.log('Beginning Mux webhook verification');
+    console.log('Secret length:', secret?.length);
+    
     // Extract timestamp and signature from the header
     const signatureParts = signature.split(',');
     if (signatureParts.length !== 2) {
       console.error('Invalid signature format, expected t=[timestamp],v1=[signature]');
+      console.error('Received signature:', signature);
       return false;
     }
 
@@ -146,27 +150,72 @@ export function verifyMuxWebhook(
 
     if (!timestampPart.startsWith('t=') || !signaturePart.startsWith('v1=')) {
       console.error('Invalid signature format, expected t=[timestamp],v1=[signature]');
+      console.error('Timestamp part:', timestampPart);
+      console.error('Signature part:', signaturePart);
       return false;
     }
 
+    // According to Mux docs:
+    // 1. Extract timestamp and v1 value
     const timestamp = timestampPart.substring(2);
     const receivedSignature = signaturePart.substring(3);
+    
+    console.log('Extracted timestamp:', timestamp);
+    console.log('Extracted signature:', receivedSignature.substring(0, 6) + '...');
 
-    // Create the string to sign (timestamp.payload)
+    // 2. Create the signed payload string (timestamp.payload) 
     const signedPayload = `${timestamp}.${payload}`;
+    console.log('Signed payload length:', signedPayload.length);
 
-    // Calculate expected signature using HMAC with SHA-256
+    // 3. Calculate expected signature using HMAC with SHA-256
+    // Ensure we're using the raw secret string without any encoding transformations
     const hmac = crypto.createHmac('sha256', secret);
     hmac.update(signedPayload);
     const expectedSignature = hmac.digest('hex');
+    
+    console.log('Expected signature:', expectedSignature.substring(0, 6) + '...');
+    console.log('Received signature:', receivedSignature.substring(0, 6) + '...');
 
-    // Perform a timing-safe comparison of the signatures
-    return crypto.timingSafeEqual(
-      Buffer.from(expectedSignature),
-      Buffer.from(receivedSignature)
-    );
+    // 4. Compare the signatures for debugging
+    if (expectedSignature !== receivedSignature) {
+      console.error('Signature mismatch:');
+      console.error('- Expected:', expectedSignature);
+      console.error('- Received:', receivedSignature);
+      
+      // Try with URL-decoded secret in case it was URL-encoded in the dashboard
+      try {
+        const decodedSecret = decodeURIComponent(secret);
+        if (decodedSecret !== secret) {
+          console.log('Trying URL-decoded secret...');
+          const hmac2 = crypto.createHmac('sha256', decodedSecret);
+          hmac2.update(signedPayload);
+          const altExpectedSignature = hmac2.digest('hex');
+          
+          if (altExpectedSignature === receivedSignature) {
+            console.log('Signature matched using URL-decoded secret!');
+            return true;
+          }
+        }
+      } catch (e) {
+        console.log('Failed decoding attempt:', e);
+      }
+      
+      return false;
+    }
+
+    // For production security, use timing-safe comparison
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(expectedSignature, 'hex'),
+        Buffer.from(receivedSignature, 'hex')
+      );
+    } catch (e) {
+      console.error('Error in timing-safe comparison:', e);
+      // Fall back to the string comparison result
+      return expectedSignature === receivedSignature;
+    }
   } catch (error) {
-    console.error('Invalid Mux webhook signature:', error);
+    console.error('Error during Mux webhook signature verification:', error);
     return false;
   }
 }

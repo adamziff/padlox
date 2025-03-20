@@ -41,8 +41,13 @@ This document describes how the Padlox application integrates with Mux for video
 Ensure the following environment variables are set:
 
 ```
+# API access credentials
 MUX_TOKEN_ID=your_mux_token_id
 MUX_TOKEN_SECRET=your_mux_token_secret
+
+# Webhook signing secret (different from your API token secret)
+# Found in your Mux dashboard under Settings > Webhooks > Your webhook endpoint > Signing Secret
+MUX_WEBHOOK_SECRET=your_webhook_signing_secret
 ```
 
 ## Webhook Setup
@@ -55,7 +60,9 @@ https://your-domain.com/api/mux/webhook
 
 Make sure to enable the following events:
 - `video.asset.ready`
-- `video.asset.errored` 
+- `video.asset.errored`
+
+**Important**: When you create a webhook in the Mux dashboard, you'll be given a signing secret specific to that webhook. This is different from your API token secret and should be set as the `MUX_WEBHOOK_SECRET` environment variable.
 
 ## Local Development with Webhooks
 
@@ -88,10 +95,22 @@ This will display a URL like `https://abc123-xyz.ngrok-free.app` that forwards t
 
 ### Step 4: Update your environment variables
 
-Update your `.env.local` file to use the ngrok URL:
+Update your `.env.local` file to use the ngrok URL and configure webhook verification:
 
 ```
 NEXT_PUBLIC_SITE_URL=https://your-ngrok-url.ngrok-free.app
+
+# Set this to 'true' during initial testing to bypass signature verification
+# Remove this or set to 'false' to test the full verification flow
+MUX_SKIP_SIGNATURE_VERIFICATION=true
+
+# Webhook signing secret - copy this from the Mux dashboard
+# Settings > Webhooks > Your webhook endpoint > Signing Secret
+MUX_WEBHOOK_SECRET=your_mux_webhook_signing_secret
+
+# Your API credentials (different from webhook secret)
+MUX_TOKEN_ID=your_mux_token_id
+MUX_TOKEN_SECRET=your_mux_token_secret
 ```
 
 ### Step 5: Configure webhook URL in Mux dashboard
@@ -102,13 +121,16 @@ NEXT_PUBLIC_SITE_URL=https://your-ngrok-url.ngrok-free.app
 4. Set the URL to: `https://your-ngrok-url.ngrok-free.app/api/mux/webhook`
 5. Make sure to include the full path `/api/mux/webhook`
 6. Select the events you want to receive (`video.asset.ready`, `video.asset.errored`, etc.)
+7. **Important**: Copy the signing secret displayed in the Mux dashboard and set it as your `MUX_TOKEN_SECRET` environment variable
 
-### Step 6: Test the webhook
+### Step 6: Test the webhook verification
 
-1. Make sure your local server is running
-2. Make a test upload to Mux
-3. Check your server logs for messages like "Received webhook from Mux"
-4. Verify that the webhook data is being properly processed
+To test the full webhook flow with signature verification:
+
+1. Set `MUX_SKIP_SIGNATURE_VERIFICATION=false` in your `.env.local`
+2. Ensure your `MUX_TOKEN_SECRET` matches the signing secret in the Mux dashboard
+3. Make a test upload to Mux
+4. Check your server logs for messages like "Mux webhook signature verified successfully"
 
 ### Troubleshooting
 
@@ -119,6 +141,14 @@ If webhooks aren't working:
 3. **Test the endpoint**: Use `curl -i https://your-ngrok-url.ngrok-free.app/api/mux/webhook` to verify the endpoint is accessible
 4. **Check server logs**: Look for any errors in your server logs related to webhook processing
 5. **Verify Supabase tables**: Ensure the `webhook_events` table exists in your Supabase instance
-6. **Check environment variables**: Ensure `MUX_TOKEN_SECRET` is properly set for signature verification
+6. **Check environment variables**: Ensure `MUX_TOKEN_SECRET` is properly set and matches the webhook signing secret from Mux
+
+For signature verification errors:
+1. **Use the correct signing secret**: Make sure you're using `MUX_WEBHOOK_SECRET` with the webhook-specific signing secret, not your API token secret
+2. Verify your webhook signing secret exactly matches the one shown in the Mux dashboard under Settings > Webhooks > Your webhook endpoint > Signing Secret
+3. Check that your webhook signing secret isn't being truncated - it should be a lengthy string
+4. Ensure you're not modifying the request body before verification
+5. Initially test with `MUX_SKIP_SIGNATURE_VERIFICATION=true` to confirm other parts of the webhook flow work
+6. Check webhook request logs for the exact format of the `Mux-Signature` header
 
 Note that with each new ngrok session, you'll get a new URL and will need to update both your environment variables and the Mux dashboard webhook configuration. 
