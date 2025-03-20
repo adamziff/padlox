@@ -43,8 +43,6 @@ export async function updateSession(request: NextRequest) {
         request.nextUrl.pathname === '/' ||
         request.nextUrl.pathname === '/api/mux/webhook'
 
-    console.log('Is public page:', isPublicPage)
-
     if (!user && !isPublicPage) {
         // no user, redirect to login page
         const url = request.nextUrl.clone()

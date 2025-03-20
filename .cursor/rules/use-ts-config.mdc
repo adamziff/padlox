@@ -1,0 +1,51 @@
+---
+description: Use next.config.ts, not next.config.js
+globs: 
+---
+ # Use TypeScript Configuration Files
+
+This rule enforces the use of TypeScript configuration files (.ts) instead of JavaScript (.js) for Next.js configuration.
+
+<rule>
+name: use-ts-config
+description: Enforce using TypeScript configuration files (.ts) instead of JavaScript (.js)
+filters:
+  - type: file_pattern
+    pattern: "next.config.js"
+  - type: event
+    pattern: "file_create|file_edit"
+
+actions:
+  - type: reject
+    message: |
+      Please use next.config.ts instead of next.config.js.
+      
+      Our project standardizes on TypeScript configuration files for better type safety and consistency.
+      
+      If you need to modify the Next.js configuration:
+      1. Edit next.config.ts in the project root
+      2. Use type annotations with NextConfig
+      3. Make sure to export the config as default export
+      
+  - type: suggest
+    message: |
+      TypeScript configuration example:
+      
+      ```typescript
+      import type { NextConfig } from "next";
+      
+      const nextConfig: NextConfig = {
+        // Your configuration here
+      };
+      
+      export default nextConfig;
+      ```
+
+examples:
+  - input: "Create next.config.js file"
+    output: "Create next.config.ts file instead"
+
+metadata:
+  priority: high
+  version: 1.0
+</rule>

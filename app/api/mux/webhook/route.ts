@@ -69,8 +69,6 @@ export async function POST(request: Request) {
     // Read the request body as text
     const rawBody = await request.text();
     
-    console.log('Received webhook from Mux:', rawBody.substring(0, 200) + '...');
-    
     // Verify the webhook signature unless explicitly disabled
     const skipSignatureVerification = process.env.MUX_SKIP_SIGNATURE_VERIFICATION === 'true';
     
@@ -83,34 +81,19 @@ export async function POST(request: Request) {
         return new NextResponse('Server configuration error', { status: 500 });
       }
       
-      console.log('Webhook verification attempt with secret of length:', webhookSecret.length);
-      
       // Try Mux webhook verification
       if (!verifyMuxWebhook(rawBody, muxSignature, webhookSecret)) {
-        // If verification fails, log more details
         console.error('Invalid Mux webhook signature');
-        console.log('Signature header:', muxSignature);
-        console.log('First 15 characters of webhook body:', rawBody.substring(0, 15) + '...');
-        
-        // Create a test event for debugging - do NOT leave in production
-        const debugInfo = {
-          header: muxSignature,
-          timestamp: muxSignature.split(',')[0].substring(2),
-          bodyPreview: rawBody.substring(0, 100)
-        };
-        console.log('Debug info:', JSON.stringify(debugInfo));
-        
         return new NextResponse('Invalid signature', { status: 401 });
       }
-      console.log('Mux webhook signature verified successfully');
     } else {
-      console.log('WARNING: Skipping Mux webhook signature verification');
+      console.warn('WARNING: Mux webhook signature verification is disabled');
     }
     
     // Parse the webhook payload
     const event = JSON.parse(rawBody) as MuxWebhookEvent;
     
-    console.log('Webhook event type:', event.type);
+    console.log(`Received webhook from Mux: ${event.type}`);
     
     // We'll store all webhook events for processing, but we'll only act immediately on specific types
     const serviceClient = createServiceClient();
