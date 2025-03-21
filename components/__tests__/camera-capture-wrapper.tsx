@@ -1,8 +1,7 @@
 import { vi } from 'vitest';
-import type { CameraCaptureProps } from '../camera-capture';
 
 // This is a mock component for testing only
-export function CameraCaptureWrapper(props: CameraCaptureProps) {
+export function CameraCaptureWrapper() {
     return null;
 }
 

@@ -14,7 +14,7 @@ class MediaRecorderHelper {
     private chunks: BlobPart[] = [];
     private stream: MediaStream | null = null;
 
-    async setup({ video, audio }: { video: any, audio: boolean }) {
+    async setup({ video, audio }: { video: MediaTrackConstraints, audio: boolean }) {
         try {
             // Stop existing stream if one exists
             this.cleanup();
@@ -140,12 +140,14 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     useEffect(() => {
         initializeCamera();
 
+        const currentMediaRecorderRef = mediaRecorderRef.current;
+
         return () => {
             // Clean up on unmount
             if (streamRef.current) {
                 streamRef.current.getTracks().forEach(track => track.stop());
             }
-            mediaRecorderRef.current.cleanup();
+            currentMediaRecorderRef.cleanup();
         };
     }, [facingMode, initializeCamera]);
 
@@ -234,16 +236,6 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         }
     }, [takePhoto]);
 
-    // Handle mode switch with proper cleanup
-    const handleModeChange = useCallback((newMode: 'photo' | 'video') => {
-        if (recorderStatus === 'recording') {
-            // If recording, stop it before switching modes
-            stopRecording();
-        }
-
-        setMode(newMode);
-    }, [recorderStatus]);
-
     // Start recording
     const startRecording = useCallback(() => {
         setRecorderStatus('recording');
@@ -265,7 +257,6 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         // Create a promise to wait for the final data
         const recordedBlob = await new Promise<Blob>((resolve) => {
             const mr = mediaRecorderRef.current;
-            const originalStop = MediaRecorder.prototype.stop;
 
             // Set up a listener for the stop event
             if (mr.getStream()) {
@@ -295,6 +286,16 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             onCapture(file);
         }
     }, [onCapture]);
+
+    // Handle mode switch with proper cleanup
+    const handleModeChange = useCallback((newMode: 'photo' | 'video') => {
+        if (recorderStatus === 'recording') {
+            // If recording, stop it before switching modes
+            stopRecording();
+        }
+
+        setMode(newMode);
+    }, [recorderStatus, stopRecording]);
 
     // Close and cleanup
     const handleClose = useCallback(() => {

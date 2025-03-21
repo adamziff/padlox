@@ -2,7 +2,6 @@
 
 import dynamic from 'next/dynamic'
 import { useState, useEffect } from 'react'
-import type { CameraCaptureProps } from './camera-capture'
 
 // Dynamically import the CameraCapture component with SSR disabled
 const CameraCapture = dynamic(
