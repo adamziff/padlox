@@ -13,12 +13,18 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
 ) {
   return async (request: Request, ...rest: unknown[]): Promise<Response> => {
     try {
-      const supabase = await createServerSupabaseClient()
+      // Use the createClient from utils/supabase/server since it handles cookies correctly
+      const supabase = await import('@/utils/supabase/server').then(m => m.createClient())
+      
+      // Get the authenticated user
       const { data: { user } } = await supabase.auth.getUser()
 
       if (!user) {
+        console.log('Auth middleware: No user found')
         return unauthorizedResponse()
       }
+
+      console.log('Auth middleware: User authenticated', { id: user.id, email: user.email })
 
       // Add the user to the request context
       const extendedRequest = request as Request & { user?: typeof user }
@@ -41,7 +47,8 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
  */
 export async function getUserFromRequest() {
   try {
-    const supabase = await createServerSupabaseClient()
+    // Use the createClient from utils/supabase/server since it handles cookies correctly
+    const supabase = await import('@/utils/supabase/server').then(m => m.createClient())
     const { data: { user } } = await supabase.auth.getUser()
     return user
   } catch (error) {

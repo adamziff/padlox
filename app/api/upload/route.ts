@@ -1,7 +1,7 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { signFile } from '@/utils/server/mediaSigningService'
 import { corsJsonResponse, corsErrorResponse, corsOptionsResponse, withAuth } from '@/lib/api'
-import { createServerSupabaseClient } from '@/lib/auth/supabase'
+import { createClient } from '@/utils/supabase/server'
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION!,
@@ -14,7 +14,7 @@ const s3Client = new S3Client({
 
 export const POST = withAuth(async (request: Request) => {
     // User is guaranteed to exist due to withAuth middleware
-    const supabase = await createServerSupabaseClient()
+    const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     
     if (!user) {

@@ -2,28 +2,38 @@
  * Supabase authentication clients for various contexts
  */
 import { createServerClient } from '@supabase/ssr'
-
-// Simple cookie handlers that satisfy the type system without actually using cookies
-// This allows us to use the library with a simpler pattern for APIs
-const emptyCookieHandlers = {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  get: (_: string) => '',
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  set: (_name: string, _value: string) => {},
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  remove: (_: string) => {}
-}
+import { cookies } from 'next/headers'
 
 /**
  * Creates a Supabase client for server components
- * This is a simplified version that doesn't depend on persisting auth state
+ * This properly reads cookies to maintain the user's session
  */
 export async function createServerSupabaseClient() {
+  const cookieStore = cookies()
+  
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { 
-      cookies: emptyCookieHandlers
+      cookies: {
+        get(name) {
+          return cookieStore.get(name)?.value
+        },
+        set(name, value, options) {
+          try {
+            cookieStore.set(name, value, options)
+          } catch (e) {
+            console.log('Cookie set error (safe to ignore):', e)
+          }
+        },
+        remove(name, options) {
+          try {
+            cookieStore.set(name, '', { ...options, maxAge: 0 })
+          } catch (e) {
+            console.log('Cookie remove error (safe to ignore):', e)
+          }
+        }
+      }
     }
   )
 }
@@ -32,11 +42,31 @@ export async function createServerSupabaseClient() {
  * Creates a Supabase client for server actions
  */
 export async function createActionSupabaseClient() {
+  const cookieStore = cookies()
+  
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { 
-      cookies: emptyCookieHandlers
+      cookies: {
+        get(name) {
+          return cookieStore.get(name)?.value
+        },
+        set(name, value, options) {
+          try {
+            cookieStore.set(name, value, options)
+          } catch (e) {
+            console.log('Action cookie set error (safe to ignore):', e)
+          }
+        },
+        remove(name, options) {
+          try {
+            cookieStore.set(name, '', { ...options, maxAge: 0 })
+          } catch (e) {
+            console.log('Action cookie remove error (safe to ignore):', e)
+          }
+        }
+      }
     }
   )
 }
@@ -50,11 +80,17 @@ export function createServiceSupabaseClient() {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for service client')
   }
   
+  // For service client, we don't actually need cookies since we're using the service role
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     { 
-      cookies: emptyCookieHandlers
+      // Service client doesn't need to handle cookies since it's not user-bound
+      cookies: {
+        get: () => '',
+        set: () => {},
+        remove: () => {}
+      }
     }
   )
 }
