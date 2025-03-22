@@ -1,6 +1,6 @@
 import { verifyMuxWebhook } from '@/utils/mux';
 import { MuxWebhookEvent } from '@/types/mux';
-import { createServiceClient } from '@/lib/supabase';
+import { createServiceSupabaseClient } from '@/lib/auth/supabase';
 
 import { corsOptionsResponse, corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     console.log(`Received webhook from Mux: ${event.type}`);
     
     // We'll store all webhook events for processing, but we'll only act immediately on specific types
-    const serviceClient = createServiceClient();
+    const serviceClient = await createServiceSupabaseClient();
     
     // Check if webhook_events table exists
     let webhookTableExists = false;

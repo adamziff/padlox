@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
-import { createClient } from '@/utils/supabase/client'
+import { createClient } from '@/lib/supabase'
 import { CameraCaptureWrapper } from './camera-capture-wrapper'
 import { MediaPreview } from './media-preview'
 import { AssetModal } from './asset-modal'
@@ -447,8 +447,8 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 return
             }
 
-            // Upload to S3
-            const response = await uploadToS3(capturedFile)
+            // Upload to S3 with metadata
+            const response = await uploadToS3(capturedFile, metadata)
             const { key } = response
 
             // Save to database

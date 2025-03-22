@@ -1,12 +1,11 @@
 /**
  * Compatibility helper for creating Supabase clients
- * This file exists to maintain backward compatibility with existing code
- * while we transition to the new organization in /lib/auth/supabase.ts
+ * This file provides backward compatibility for existing client-side code
+ * while we transition to the new organization
  */
 import { createBrowserClient } from '@supabase/ssr'
-import { createServerSupabaseClient, createServiceSupabaseClient } from './auth/supabase'
 
-// For client components
+// For client components (browser)
 export function createClient() {
   return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,12 +13,13 @@ export function createClient() {
   )
 }
 
-// For server components
+// These functions are not actually used but provide a compatible API surface
+// for code that expects them. They should eventually be migrated to use the
+// specific imports from lib/auth/supabase.ts
 export function createServerClient() {
-  return createServerSupabaseClient()
+  throw new Error('Use createServerSupabaseClient() from lib/auth/supabase.ts instead')
 }
 
-// For service operations (admin)
 export function createServiceClient() {
-  return createServiceSupabaseClient()
+  throw new Error('Use createServiceSupabaseClient() from lib/auth/supabase.ts instead')
 }

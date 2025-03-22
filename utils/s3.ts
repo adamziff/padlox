@@ -3,9 +3,19 @@ interface UploadResponse {
     key: string
 }
 
-export async function uploadToS3(file: File): Promise<UploadResponse> {
+interface AssetMetadata {
+    name?: string;
+    description?: string | null;
+    estimated_value?: number | null;
+}
+
+export async function uploadToS3(file: File, metadata?: AssetMetadata): Promise<UploadResponse> {
     const formData = new FormData()
     formData.append('file', file)
+    
+    if (metadata) {
+        formData.append('metadata', JSON.stringify(metadata))
+    }
 
     try {
         const response = await fetch('/api/upload', {

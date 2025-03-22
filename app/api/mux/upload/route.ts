@@ -1,25 +1,31 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
 import { createMuxUpload } from '@/utils/mux';
+import { corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
+import { withAuth } from '@/lib/api/auth';
+import { createServerSupabaseClient } from '@/lib/auth/supabase';
+import { parseJsonBody, ValidationError } from '@/lib/api/validation';
+import { User } from '@supabase/supabase-js';
 
-export async function POST(request: Request) {
+export const POST = withAuth(async (request: Request) => {
   try {
-    // Verify authentication
-    const supabase = await createClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      console.error('Authentication error:', error);
-      return new NextResponse('Unauthorized', { status: 401 });
-    }
+    // User is available from middleware extension
+    const user = (request as Request & { user: User }).user;
 
     try {
       // Get metadata from the request
-      const { metadata, correlationId } = await request.json();
+      interface UploadRequest {
+        metadata: {
+          name: string;
+          description?: string | null;
+          estimated_value?: number | null;
+        };
+        correlationId?: string;
+      }
+      
+      const { metadata, correlationId } = await parseJsonBody<UploadRequest>(request);
 
       if (!metadata || !metadata.name) {
         console.error('Invalid metadata:', metadata);
-        return new NextResponse('Invalid metadata', { status: 400 });
+        return corsErrorResponse('Invalid metadata', 400);
       }
 
       console.log('Creating Mux upload with metadata:', metadata);
@@ -43,6 +49,9 @@ export async function POST(request: Request) {
 
       // Generate a unique client-side reference ID to help track this asset
       const clientReferenceId = `ref_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Create a supabase client for the server context
+      const supabase = await createServerSupabaseClient();
 
       // Create a pending asset in Supabase with additional tracking fields
       const { data: asset, error: dbError } = await supabase
@@ -101,7 +110,7 @@ export async function POST(request: Request) {
         console.log('Verified asset exists:', verifyAsset);
       }
 
-      return NextResponse.json({
+      return corsJsonResponse({
         uploadUrl: uploadData.uploadUrl,
         assetId: uploadData.assetId,
         playbackId: uploadData.playbackId,
@@ -111,6 +120,11 @@ export async function POST(request: Request) {
       });
     } catch (innerError) {
       console.error('Inner operation error:', innerError);
+      
+      if (innerError instanceof ValidationError) {
+        return corsErrorResponse(innerError.message, 400, innerError.details);
+      }
+      
       throw innerError;
     }
   } catch (error: unknown) {
@@ -122,16 +136,25 @@ export async function POST(request: Request) {
       code?: string;
     };
     
-    return new NextResponse(
-      JSON.stringify({ 
-        error: 'Upload failed', 
-        details: err?.message || 'Unknown error',
-        stack: err?.stack
-      }),
+    return corsErrorResponse(
+      'Upload failed',
+      500,
       {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
+        message: err?.message || 'Unknown error',
+        stack: err?.stack
       }
     );
   }
-} 
+});
+
+// Add OPTIONS handler for CORS
+export const OPTIONS = () => {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  });
+}; 

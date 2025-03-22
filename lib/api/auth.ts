@@ -8,13 +8,15 @@ import { unauthorizedResponse } from './response'
  * Middleware to enforce authentication on API routes
  * Returns a function that takes the handler function
  */
+import { User } from '@supabase/supabase-js'
+
 export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise<Response>>(
   handler: T
 ) {
   return async (request: Request, ...rest: unknown[]): Promise<Response> => {
     try {
-      // Use the createClient from utils/supabase/server since it handles cookies correctly
-      const supabase = await import('@/utils/supabase/server').then(m => m.createClient())
+      // Use the new createServerSupabaseClient with proper cookie handling
+      const supabase = await createServerSupabaseClient()
       
       // Get the authenticated user
       const { data: { user } } = await supabase.auth.getUser()
@@ -27,7 +29,7 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
       console.log('Auth middleware: User authenticated', { id: user.id, email: user.email })
 
       // Add the user to the request context
-      const extendedRequest = request as Request & { user?: typeof user }
+      const extendedRequest = request as Request & { user: User }
       Object.defineProperty(extendedRequest, 'user', {
         value: user,
         writable: false,
@@ -47,8 +49,8 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
  */
 export async function getUserFromRequest() {
   try {
-    // Use the createClient from utils/supabase/server since it handles cookies correctly
-    const supabase = await import('@/utils/supabase/server').then(m => m.createClient())
+    // Use the new createServerSupabaseClient with proper cookie handling
+    const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
     return user
   } catch (error) {

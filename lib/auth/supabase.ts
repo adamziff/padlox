@@ -3,31 +3,33 @@
  */
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { type CookieOptions } from '@supabase/ssr'
 
 /**
  * Creates a Supabase client for server components
  * This properly reads cookies to maintain the user's session
  */
 export async function createServerSupabaseClient() {
-  const cookieStore = cookies()
-  
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { 
       cookies: {
-        get(name) {
+        get: async (name: string) => {
+          const cookieStore = await cookies()
           return cookieStore.get(name)?.value
         },
-        set(name, value, options) {
+        set: async (name: string, value: string, options: CookieOptions) => {
           try {
+            const cookieStore = await cookies()
             cookieStore.set(name, value, options)
           } catch (e) {
             console.log('Cookie set error (safe to ignore):', e)
           }
         },
-        remove(name, options) {
+        remove: async (name: string, options: CookieOptions) => {
           try {
+            const cookieStore = await cookies()
             cookieStore.set(name, '', { ...options, maxAge: 0 })
           } catch (e) {
             console.log('Cookie remove error (safe to ignore):', e)
@@ -42,25 +44,26 @@ export async function createServerSupabaseClient() {
  * Creates a Supabase client for server actions
  */
 export async function createActionSupabaseClient() {
-  const cookieStore = cookies()
-  
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { 
       cookies: {
-        get(name) {
+        get: async (name: string) => {
+          const cookieStore = await cookies()
           return cookieStore.get(name)?.value
         },
-        set(name, value, options) {
+        set: async (name: string, value: string, options: CookieOptions) => {
           try {
+            const cookieStore = await cookies()
             cookieStore.set(name, value, options)
           } catch (e) {
             console.log('Action cookie set error (safe to ignore):', e)
           }
         },
-        remove(name, options) {
+        remove: async (name: string, options: CookieOptions) => {
           try {
+            const cookieStore = await cookies()
             cookieStore.set(name, '', { ...options, maxAge: 0 })
           } catch (e) {
             console.log('Action cookie remove error (safe to ignore):', e)

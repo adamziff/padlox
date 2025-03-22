@@ -1,24 +1,14 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
-import { createClient as createServiceClient } from '@supabase/supabase-js';
 import { createMuxPlaybackJWT } from '@/utils/mux';
+import { jsonResponse, errorResponse, notFoundResponse } from '@/lib/api/response';
+import { withAuth } from '@/lib/api/auth';
+import { createServiceSupabaseClient } from '@/lib/auth/supabase';
+import { User } from '@supabase/supabase-js';
 
 // Helper for controlled logging
 function log(message: string, ...args: unknown[]) {
   if (process.env.NODE_ENV === 'development' && process.env.DEBUG === 'true') {
     console.log(`[TokenAPI] ${message}`, ...args);
   }
-}
-
-// Create a service client to bypass RLS when needed
-function getServiceClient() {
-  if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return createServiceClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-  }
-  return null;
 }
 
 // Helper function to create tokens for different purposes using RSA signing
@@ -50,16 +40,10 @@ async function createTokensForPlayback(playbackId: string, userId: string) {
   }
 }
 
-export async function GET(request: Request) {
+export const GET = withAuth(async (request: Request) => {
   try {
-    // Verify authentication
-    const supabase = await createClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
-
-    if (error || !user) {
-      console.error('Authentication error:', error);
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-    }
+    // User is available from middleware extension
+    const user = (request as Request & { user: User }).user;
 
     // Get the playback ID from the request
     const { searchParams } = new URL(request.url);
@@ -67,54 +51,30 @@ export async function GET(request: Request) {
 
     if (!playbackId) {
       console.error('Missing playback ID in request');
-      return NextResponse.json({ message: 'Missing playback ID' }, { status: 400 });
+      return errorResponse('Missing playback ID', 400);
     }
 
     log(`Generating tokens for playback ID: ${playbackId}`);
 
+    // Create a supabase client for the server context
+    const supabase = await createServiceSupabaseClient();
+
     // Try to access with user session first
-    let { data: assets, error: queryError } = await supabase
+    const { data: assets, error: queryError } = await supabase
       .from('assets')
       .select('id, mux_playback_id')
       .eq('mux_playback_id', playbackId)
       .eq('user_id', user.id)
       .limit(1);
 
-    // If user can't find the asset, try with service role as a fallback
-    if ((queryError || !assets || assets.length === 0) && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      log('User-level lookup failed, trying service role');
-      const serviceClient = getServiceClient();
-      
-      if (serviceClient) {
-        const serviceResult = await serviceClient
-          .from('assets')
-          .select('id, mux_playback_id, user_id')
-          .eq('mux_playback_id', playbackId)
-          .limit(1);
-          
-        if (!serviceResult.error && serviceResult.data?.length > 0) {
-          const assetUserId = serviceResult.data[0].user_id;
-          
-          // Double-check this is the user's asset
-          if (assetUserId === user.id) {
-            log('Asset found via service role');
-            assets = serviceResult.data;
-            queryError = null;
-          } else {
-            console.error('Asset belongs to different user');
-          }
-        }
-      }
-    }
-
     if (queryError) {
       console.error('Database error:', queryError);
-      return NextResponse.json({ message: 'Database error' }, { status: 500 });
+      return errorResponse('Database error', 500);
     }
 
     if (!assets || assets.length === 0) {
       console.error('Access denied or video not found');
-      return NextResponse.json({ message: 'Video not found or access denied' }, { status: 404 });
+      return notFoundResponse('Video not found or access denied');
     }
 
     log('Asset found, generating tokens');
@@ -125,23 +85,25 @@ export async function GET(request: Request) {
       log('Tokens generated successfully');
 
       // Return all tokens to the client
-      return NextResponse.json({ 
+      return jsonResponse({ 
         token: tokens.playback,  // For backward compatibility
         tokens: tokens,
         playbackId: playbackId
       });
     } catch (tokenError) {
       console.error('Failed to generate tokens:', tokenError);
-      return NextResponse.json({ 
-        message: 'Token generation failed',
-        details: tokenError instanceof Error ? tokenError.message : 'Unknown error'
-      }, { status: 500 });
+      return errorResponse(
+        'Token generation failed', 
+        500, 
+        { details: tokenError instanceof Error ? tokenError.message : 'Unknown error' }
+      );
     }
   } catch (error) {
     console.error('Error generating token:', error);
-    return NextResponse.json({ 
-      message: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+    return errorResponse(
+      'Internal server error',
+      500,
+      { details: error instanceof Error ? error.message : 'Unknown error' }
+    );
   }
-} 
+}); 
