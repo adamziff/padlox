@@ -241,6 +241,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
             if (result.previewStream && videoRef.current) {
                 videoRef.current.srcObject = result.previewStream;
+                videoRef.current?.play().catch(console.error);
                 streamRef.current = result.previewStream;
             }
 
