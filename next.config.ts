@@ -23,6 +23,37 @@ const nextConfig: NextConfig = {
   // Moved from experimental to root level config as per Next.js 15
   serverExternalPackages: ['sharp', 'c2pa-node'],
 
+  // Add minimal headers for camera functionality
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            // Using the most permissive feature policy for camera/mic
+            key: 'Feature-Policy',
+            value: 'camera *; microphone *; autoplay *'
+          },
+          {
+            // Modern syntax for Permissions Policy
+            key: 'Permissions-Policy',
+            value: 'camera=(self), microphone=(self), autoplay=*'
+          },
+          {
+            // Make sure we have cross-origin isolation set properly
+            key: 'Cross-Origin-Embedder-Policy',
+            value: 'credentialless'
+          },
+          {
+            // Set proper referrer policy for security
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin'
+          }
+        ]
+      }
+    ];
+  },
+
   // No need for webpack configuration when using Turbopack
 
   // Experimental features for Turbopack
