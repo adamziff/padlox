@@ -4,7 +4,7 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 
-// Create a singleton S3 client
+// Create a singleton S3 client for server operations
 const s3Client = new S3Client({
   region: process.env.AWS_REGION!,
   credentials: {
@@ -15,8 +15,54 @@ const s3Client = new S3Client({
 })
 
 /**
- * Uploads a file to S3
- * Server-side only
+ * Client-side interface for uploading a file to S3 via API
+ * @param file - The file to upload
+ * @param metadata - Optional metadata for the file
+ * @returns The S3 URL and key of the uploaded file
+ */
+export async function uploadToS3(file: File, metadata?: {
+  name?: string
+  description?: string | null
+  estimated_value?: number | null
+}): Promise<{ url: string, key: string }> {
+  const formData = new FormData()
+  formData.append('file', file)
+  
+  if (metadata) {
+    formData.append('metadata', JSON.stringify(metadata))
+  }
+
+  try {
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`)
+    }
+
+    return await response.json()
+  } catch (error: unknown) {
+    const err = error as Error & { status?: number }
+    console.error('S3 upload error:', {
+      message: err?.message,
+      status: err?.status,
+      stack: err?.stack
+    })
+    throw err
+  }
+}
+
+/**
+ * Server-side function to upload a file to S3
+ * @param buffer - The file buffer
+ * @param fileName - The name of the file
+ * @param contentType - The MIME type of the file
+ * @param userId - The user ID for the file owner
+ * @param metadata - Optional additional metadata
+ * @returns The S3 URL and key of the uploaded file
  */
 export async function uploadFileToS3(
   buffer: Buffer,
@@ -84,24 +130,4 @@ export async function createPresignedDownloadUrl(key: string, expiresInSeconds =
  */
 export function getS3Url(key: string): string {
   return `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${key}`
-}
-
-/**
- * Client-side function to upload a file to S3 via API
- */
-export async function uploadToS3(file: File): Promise<{ url: string, key: string }> {
-  const formData = new FormData()
-  formData.append('file', file)
-
-  const response = await fetch('/api/upload', {
-    method: 'POST',
-    body: formData,
-  })
-
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`Failed to upload file: ${response.status} ${response.statusText} - ${errorText}`)
-  }
-
-  return await response.json()
 }

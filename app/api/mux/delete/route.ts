@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { createServerSupabaseClient } from '@/lib/auth/supabase';
+import { deleteMuxAsset } from '@/lib/mux';
 
 export async function POST(request: Request) {
   try {
     // Verify authentication
-    const supabase = await createClient();
+    const supabase = await createServerSupabaseClient();
     const { data: { user }, error } = await supabase.auth.getUser();
 
     if (error || !user) {
@@ -31,21 +32,11 @@ export async function POST(request: Request) {
 
     // If the asset has a Mux ID, delete it from Mux
     if (asset.mux_asset_id) {
-      // Create Basic Auth credentials
-      const auth = Buffer.from(`${process.env.MUX_TOKEN_ID}:${process.env.MUX_TOKEN_SECRET}`).toString('base64');
+      const deleted = await deleteMuxAsset(asset.mux_asset_id);
       
-      // Delete the asset from Mux
-      const response = await fetch(`https://api.mux.com/video/v1/assets/${asset.mux_asset_id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Basic ${auth}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
+      if (!deleted) {
         // We'll still try to delete from the database even if Mux deletion fails
-        console.error(`Error deleting Mux asset ${asset.mux_asset_id}:`, response.status, response.statusText);
+        console.error(`Error deleting Mux asset ${asset.mux_asset_id}`);
       }
     }
 

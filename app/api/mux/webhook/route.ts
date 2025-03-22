@@ -1,4 +1,4 @@
-import { verifyMuxWebhook } from '@/utils/mux';
+import { verifyMuxWebhook } from '@/lib/mux';
 import { MuxWebhookEvent } from '@/types/mux';
 import { createServiceSupabaseClient } from '@/lib/auth/supabase';
 

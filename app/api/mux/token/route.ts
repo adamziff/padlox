@@ -1,4 +1,4 @@
-import { createMuxPlaybackJWT } from '@/utils/mux';
+import { createMuxTokens } from '@/lib/mux';
 import { jsonResponse, errorResponse, notFoundResponse } from '@/lib/api/response';
 import { withAuth } from '@/lib/api/auth';
 import { createServiceSupabaseClient } from '@/lib/auth/supabase';
@@ -11,34 +11,7 @@ function log(message: string, ...args: unknown[]) {
   }
 }
 
-// Helper function to create tokens for different purposes using RSA signing
-async function createTokensForPlayback(playbackId: string, userId: string) {
-  if (!process.env.MUX_SIGNING_KEY_ID || !process.env.MUX_SIGNING_PRIVATE_KEY) {
-    throw new Error('Missing MUX signing configuration');
-  }
-
-  try {
-    // Create playback token (audience = 'v')
-    log(`Creating tokens for playback ID: ${playbackId}`);
-    const playbackToken = await createMuxPlaybackJWT(playbackId, userId, 'v');
-    
-    // Create thumbnail token (audience = 't')
-    const thumbnailToken = await createMuxPlaybackJWT(playbackId, userId, 't');
-    
-    // Create storyboard token (audience = 's')
-    const storyboardToken = await createMuxPlaybackJWT(playbackId, userId, 's');
-    
-    // Return all three tokens
-    return {
-      playback: playbackToken,
-      thumbnail: thumbnailToken,
-      storyboard: storyboardToken
-    };
-  } catch (error) {
-    console.error('Error creating tokens:', error);
-    throw error;
-  }
-}
+// Use the createMuxTokens function from the consolidated library
 
 export const GET = withAuth(async (request: Request) => {
   try {
@@ -81,7 +54,7 @@ export const GET = withAuth(async (request: Request) => {
 
     // Generate tokens for all required purposes
     try {
-      const tokens = await createTokensForPlayback(playbackId, user.id);
+      const tokens = await createMuxTokens(playbackId, user.id);
       log('Tokens generated successfully');
 
       // Return all tokens to the client

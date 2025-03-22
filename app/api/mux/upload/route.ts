@@ -1,4 +1,4 @@
-import { createMuxUpload } from '@/utils/mux';
+import { createMuxUpload } from '@/lib/mux';
 import { corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 import { withAuth } from '@/lib/api/auth';
 import { createServerSupabaseClient } from '@/lib/auth/supabase';
