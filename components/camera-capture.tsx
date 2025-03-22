@@ -243,6 +243,23 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                 videoRef.current.srcObject = result.previewStream;
                 videoRef.current?.play().catch(console.error);
                 streamRef.current = result.previewStream;
+
+                // More robust video play attempt with retries
+                const attemptPlay = async (retries = 3, delay = 300) => {
+                    try {
+                        await videoRef.current?.play();
+                        console.log('Video playback started successfully');
+                    } catch (err) {
+                        console.warn(`Play attempt failed (${retries} retries left):`, err);
+                        if (retries > 0 && videoRef.current) {
+                            // Retry after a short delay
+                            setTimeout(() => attemptPlay(retries - 1, delay), delay);
+                        }
+                    }
+                };
+
+                // Start first attempt
+                attemptPlay();
             }
 
             if (isMountedRef.current) {
@@ -427,6 +444,28 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
         onClose();
     }, [recorderStatus, onClose, performFullCleanup]);
+
+    // Additional effect to ensure video plays after user interaction
+    useEffect(() => {
+        if (videoRef.current && videoRef.current.srcObject && !isInitializing) {
+            const playVideo = async () => {
+                try {
+                    await videoRef.current?.play();
+                    console.log('Video playback started via useEffect');
+                } catch (playError) {
+                    console.warn('Could not autoplay video in effect:', playError);
+                }
+            };
+
+            // Try to play immediately 
+            playVideo();
+
+            // Also try after a short delay (helps with certain browsers)
+            const delayedPlayTimer = setTimeout(playVideo, 500);
+
+            return () => clearTimeout(delayedPlayTimer);
+        }
+    }, [videoRef.current?.srcObject, isInitializing]);
 
     // Loading state
     if (isInitializing || isCleaning) {
