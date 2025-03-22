@@ -7,17 +7,17 @@ import { CrossIcon, CameraIcon, VideoIcon, CameraFlipIcon } from './icons'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 
-// Regular non-hook export for the functionality we need from react-media-recorder
-// This is a simplified version that doesn't use hooks
+// Refined MediaRecorder helper class with improved cleanup
 class MediaRecorderHelper {
     private mediaRecorder: MediaRecorder | null = null;
     private chunks: BlobPart[] = [];
     private stream: MediaStream | null = null;
+    private trackCleanupPromises: Promise<void>[] = [];
 
     async setup({ video, audio }: { video: MediaTrackConstraints, audio: boolean }) {
         try {
-            // Stop existing stream if one exists
-            this.cleanup();
+            // Stop existing stream if one exists - ensure this is completed before continuing
+            await this.cleanup();
 
             this.stream = await navigator.mediaDevices.getUserMedia({
                 video,
@@ -57,12 +57,79 @@ class MediaRecorderHelper {
         return true;
     }
 
-    cleanup() {
-        if (this.stream) {
-            this.stream.getTracks().forEach(track => track.stop());
-            this.stream = null;
+    // Improved cleanup with track-specific stops and removal of all references
+    async cleanup(): Promise<void> {
+        try {
+            // Stop the media recorder if active
+            if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                try {
+                    this.mediaRecorder.stop();
+                } catch (e) {
+                    // Ignore any errors when stopping the recorder
+                    console.log('Ignored media recorder stop error:', e);
+                }
+            }
+            this.mediaRecorder = null;
+
+            // Stop all tracks individually with promises
+            if (this.stream) {
+                const tracks = this.stream.getTracks();
+
+                // Create promises for each track stop to ensure they're all completed
+                this.trackCleanupPromises = tracks.map(track =>
+                    new Promise<void>(resolve => {
+                        try {
+                            track.stop();
+                            // Some browsers need time to fully release camera resources
+                            setTimeout(resolve, 50);
+                        } catch (e) {
+                            // Ensure we always resolve even if there's an error
+                            console.log('Ignored track stop error:', e);
+                            resolve();
+                        }
+                    })
+                );
+
+                // Wait for all tracks to be stopped
+                await Promise.all(this.trackCleanupPromises);
+
+                // Set stream to null after stopping all tracks
+                this.stream = null;
+            }
+
+            this.chunks = [];
+            this.trackCleanupPromises = [];
+        } catch (error) {
+            console.error('Error during camera cleanup:', error);
         }
-        this.mediaRecorder = null;
+    }
+
+    // Force immediate cleanup without waiting
+    immediateCleanup() {
+        if (this.stream) {
+            try {
+                this.stream.getTracks().forEach(track => {
+                    track.stop();
+                });
+                this.stream = null;
+            } catch (e) {
+                // Ignore errors
+                console.log('Ignored immediate stop error:', e);
+            }
+        }
+
+        if (this.mediaRecorder) {
+            try {
+                if (this.mediaRecorder.state !== 'inactive') {
+                    this.mediaRecorder.stop();
+                }
+            } catch (e) {
+                // Ignore errors
+                console.log('Ignored immediate stop error:', e);
+            }
+            this.mediaRecorder = null;
+        }
+
         this.chunks = [];
     }
 
@@ -82,8 +149,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     const [countdown, setCountdown] = useState<number | null>(null)
     const [hasFrontCamera, setHasFrontCamera] = useState(false)
     const [recorderStatus, setRecorderStatus] = useState<'idle' | 'recording' | 'stopping' | 'error'>('idle')
-    const [mediaBlobUrl, setMediaBlobUrl] = useState<string | null>(null)
     const [isInitializing, setIsInitializing] = useState(true)
+    const [isCleaning, setIsCleaning] = useState(false)
 
     const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -91,23 +158,69 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     const mediaRecorderRef = useRef<MediaRecorderHelper>(new MediaRecorderHelper())
     const chunks = useRef<BlobPart[]>([])
 
-    const { theme } = useTheme()
-    const isDarkMode = theme === 'dark'
+    // Track if component is mounted to prevent state updates after unmounting
+    const isMountedRef = useRef(true)
+
+    const { resolvedTheme } = useTheme()
+    const isDarkMode = resolvedTheme === 'dark'
     const isMobile = useMediaQuery('(max-width: 768px)')
+
+    // Thorough cleanup function to be called in all exit paths
+    const performFullCleanup = useCallback(async () => {
+        try {
+            setIsCleaning(true);
+
+            // First, perform immediate cleanup to release camera as fast as possible
+            mediaRecorderRef.current.immediateCleanup();
+
+            // Clear video element's srcObject
+            if (videoRef.current) {
+                videoRef.current.pause();
+                videoRef.current.srcObject = null;
+            }
+
+            // Reset stream reference
+            streamRef.current = null;
+
+            // Now do the more thorough async cleanup
+            await mediaRecorderRef.current.cleanup();
+
+            // Manually trigger garbage collection by nullifying references
+            if (isMountedRef.current) {
+                setIsCleaning(false);
+            }
+        } catch (error) {
+            console.error('Error during full cleanup:', error);
+            if (isMountedRef.current) {
+                setIsCleaning(false);
+            }
+        }
+    }, []);
+    // Ensure full cleanup on unmount
+    useEffect(() => {
+        isMountedRef.current = true;
+
+        return () => {
+            isMountedRef.current = false;
+            performFullCleanup();
+        };
+    }, [performFullCleanup]);
 
     // Check for camera devices
     useEffect(() => {
         if (typeof navigator === 'undefined' || !navigator.mediaDevices) return;
 
-        async function checkCameras() {
+        const checkCameras = async () => {
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const videoDevices = devices.filter(device => device.kind === 'videoinput');
-                setHasFrontCamera(videoDevices.length > 1);
+                if (isMountedRef.current) {
+                    setHasFrontCamera(videoDevices.length > 1);
+                }
             } catch (err) {
                 console.error('Error checking cameras:', err);
             }
-        }
+        };
 
         checkCameras();
     }, []);
@@ -117,8 +230,10 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         try {
             setIsInitializing(true);
 
+            // Make sure any previous stream is fully cleaned up before initializing new one
+            await mediaRecorderRef.current.cleanup();
+
             // Initialize media recorder with both video and audio permissions
-            // We'll always request audio permissions but only use them for video mode
             const result = await mediaRecorderRef.current.setup({
                 video: { facingMode },
                 audio: true
@@ -129,26 +244,20 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                 streamRef.current = result.previewStream;
             }
 
-            setIsInitializing(false);
+            if (isMountedRef.current) {
+                setIsInitializing(false);
+            }
         } catch (err) {
             console.error('Error initializing camera', err);
-            setIsInitializing(false);
+            if (isMountedRef.current) {
+                setIsInitializing(false);
+            }
         }
     }, [facingMode]);
 
     // Initialize camera on mount and facingMode changes
     useEffect(() => {
         initializeCamera();
-
-        const currentMediaRecorderRef = mediaRecorderRef.current;
-
-        return () => {
-            // Clean up on unmount
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-            }
-            currentMediaRecorderRef.cleanup();
-        };
     }, [facingMode, initializeCamera]);
 
     // Handle mode changes separately to avoid reinitializing the camera
@@ -162,7 +271,6 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         audioTracks.forEach(track => {
             track.enabled = mode === 'video';
         });
-
     }, [mode]);
 
     // Handle takePhoto
@@ -198,12 +306,17 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                 const file = new File([blob], `photo-${Date.now()}.jpg`, {
                     type: 'image/jpeg'
                 });
+
+                // Start cleanup immediately after capturing the photo
+                performFullCleanup();
+
+                // Trigger the onCapture callback
                 onCapture(file);
             }
         } catch (error) {
             console.error('Error taking photo:', error);
         }
-    }, [facingMode, onCapture]);
+    }, [facingMode, onCapture, performFullCleanup]);
 
     // Photo countdown handler
     useEffect(() => {
@@ -211,20 +324,22 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
         if (countdown > 0) {
             const timer = setTimeout(() => {
-                setCountdown(countdown - 1);
+                if (isMountedRef.current) {
+                    setCountdown(countdown - 1);
+                }
             }, 1000);
             return () => clearTimeout(timer);
         } else {
             takePhoto();
-            setCountdown(null);
+            if (isMountedRef.current) {
+                setCountdown(null);
+            }
         }
     }, [countdown, takePhoto]);
 
     // Toggle camera facing direction
     const toggleFacingMode = useCallback(() => {
-        // When changing facing mode, we need to reinitialize the camera
         setFacingMode(prev => prev === 'environment' ? 'user' : 'environment');
-        // Camera reinitialization will happen in the useEffect
     }, []);
 
     // Setup photo capture with optional timer
@@ -269,23 +384,26 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
                 mr.stopRecording();
 
-                // We need to manually create the blob since we're not using the full react-media-recorder
+                // Create the blob after a short delay to ensure all data is collected
                 setTimeout(onStop, 500);
             }
         });
 
         if (recordedBlob) {
-            const url = URL.createObjectURL(recordedBlob);
-            setMediaBlobUrl(url);
-
             const file = new File([recordedBlob], `video-${Date.now()}.webm`, {
                 type: 'video/webm'
             });
 
-            setRecorderStatus('idle');
+            if (isMountedRef.current) {
+                setRecorderStatus('idle');
+            }
+
+            // Start cleanup before calling onCapture to release camera resources faster
+            performFullCleanup();
+
             onCapture(file);
         }
-    }, [onCapture]);
+    }, [onCapture, performFullCleanup]);
 
     // Handle mode switch with proper cleanup
     const handleModeChange = useCallback((newMode: 'photo' | 'video') => {
@@ -303,25 +421,19 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             mediaRecorderRef.current.stopRecording();
         }
 
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-        }
-
-        mediaRecorderRef.current.cleanup();
-
-        if (mediaBlobUrl) {
-            URL.revokeObjectURL(mediaBlobUrl);
-        }
+        // Perform thorough cleanup before calling onClose
+        performFullCleanup();
 
         onClose();
-    }, [recorderStatus, mediaBlobUrl, onClose]);
+    }, [recorderStatus, onClose, performFullCleanup]);
 
-    if (isInitializing) {
+    // Loading state
+    if (isInitializing || isCleaning) {
         return (
             <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
                 <div className="bg-background p-8 rounded-lg flex flex-col items-center gap-4">
                     <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                    <p>Initializing camera...</p>
+                    <p>{isInitializing ? "Initializing camera..." : "Releasing camera..."}</p>
                 </div>
             </div>
         );
@@ -357,7 +469,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                         data-testid="close-button"
                         className={cn(
                             "text-foreground",
-                            isMobile && "text-white"
+                            isMobile && isDarkMode && "text-white"
                         )}
                     >
                         <CrossIcon />
@@ -372,9 +484,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                                 isMobile && !isDarkMode && "bg-gray-200 text-black"
                             )}
                         >
-                            <div className="mr-2">
-                                <CameraIcon />
-                            </div>
+                            <CameraIcon className="mr-2" />
                             Photo
                         </Button>
                         <Button
@@ -386,9 +496,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                                 isMobile && !isDarkMode && "bg-gray-200 text-black"
                             )}
                         >
-                            <div className="mr-2">
-                                <VideoIcon />
-                            </div>
+                            <VideoIcon className="mr-2" />
                             Video
                         </Button>
                     </div>
@@ -400,7 +508,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                             aria-label="Switch camera"
                             className={cn(
                                 "text-foreground",
-                                isMobile && "text-white"
+                                isMobile && isDarkMode && "text-white"
                             )}
                         >
                             <CameraFlipIcon />
@@ -455,16 +563,14 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                                 <div className="absolute inset-4 rounded-full bg-white" />
                             </Button>
 
-                            {/* Timer button for photos (mobile only) */}
-                            {isMobile && (
-                                <Button
-                                    variant="ghost"
-                                    className="text-white"
-                                    onClick={() => capturePhoto(true)}
-                                >
-                                    3s
-                                </Button>
-                            )}
+                            {/* Timer button for photos */}
+                            <Button
+                                variant={isMobile ? "ghost" : "outline"}
+                                className={isMobile ? "text-white" : ""}
+                                onClick={() => capturePhoto(true)}
+                            >
+                                3s
+                            </Button>
                         </>
                     ) : (
                         <>

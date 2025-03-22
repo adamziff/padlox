@@ -1,63 +1,17 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { verifyMuxWebhook } from '@/utils/mux';
 import { MuxWebhookEvent } from '@/types/mux';
+import { createServiceClient } from '@/lib/supabase';
 
-// Create a direct Supabase client with the service role key to bypass RLS for webhook events storage only
-function createServiceClient() {
-  // Only use this for the webhook_events table, not for user data
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    console.warn('No SUPABASE_SERVICE_ROLE_KEY available for webhook processing');
-    // Fall back to anon key in development for testing
-    return createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        // Configure client for realtime
-        db: {
-          schema: 'public',
-        },
-        global: {
-          headers: {
-            'X-Client-Info': 'webhook-handler',
-          },
-        },
-      }
-    );
-  }
-
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    {
-      // Configure client for realtime
-      db: {
-        schema: 'public',
-      },
-      global: {
-        headers: {
-          'X-Client-Info': 'webhook-handler-service',
-        },
-      },
-    }
-  );
-}
+import { corsOptionsResponse, corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 
 // Add support for OPTIONS method (for CORS preflight requests)
 export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Mux-Signature',
-    },
-  });
+  return corsOptionsResponse();
 }
 
 // Add support for GET method (for webhook validation)
 export async function GET() {
-  return NextResponse.json({ message: 'Mux webhook endpoint is active' });
+  return corsJsonResponse({ message: 'Mux webhook endpoint is active' });
 }
 
 // Handle Mux webhook notifications
@@ -78,13 +32,13 @@ export async function POST(request: Request) {
       
       if (!webhookSecret) {
         console.error('Missing MUX_WEBHOOK_SECRET environment variable');
-        return new NextResponse('Server configuration error', { status: 500 });
+        return corsErrorResponse('Server configuration error', 500);
       }
       
       // Try Mux webhook verification
       if (!verifyMuxWebhook(rawBody, muxSignature, webhookSecret)) {
         console.error('Invalid Mux webhook signature');
-        return new NextResponse('Invalid signature', { status: 401 });
+        return corsErrorResponse('Invalid signature', 401);
       }
     } else {
       console.warn('WARNING: Mux webhook signature verification is disabled');
@@ -334,7 +288,7 @@ export async function POST(request: Request) {
     }
     
     // Always acknowledge receipt of the webhook to Mux
-    return NextResponse.json({ 
+    return corsJsonResponse({ 
       received: true, 
       type: event.type,
       message: 'Webhook received and stored for processing'
@@ -342,6 +296,6 @@ export async function POST(request: Request) {
     
   } catch (error) {
     console.error('Error processing Mux webhook:', error);
-    return new NextResponse('Internal server error', { status: 500 });
+    return corsErrorResponse('Internal server error', 500);
   }
 } 

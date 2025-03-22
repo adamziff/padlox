@@ -27,14 +27,74 @@ interface CameraCaptureWrapperProps {
 export function CameraCaptureWrapper(props: CameraCaptureWrapperProps) {
     const [isMounted, setIsMounted] = useState(false)
 
-    // Only render on client-side
+    // Clear any lingering permissions in case browser is caching them
     useEffect(() => {
-        setIsMounted(true)
-    }, [])
+        // Function to clear camera permissions by requesting and immediately stopping
+        const clearCameraPermissions = async () => {
+            try {
+                // Request and immediately stop camera access to clear any previous permissions
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    // Immediately stop all tracks
+                    stream.getTracks().forEach(track => track.stop());
+                }
+            } catch (err) {
+                // Ignore errors - this is just a proactive cleanup
+                console.log('Ignored cleanup error:', err);
+            }
+        };
+
+        // Mount cleanup - only run once when component mounts
+        setIsMounted(true);
+
+        // Cleanup function for when component unmounts
+        return () => {
+            setIsMounted(false);
+
+            // Try to force clear any lingering camera usage
+            const attemptForceCameraStop = async () => {
+                try {
+                    if (navigator.mediaDevices) {
+                        // Try to access the device list to reset permissions
+                        await navigator.mediaDevices.enumerateDevices();
+                        // If on Chrome, you can use a technique to reset the permissions state
+                        if (navigator.userAgent.includes('Chrome')) {
+                            clearCameraPermissions();
+                        }
+                    }
+                } catch (e) {
+                    // Ignore errors during cleanup
+                    console.log('Ignored force cleanup error:', e);
+                }
+            };
+
+            // Run the cleanup attempt
+            attemptForceCameraStop();
+        };
+    }, []);
+
+    const handleCapture = (file: File) => {
+        // Unmount the camera component immediately after capture
+        setIsMounted(false);
+        // Then call the onCapture handler with a small delay to ensure cleanup happens first
+        setTimeout(() => props.onCapture(file), 10);
+    };
+
+    const handleClose = () => {
+        // Unmount the camera component immediately
+        setIsMounted(false);
+        // Then call the onClose handler with a small delay to ensure cleanup happens first
+        setTimeout(props.onClose, 10);
+    };
 
     if (!isMounted) {
-        return null
+        return null;
     }
 
-    return <CameraCapture {...props} />
-} 
+    return (
+        <CameraCapture
+            onCapture={handleCapture}
+            onClose={handleClose}
+        />
+    );
+}

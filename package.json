@@ -18,6 +18,7 @@
   "dependencies": {
     "@aws-sdk/client-kms": "^3.758.0",
     "@aws-sdk/client-s3": "^3.758.0",
+    "@aws-sdk/s3-request-presigner": "^3.772.0",
     "@mux/mux-node": "^10.1.0",
     "@mux/mux-player-react": "^3.3.0",
     "@radix-ui/react-dropdown-menu": "^2.1.6",

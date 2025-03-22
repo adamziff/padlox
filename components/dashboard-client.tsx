@@ -20,6 +20,14 @@ type DashboardClientProps = {
     user: User
 }
 
+// Upload notification type
+type ActiveUpload = {
+    assetId: string;
+    status: 'uploading' | 'processing' | 'complete' | 'error';
+    message: string;
+    startTime: number;
+}
+
 export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
     const [showCamera, setShowCamera] = useState(false)
     const [capturedFile, setCapturedFile] = useState<File | null>(null)
@@ -31,21 +39,14 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
     const [mediaErrors, setMediaErrors] = useState<Record<string, string>>({})
     const [videoPosterUrls, setVideoPosterUrls] = useState<Record<string, string | null>>({})
     const [thumbnailTokens, setThumbnailTokens] = useState<Record<string, string>>({})
-    const [activeUploads, setActiveUploads] = useState<{
-        [id: string]: {
-            assetId: string;
-            status: 'uploading' | 'processing' | 'complete' | 'error';
-            message: string;
-            startTime: number;
-        }
-    }>({})
+    const [activeUploads, setActiveUploads] = useState<Record<string, ActiveUpload>>({})
+
     const supabase = createClient()
 
-    // Define fetchThumbnailToken before the useEffect that uses it
+    // Fetch thumbnail token for Mux videos
     const fetchThumbnailToken = useCallback(async (playbackId: string) => {
         try {
             const response = await fetch(`/api/mux/token?playbackId=${playbackId}&_=${Date.now()}`);
-
             if (!response.ok) {
                 throw new Error(`Failed to get token: ${response.status}`);
             }
@@ -58,7 +59,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 }));
                 return data.tokens.thumbnail;
             }
-
             return null;
         } catch (err) {
             console.error('Error fetching thumbnail token:', err);
@@ -66,10 +66,8 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         }
     }, []);
 
-    // Setup real-time subscription for assets table
+    // Setup realtime subscription for assets
     useEffect(() => {
-        console.log('Setting up realtime subscription for user:', user.id);
-
         const channel = supabase
             .channel('assets-changes')
             .on('postgres_changes',
@@ -80,90 +78,46 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     filter: `user_id=eq.${user.id}`
                 },
                 (payload) => {
-                    // Handle postgres change notification
-                    console.log('Received postgres update from Supabase:', payload.eventType,
-                        'for asset:', (payload.new as { id?: string })?.id,
-                        'status:', (payload.new as { mux_processing_status?: string })?.mux_processing_status);
-
-                    // Handle different types of changes
+                    // Handle INSERT events
                     if (payload.eventType === 'INSERT') {
                         setAssets(prevAssets => [payload.new as AssetWithMuxData, ...prevAssets]);
                     }
+                    // Handle UPDATE events
                     else if (payload.eventType === 'UPDATE') {
                         const updatedAsset = payload.new as AssetWithMuxData;
                         const oldAsset = payload.old as AssetWithMuxData;
 
-                        // Log important changes for debugging
-                        if (updatedAsset.mux_processing_status !== oldAsset.mux_processing_status) {
-                            console.log(`Asset ${updatedAsset.id} status changed: ${oldAsset.mux_processing_status} -> ${updatedAsset.mux_processing_status}`);
-
-                            // If status changed to ready, update active uploads
-                            if (updatedAsset.mux_processing_status === 'ready') {
-                                console.log('Asset is now ready - updating UI and aggressively clearing notifications:', updatedAsset.id);
-
-                                // Immediately remove any upload notifications for this asset
-                                setActiveUploads(prev => {
-                                    // Log current upload notifications for debugging
-                                    console.log('Current active uploads:', Object.entries(prev).map(([id, u]) => ({ id, assetId: u.assetId })));
-
-                                    const newUploads = { ...prev };
-                                    let found = false;
-
-                                    // Find and remove any uploads for this asset
-                                    Object.keys(newUploads).forEach(uploadId => {
-                                        if (newUploads[uploadId].assetId === updatedAsset.id) {
-                                            console.log(`Found and removing upload notification for ready asset: ${updatedAsset.id}`);
-                                            delete newUploads[uploadId];
-                                            found = true;
-                                        }
-                                    });
-
-                                    if (!found) {
-                                        console.log(`No upload notifications found for asset: ${updatedAsset.id}`);
-                                    }
-
-                                    return newUploads;
-                                });
-
-                                // If status changed to ready, fetch thumbnail token
-                                if (updatedAsset.mux_playback_id && !thumbnailTokens[updatedAsset.mux_playback_id]) {
-                                    console.log(`Fetching thumbnail token for newly ready asset: ${updatedAsset.id}`);
-                                    fetchThumbnailToken(updatedAsset.mux_playback_id);
-                                }
-                            }
-                        }
-
-                        // Force a fresh copy of the asset to ensure all properties are updated
-                        const freshAsset = {
-                            ...updatedAsset
-                        };
-
-                        // Update the asset in the list forcefully
-                        setAssets(prevAssets => {
-                            // First check if the asset exists to avoid unnecessary re-renders
-                            const assetExists = prevAssets.some(a => a.id === updatedAsset.id);
-                            if (!assetExists) {
-                                return prevAssets;
-                            }
-
-                            return prevAssets.map(asset =>
-                                asset.id === updatedAsset.id
-                                    ? freshAsset
-                                    : asset
-                            );
-                        });
-
-                        // If the selected asset was updated, update it too with the fresh copy
-                        if (selectedAsset && selectedAsset.id === updatedAsset.id) {
-                            setSelectedAsset(freshAsset);
-                        }
-
-                        // If status changed to ready, fetch thumbnail token
+                        // If status changed to ready, update UI and clear notifications
                         if (updatedAsset.mux_processing_status === 'ready' &&
-                            updatedAsset.mux_playback_id &&
-                            !thumbnailTokens[updatedAsset.mux_playback_id]) {
-                            console.log(`Fetching thumbnail token for newly ready asset: ${updatedAsset.id}`);
-                            fetchThumbnailToken(updatedAsset.mux_playback_id);
+                            updatedAsset.mux_processing_status !== oldAsset.mux_processing_status) {
+
+                            // Clear upload notifications for this asset
+                            setActiveUploads(prev => {
+                                const newUploads = { ...prev };
+                                Object.keys(newUploads).forEach(uploadId => {
+                                    if (newUploads[uploadId].assetId === updatedAsset.id) {
+                                        delete newUploads[uploadId];
+                                    }
+                                });
+                                return newUploads;
+                            });
+
+                            // Fetch thumbnail token for newly ready assets
+                            if (updatedAsset.mux_playback_id && !thumbnailTokens[updatedAsset.mux_playback_id]) {
+                                fetchThumbnailToken(updatedAsset.mux_playback_id);
+                            }
+                        }
+
+                        // Update the asset in the list
+                        setAssets(prevAssets =>
+                            prevAssets.map(asset =>
+                                asset.id === updatedAsset.id ? updatedAsset : asset
+                            )
+                        );
+
+                        // Also update selectedAsset if needed
+                        if (selectedAsset && selectedAsset.id === updatedAsset.id) {
+                            setSelectedAsset(updatedAsset);
                         }
 
                         // Clear any media errors for this asset
@@ -175,6 +129,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                             });
                         }
                     }
+                    // Handle DELETE events
                     else if (payload.eventType === 'DELETE') {
                         setAssets(prevAssets =>
                             prevAssets.filter(asset => asset.id !== payload.old.id)
@@ -188,17 +143,13 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 }
             )
             .on('broadcast', { event: 'asset-ready' }, (payload) => {
-                // Handle broadcast message
-                console.log('Received broadcast for asset-ready:', payload);
-
+                // Handle broadcast message for asset readiness
                 if (payload.payload && typeof payload.payload === 'object' && 'id' in payload.payload) {
                     const assetId = payload.payload.id as string;
 
                     // Check if we have this asset
                     const assetExists = assets.some(a => a.id === assetId);
-                    if (!assetExists) {
-                        return;
-                    }
+                    if (!assetExists) return;
 
                     // Fetch the latest asset data
                     supabase
@@ -209,7 +160,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                         .then(({ data, error }) => {
                             if (!error && data) {
                                 const updatedAsset = data as AssetWithMuxData;
-                                console.log('Asset data from broadcast:', updatedAsset);
 
                                 // Update asset in list
                                 setAssets(prevAssets =>
@@ -223,31 +173,15 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                     setSelectedAsset(updatedAsset);
                                 }
 
-                                // Update upload notification if needed
+                                // Clear notifications if asset is ready
                                 if (updatedAsset.mux_processing_status === 'ready') {
-                                    console.log('Asset from broadcast is now ready - aggressively clearing notifications:', assetId);
-
-                                    // Immediately remove any upload notifications for this asset
                                     setActiveUploads(prev => {
-                                        // Log current upload notifications for debugging
-                                        console.log('Current active uploads from broadcast:', Object.entries(prev).map(([id, u]) => ({ id, assetId: u.assetId })));
-
                                         const newUploads = { ...prev };
-                                        let found = false;
-
-                                        // Find and remove any uploads for this asset
                                         Object.keys(newUploads).forEach(uploadId => {
                                             if (newUploads[uploadId].assetId === assetId) {
-                                                console.log(`Found and removing upload notification for broadcast ready asset: ${assetId}`);
                                                 delete newUploads[uploadId];
-                                                found = true;
                                             }
                                         });
-
-                                        if (!found) {
-                                            console.log(`No upload notifications found for broadcast asset: ${assetId}`);
-                                        }
-
                                         return newUploads;
                                     });
                                 }
@@ -255,90 +189,73 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                         });
                 }
             })
-            .subscribe((status) => {
-                console.log('Real-time subscription status:', status);
-            });
+            .subscribe();
 
-        // Log the channel setup
-        console.log('Realtime channel configured:', channel.topic);
-
-        // Set up a periodic check for any preparing assets to handle cases where real-time updates fail
+        // Periodically check preparing assets (fallback for when real-time updates fail)
         const checkInterval = setInterval(() => {
-            setAssets(prevAssets => {
-                const preparingAssets = prevAssets.filter(
-                    asset => asset.mux_processing_status === 'preparing' && asset.mux_asset_id
-                );
+            const preparingAssets = assets.filter(
+                asset => asset.mux_processing_status === 'preparing' && asset.mux_asset_id
+            );
 
-                if (preparingAssets.length > 0) {
-                    console.log('Found preparing assets, checking status:', preparingAssets.length);
+            if (preparingAssets.length > 0) {
+                preparingAssets.forEach(asset => {
+                    // Check once every 30 seconds per asset
+                    const lastCheckedKey = `last_checked_${asset.id}`;
+                    const lastChecked = parseInt(localStorage.getItem(lastCheckedKey) || '0', 10);
+                    const now = Date.now();
 
-                    // For each preparing asset, check if it should be refreshed
-                    preparingAssets.forEach(asset => {
-                        // Skip if we checked recently (within last 30 seconds)
-                        const lastCheckedKey = `last_checked_${asset.id}`;
-                        const lastChecked = parseInt(localStorage.getItem(lastCheckedKey) || '0', 10);
-                        const now = Date.now();
+                    if (now - lastChecked > 30000) {
+                        localStorage.setItem(lastCheckedKey, now.toString());
 
-                        if (now - lastChecked > 30000) { // 30 seconds 
-                            // Mark this asset as checked
-                            localStorage.setItem(lastCheckedKey, now.toString());
+                        // Fetch the latest status from the API
+                        supabase
+                            .from('assets')
+                            .select('*')
+                            .eq('id', asset.id)
+                            .single()
+                            .then(({ data, error }) => {
+                                if (!error && data) {
+                                    const updatedAsset = data as AssetWithMuxData;
 
-                            // Fetch the latest status from the API
-                            supabase
-                                .from('assets')
-                                .select('*')
-                                .eq('id', asset.id)
-                                .single()
-                                .then(({ data, error }) => {
-                                    if (!error && data) {
-                                        const updatedAsset = data as AssetWithMuxData;
+                                    // If status changed, update the asset
+                                    if (updatedAsset.mux_processing_status !== asset.mux_processing_status) {
+                                        setAssets(prevState =>
+                                            prevState.map(a =>
+                                                a.id === asset.id ? updatedAsset : a
+                                            )
+                                        );
 
-                                        // If status changed, update the asset
-                                        if (updatedAsset.mux_processing_status !== asset.mux_processing_status) {
-                                            console.log(`Manual refresh detected status change for asset ${asset.id}: ${asset.mux_processing_status} -> ${updatedAsset.mux_processing_status}`);
-
-                                            // Update assets state
-                                            setAssets(prevState =>
-                                                prevState.map(a =>
-                                                    a.id === asset.id ? updatedAsset : a
-                                                )
-                                            );
-
-                                            // Update selected asset if needed
-                                            if (selectedAsset && selectedAsset.id === asset.id) {
-                                                setSelectedAsset(updatedAsset);
-                                            }
+                                        // Update selected asset if needed
+                                        if (selectedAsset && selectedAsset.id === asset.id) {
+                                            setSelectedAsset(updatedAsset);
                                         }
                                     }
-                                });
-                        }
-                    });
-                }
+                                }
+                            });
+                    }
+                });
+            }
+        }, 15000);
 
-                // Don't change the assets here
-                return prevAssets;
-            });
-        }, 15000); // Check every 15 seconds
-
-        // Cleanup on unmount
+        // Clean up on unmount
         return () => {
-            console.log('Cleaning up real-time subscription');
             channel.unsubscribe();
             clearInterval(checkInterval);
         };
     }, [user.id, selectedAsset, mediaErrors, thumbnailTokens, fetchThumbnailToken, supabase, activeUploads, assets]);
 
+    // Handle captured media files
     async function handleCapture(file: File) {
         try {
-            // If the file is a video, we upload it to Mux directly
+            // For videos, use Mux upload flow
             if (file.type.startsWith('video/')) {
                 // Close the camera and show dashboard immediately
                 setShowCamera(false);
 
-                // Create a unique upload ID for tracking this upload
+                // Create a unique upload ID for tracking
                 const uploadId = `upload_${Date.now()}`;
 
-                // Show the upload warning with clearer messaging
+                // Show the upload notification
                 setActiveUploads(prev => ({
                     ...prev,
                     [uploadId]: {
@@ -349,10 +266,10 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     }
                 }));
 
-                // Create a unique correlation ID to track this upload across page refreshes
+                // Create a correlation ID to track this upload across page refreshes
                 const correlationId = `upload_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-                // Create a basic metadata object with a more descriptive name
+                // Basic metadata for the video
                 const metadata = {
                     name: `Video - ${new Date().toLocaleString('en-US', {
                         month: 'short',
@@ -366,8 +283,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     estimated_value: null
                 };
 
-                console.log('Requesting Mux upload URL with metadata:', metadata, 'correlationId:', correlationId);
-
                 // Get a direct upload URL from Mux
                 const response = await fetch('/api/mux/upload', {
                     method: 'POST',
@@ -380,32 +295,12 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     }),
                 });
 
-                // Try to get the error details from the response
-                let errorData: Record<string, unknown> = {};
-                let errorDetail = '';
-
                 if (!response.ok) {
-                    try {
-                        errorData = await response.json();
-                        console.error('Upload error details:', errorData);
-                        errorDetail = errorData.details ? ` - ${errorData.details}` : '';
-                    } catch (e) {
-                        console.error('Failed to parse error response:', e);
-                    }
-
-                    throw new Error(`Failed to get upload URL: ${response.status} ${response.statusText}${errorDetail}`);
+                    throw new Error(`Failed to get upload URL: ${response.status} ${response.statusText}`);
                 }
 
                 // Parse the successful response
-                let responseData;
-                try {
-                    responseData = await response.json();
-                    console.log('Got upload URL response:', responseData);
-                } catch (parseError) {
-                    console.error('Error parsing upload response:', parseError);
-                    throw new Error('Failed to parse upload response');
-                }
-
+                const responseData = await response.json();
                 const { uploadUrl, asset, clientReferenceId } = responseData;
 
                 if (!uploadUrl) {
@@ -414,8 +309,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
                 // After getting response, update the upload tracking
                 if (asset) {
-                    console.log('Adding asset to UI:', asset, 'clientReferenceId:', clientReferenceId);
-                    // Store the reference ID in local storage to help with recovery if page refreshes
+                    // Store the reference ID for recovery if page refreshes
                     if (clientReferenceId) {
                         try {
                             localStorage.setItem('lastUploadReference', clientReferenceId);
@@ -424,56 +318,36 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                             console.warn('Could not store upload reference in localStorage:', e);
                         }
                     }
+
+                    // Add asset to UI
                     setAssets(prev => [asset, ...prev]);
 
-                    // Update the active upload with the asset ID - be very clear for debugging
-                    console.log(`Setting assetId ${asset.id} for upload ${uploadId} in notification`);
-                    setActiveUploads(prev => {
-                        // Check if this uploadId actually exists
-                        if (!prev[uploadId]) {
-                            console.warn(`Upload ${uploadId} not found in activeUploads!`);
-                            return prev;
+                    // Update the notification with asset ID
+                    setActiveUploads(prev => ({
+                        ...prev,
+                        [uploadId]: {
+                            ...prev[uploadId],
+                            assetId: asset.id,
+                            status: 'processing',
+                            message: 'Video uploaded. Processing is happening in the background - you can continue using the app.'
                         }
-
-                        return {
-                            ...prev,
-                            [uploadId]: {
-                                ...prev[uploadId],
-                                assetId: asset.id,
-                                status: 'processing',
-                                message: 'Video uploaded. Processing is happening in the background - you can continue using the app.'
-                            }
-                        };
-                    });
-                } else {
-                    console.warn('No asset data returned from server');
+                    }));
                 }
 
                 // Upload the file to Mux
-                console.log('Uploading video to Mux URL:', uploadUrl, 'file type:', file.type, 'file size:', file.size);
+                const uploadResponse = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    body: file,
+                    headers: {
+                        'Content-Type': file.type,
+                    },
+                });
 
-                try {
-                    const uploadResponse = await fetch(uploadUrl, {
-                        method: 'PUT',
-                        body: file,
-                        headers: {
-                            'Content-Type': file.type,
-                        },
-                    });
-
-                    if (!uploadResponse.ok) {
-                        const errorText = await uploadResponse.text().catch(() => '');
-                        throw new Error(`Failed to upload to Mux: ${uploadResponse.status} ${uploadResponse.statusText}${errorText ? ` - ${errorText}` : ''}`);
-                    }
-
-                    console.log('Video successfully sent to Mux for processing');
-                } catch (uploadError) {
-                    console.error('Error during file upload to Mux:', uploadError);
-                    alert(`Error uploading video: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`);
-                    // Even if upload fails, we keep the asset in preparing state - it might timeout later
+                if (!uploadResponse.ok) {
+                    throw new Error(`Failed to upload to Mux: ${uploadResponse.status} ${uploadResponse.statusText}`);
                 }
             } else {
-                // For images, we follow the normal flow
+                // For images, show the media preview
                 setCapturedFile(file);
                 setShowCamera(false);
             }
@@ -513,7 +387,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
     // Add a recovery mechanism for uploads after page refresh
     useEffect(() => {
-        // Check if there was a recent upload that might need recovery
         try {
             const lastUploadReference = localStorage.getItem('lastUploadReference');
             const lastUploadTime = localStorage.getItem('lastUploadTime');
@@ -522,15 +395,12 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             if (lastUploadReference && lastUploadTime) {
                 const timeSinceUpload = Date.now() - Number(lastUploadTime);
                 if (timeSinceUpload < 3600000) { // 1 hour
-                    console.log('Found recent upload, checking if recovery is needed:', lastUploadReference);
-
                     // Check if this upload is already in our assets list
                     const existingAsset = assets.find(a =>
                         'client_reference_id' in a && a.client_reference_id === lastUploadReference
                     );
 
                     if (!existingAsset) {
-                        console.log('Upload not found in current assets, querying database');
                         // The asset might exist in the database but not in our current state
                         supabase
                             .from('assets')
@@ -540,7 +410,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                             .single()
                             .then(({ data, error }) => {
                                 if (data && !error) {
-                                    console.log('Found uploaded asset in database, adding to UI:', data);
                                     setAssets(prev => {
                                         // Check if it's already been added
                                         if (prev.some(a => a.id === data.id)) {
@@ -549,7 +418,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                         return [data as AssetWithMuxData, ...prev];
                                     });
                                 } else if (error) {
-                                    console.log('No existing upload found, clearing recovery data');
+                                    // No existing upload found, clear recovery data
                                     localStorage.removeItem('lastUploadReference');
                                     localStorage.removeItem('lastUploadTime');
                                 }
@@ -564,8 +433,9 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         } catch (e) {
             console.warn('Error checking for upload recovery:', e);
         }
-    }, [assets, supabase, user.id, thumbnailTokens, fetchThumbnailToken]);
+    }, [assets, supabase, user.id]);
 
+    // Handle saving images uploaded via the camera
     async function handleSave(url: string, metadata: {
         name: string
         description: string | null
@@ -577,12 +447,11 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 return
             }
 
-            console.log('Uploading file to S3...')
+            // Upload to S3
             const response = await uploadToS3(capturedFile)
-            const { url: s3Url, key } = response
-            console.log('File uploaded successfully:', { s3Url, key })
+            const { key } = response
 
-            console.log('Saving asset to database...')
+            // Save to database
             const { data: asset, error } = await supabase
                 .from('assets')
                 .insert([{
@@ -597,12 +466,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 .single()
 
             if (error) {
-                console.error('Database error:', {
-                    message: error.message,
-                    details: error.details,
-                    hint: error.hint,
-                    code: error.code
-                })
                 throw error
             }
 
@@ -612,7 +475,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 media_url: `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${asset.media_url}`
             } as AssetWithMuxData;
 
-            console.log('Asset saved successfully:', transformedAsset)
             setAssets(prev => [transformedAsset, ...prev])
             setCapturedFile(null)
         } catch (error: unknown) {
@@ -632,6 +494,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         }
     }
 
+    // Handle asset selection for multi-select mode
     function toggleAssetSelection(assetId: string, event: React.MouseEvent | React.ChangeEvent<HTMLInputElement>) {
         event.stopPropagation()
         const newSelectedAssets = new Set(selectedAssets)
@@ -643,6 +506,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         setSelectedAssets(newSelectedAssets)
     }
 
+    // Handle bulk delete of selected assets
     async function handleBulkDelete() {
         if (!window.confirm(`Are you sure you want to delete ${selectedAssets.size} assets? This action cannot be undone.`)) {
             return
@@ -687,11 +551,10 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         }
     }
 
+    // Handle clicking on an asset
     function handleAssetClick(asset: AssetWithMuxData, event: React.MouseEvent) {
         // Don't process clicks on videos that are still processing
         if (asset.media_type === 'video' && asset.mux_processing_status === 'preparing') {
-            // Prevent any interaction for videos that are still processing
-            console.log('Ignoring click on processing video asset:', asset.id);
             return;
         }
 
@@ -702,22 +565,18 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         }
     }
 
+    // Handle asset deletion from the modal
     async function handleAssetDeleted(deletedAssetId: string) {
         setAssets(prevAssets => prevAssets.filter(asset => asset.id !== deletedAssetId));
     }
 
-    // Add function to handle media errors
+    // Handle media errors
     function handleMediaError(assetId: string, url: string, type: 'image' | 'video', error: unknown) {
-        console.error(`Error loading ${type}:`, {
-            assetId,
-            url,
-            error,
-            timestamp: new Date().toISOString()
-        })
+        console.error(`Error loading ${type}:`, { assetId, url, error });
         setMediaErrors(prev => ({ ...prev, [assetId]: 'Failed to load media' }))
     }
 
-    // Add function to generate and cache video posters
+    // Generate and cache video posters
     async function generateAndCacheVideoPoster(assetId: string, videoUrl: string): Promise<string | null> {
         try {
             // Skip Mux videos - they need authentication
@@ -747,16 +606,14 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         }
     }
 
-    // Update the fetchThumbnailToken call when assets change
+    // Fetch thumbnail tokens for ready Mux videos
     useEffect(() => {
-        // Find all assets with ready Mux videos that need tokens
         const muxAssets = assets.filter(
             asset => asset.mux_playback_id &&
                 asset.mux_processing_status === 'ready' &&
                 !thumbnailTokens[asset.mux_playback_id]
         );
 
-        // Fetch tokens for each asset
         muxAssets.forEach(asset => {
             if (asset.mux_playback_id) {
                 fetchThumbnailToken(asset.mux_playback_id);
@@ -764,7 +621,51 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         });
     }, [assets, thumbnailTokens, fetchThumbnailToken]);
 
-    // Ensure mux_playback_id is defined before using it
+    // Auto-dismiss processing notifications after 3 minutes
+    useEffect(() => {
+        const processingUploads = Object.entries(activeUploads).filter(
+            ([, upload]) => upload.status === 'processing'
+        );
+
+        processingUploads.forEach(([uploadId, upload]) => {
+            const elapsed = Date.now() - upload.startTime;
+            const maxProcessingTime = 3 * 60 * 1000; // 3 minutes
+
+            if (elapsed > maxProcessingTime) {
+                setActiveUploads(prev => {
+                    const newUploads = { ...prev };
+                    delete newUploads[uploadId];
+                    return newUploads;
+                });
+            }
+        });
+    }, [activeUploads]);
+
+    // Check for and remove notifications for ready assets
+    useEffect(() => {
+        const uploadsToRemove: string[] = [];
+
+        Object.entries(activeUploads).forEach(([uploadId, upload]) => {
+            if (!upload.assetId) return;
+
+            const matchingAsset = assets.find(asset => asset.id === upload.assetId);
+            if (matchingAsset && 'mux_processing_status' in matchingAsset && matchingAsset.mux_processing_status === 'ready') {
+                uploadsToRemove.push(uploadId);
+            }
+        });
+
+        if (uploadsToRemove.length > 0) {
+            setActiveUploads(prev => {
+                const newUploads = { ...prev };
+                uploadsToRemove.forEach(id => {
+                    delete newUploads[id];
+                });
+                return newUploads;
+            });
+        }
+    }, [assets, activeUploads]);
+
+    // Helper function to get Mux thumbnail URL with token if available
     const getThumbnailUrl = (asset: AssetWithMuxData) => {
         if (!asset.mux_playback_id) return '';
 
@@ -772,7 +673,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             }`;
     };
 
-    // Update the UploadWarning component to be responsive and dark mode compatible
+    // Upload warning notification component
     function UploadWarning() {
         const activeUploadsList = Object.entries(activeUploads);
 
@@ -821,99 +722,6 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             </div>
         );
     }
-
-    // Also add a timeout to auto-dismiss processing notifications after 3 minutes
-    // This is a fallback in case webhook processing fails
-    useEffect(() => {
-        // Set up a timer to automatically dismiss processing notifications after 3 minutes
-        const processingUploads = Object.entries(activeUploads).filter(
-            ([, upload]) => upload.status === 'processing'
-        );
-
-        processingUploads.forEach(([uploadId, upload]) => {
-            const elapsed = Date.now() - upload.startTime;
-            const maxProcessingTime = 3 * 60 * 1000; // 3 minutes
-
-            if (elapsed > maxProcessingTime) {
-                console.log(`Auto-dismissing stale processing notification for ${upload.assetId}`);
-                setActiveUploads(prev => {
-                    const newUploads = { ...prev };
-                    delete newUploads[uploadId];
-                    return newUploads;
-                });
-            }
-        });
-
-        return () => { };
-    }, [activeUploads]);
-
-    // Add a direct effect to check for and remove notifications for ready assets
-    useEffect(() => {
-        // This effect specifically monitors assets for status changes
-        console.log('Checking assets for completed uploads...');
-
-        // Find all uploads that have corresponding assets that are now ready
-        const uploadsToRemove: string[] = [];
-
-        // For each active upload notification, check if its asset is now ready
-        Object.entries(activeUploads).forEach(([uploadId, upload]) => {
-            // Skip if no assetId assigned yet
-            if (!upload.assetId) return;
-
-            // Find this asset in the assets list
-            const matchingAsset = assets.find(asset => asset.id === upload.assetId);
-            if (matchingAsset && 'mux_processing_status' in matchingAsset && matchingAsset.mux_processing_status === 'ready') {
-                console.log(`Found ready asset for active upload - removing notification: ${upload.assetId}`);
-                uploadsToRemove.push(uploadId);
-            }
-        });
-
-        // Remove the identified uploads
-        if (uploadsToRemove.length > 0) {
-            console.log(`Removing ${uploadsToRemove.length} completed upload notifications`);
-            setActiveUploads(prev => {
-                const newUploads = { ...prev };
-                uploadsToRemove.forEach(id => {
-                    delete newUploads[id];
-                });
-                return newUploads;
-            });
-        }
-    }, [assets, activeUploads]);
-
-    // Add a debug effect to log notification state
-    useEffect(() => {
-        // Log notification state when it changes
-        if (Object.keys(activeUploads).length > 0) {
-            console.log('Active uploads state changed:',
-                Object.entries(activeUploads).map(([id, upload]) => ({
-                    id,
-                    assetId: upload.assetId,
-                    status: upload.status,
-                    elapsedSeconds: Math.floor((Date.now() - upload.startTime) / 1000)
-                }))
-            );
-        }
-    }, [activeUploads]);
-
-    // Also add a special function to clear notifications if we get into a stuck state
-    // This is just for debugging - we shouldn't need it in production
-    const DEBUG_clearAllNotifications = () => {
-        // You can call this from browser console with:
-        // document.dispatchEvent(new CustomEvent('debug-clear-notifications'));
-        setActiveUploads({});
-        console.log('All notifications cleared by debug function');
-    };
-
-    useEffect(() => {
-        // Listen for a debug clear event
-        const handleDebugClear = () => DEBUG_clearAllNotifications();
-        document.addEventListener('debug-clear-notifications', handleDebugClear);
-
-        return () => {
-            document.removeEventListener('debug-clear-notifications', handleDebugClear);
-        };
-    }, []);
 
     return (
         <div className="min-h-screen flex flex-col">
@@ -1060,15 +868,12 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                                         </div>
                                                     </>
                                                 ) : (
-                                                    <>
-                                                        {/* Fallback for processing videos */}
-                                                        <div className="text-white text-center">
-                                                            <div className="animate-spin h-8 w-8 mx-auto mb-2">
-                                                                <SpinnerIcon />
-                                                            </div>
-                                                            <span>Processing</span>
+                                                    <div className="text-white text-center">
+                                                        <div className="animate-spin h-8 w-8 mx-auto mb-2">
+                                                            <SpinnerIcon />
                                                         </div>
-                                                    </>
+                                                        <span>Processing</span>
+                                                    </div>
                                                 )}
 
                                                 {/* Video icon indicator */}
@@ -1092,14 +897,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                                 poster={videoPosterUrls[asset.id] || undefined}
                                                 onLoadedMetadata={() => {
                                                     if (videoPosterUrls[asset.id] === null) {
-                                                        generateAndCacheVideoPoster(asset.id, asset.media_url)
-                                                            .catch(() => {
-                                                                // Silently fail - we'll still show the video
-                                                                setVideoPosterUrls(prev => ({
-                                                                    ...prev,
-                                                                    [asset.id]: null // null indicates we tried and failed
-                                                                }));
-                                                            });
+                                                        generateAndCacheVideoPoster(asset.id, asset.media_url);
                                                     }
                                                 }}
                                                 onError={(e) => {
@@ -1174,8 +972,8 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 )}
             </div>
 
-            {/* Add the upload warning popup */}
+            {/* Upload notifications */}
             <UploadWarning />
         </div>
     );
-} 
+}

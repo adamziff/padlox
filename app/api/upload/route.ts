@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/utils/supabase/server'
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { signFile } from '@/utils/server/mediaSigningService'
+import { corsJsonResponse, corsErrorResponse, corsOptionsResponse, withAuth } from '@/lib/api'
+import { createServerSupabaseClient } from '@/lib/auth/supabase'
 
 const s3Client = new S3Client({
     region: process.env.AWS_REGION!,
@@ -12,13 +12,13 @@ const s3Client = new S3Client({
     useArnRegion: true
 })
 
-export async function POST(request: Request) {
-    // Verify authentication
-    const supabase = await createClient()
-    const { data: { user }, error } = await supabase.auth.getUser()
-
-    if (error || !user) {
-        return new NextResponse('Unauthorized', { status: 401 })
+export const POST = withAuth(async (request: Request) => {
+    // User is guaranteed to exist due to withAuth middleware
+    const supabase = await createServerSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+        return corsErrorResponse('User not found', 401)
     }
 
     try {
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
         const metadata = JSON.parse(formData.get('metadata') as string || '{}')
 
         if (!file) {
-            return new NextResponse('No file provided', { status: 400 })
+            return corsErrorResponse('No file provided', 400)
         }
 
         // Convert file to buffer
@@ -87,16 +87,7 @@ export async function POST(request: Request) {
             isVideo: isVideo
         })
 
-        return NextResponse.json(
-            { url, key },
-            {
-                headers: {
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-                },
-            }
-        )
+        return corsJsonResponse({ url, key })
     } catch (error: unknown) {
         const err = error as Error & { code?: string }
         console.error('Upload error:', {
@@ -104,27 +95,10 @@ export async function POST(request: Request) {
             code: err?.code,
             stack: err?.stack,
         })
-        return new NextResponse(
-            JSON.stringify({ error: 'Upload failed', details: err?.message }),
-            {
-                status: 500,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-                }
-            }
-        )
+        return corsErrorResponse('Upload failed', 500, { message: err?.message })
     }
-}
+})
 
 export async function OPTIONS() {
-    return new NextResponse(null, {
-        headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        },
-    })
-} 
+    return corsOptionsResponse()
+}

@@ -1122,7 +1122,7 @@ export const ImageIcon = ({ size = 16 }: { size?: number }) => {
     );
 };
 
-export const VideoIcon = ({ size = 16 }: { size?: number }) => {
+export const VideoIcon = ({ size = 16, className }: { size?: number, className?: string }) => {
     return (
         <svg
             height={size}
@@ -1130,6 +1130,7 @@ export const VideoIcon = ({ size = 16 }: { size?: number }) => {
             viewBox="0 0 16 16"
             width={size}
             style={{ color: 'currentcolor' }}
+            className={className}
         >
             <path
                 fillRule="evenodd"
@@ -1145,7 +1146,7 @@ export const VideoIcon = ({ size = 16 }: { size?: number }) => {
     );
 };
 
-export const CameraFlipIcon = ({ size = 16 }: { size?: number }) => {
+export const CameraFlipIcon = ({ size = 16, className }: { size?: number, className?: string }) => {
     return (
         <svg
             height={size}
@@ -1153,6 +1154,7 @@ export const CameraFlipIcon = ({ size = 16 }: { size?: number }) => {
             viewBox="0 0 16 16"
             width={size}
             style={{ color: 'currentcolor' }}
+            className={className}
         >
             <path
                 fillRule="evenodd"
@@ -1164,7 +1166,7 @@ export const CameraFlipIcon = ({ size = 16 }: { size?: number }) => {
     );
 };
 
-export const CameraIcon = ({ size = 16 }: { size?: number }) => {
+export const CameraIcon = ({ size = 16, className }: { size?: number, className?: string }) => {
     return (
         <svg
             height={size}
@@ -1172,6 +1174,7 @@ export const CameraIcon = ({ size = 16 }: { size?: number }) => {
             viewBox="0 0 16 16"
             width={size}
             style={{ color: 'currentcolor' }}
+            className={className}
         >
             <path
                 fillRule="evenodd"

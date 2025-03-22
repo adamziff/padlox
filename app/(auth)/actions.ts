@@ -2,18 +2,16 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/utils/supabase/server'
+import { createServerSupabaseClient } from '@/lib/auth/supabase'
 
 /**
  * Unified loginOrRegister action:
  * - ShouldCreateUser: true => If user doesn't exist, create them; otherwise send Magic Link
- * - Logs a message when sending the email, for debugging purposes
+ * - Uses the new serverSupabaseClient for better cookie handling
  */
 export async function loginOrRegister(formData: FormData) {
-    const supabase = await createClient()
+    const supabase = await createServerSupabaseClient()
     const email = formData.get('email') as string
-
-    console.log(`[loginOrRegister] About to send login/signup email to: ${email}`)
 
     try {
         const { error } = await supabase.auth.signInWithOtp({
@@ -38,7 +36,7 @@ export async function loginOrRegister(formData: FormData) {
 }
 
 export async function logout() {
-    const supabase = await createClient()
+    const supabase = await createServerSupabaseClient()
     await supabase.auth.signOut()
     revalidatePath('/', 'layout')
     redirect('/login')
