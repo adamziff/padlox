@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useMediaQuery } from '../hooks/use-media-query'
 import { Button } from './ui/button'
-import { CrossIcon, CameraIcon, VideoIcon, CameraFlipIcon } from './icons'
+import { CrossIcon, CameraIcon, VideoIcon, CameraFlipIcon, UploadIcon } from './icons'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 
@@ -151,12 +151,14 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     const [recorderStatus, setRecorderStatus] = useState<'idle' | 'recording' | 'stopping' | 'error'>('idle')
     const [isInitializing, setIsInitializing] = useState(true)
     const [isCleaning, setIsCleaning] = useState(false)
+    const [isUploading, setIsUploading] = useState(false)
 
     const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const streamRef = useRef<MediaStream | null>(null)
     const mediaRecorderRef = useRef<MediaRecorderHelper>(new MediaRecorderHelper())
     const chunks = useRef<BlobPart[]>([])
+    const fileInputRef = useRef<HTMLInputElement>(null)
 
     // Track if component is mounted to prevent state updates after unmounting
     const isMountedRef = useRef(true)
@@ -467,13 +469,65 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         }
     }, [videoRef.current?.srcObject, isInitializing]);
 
+    // Handle file upload
+    const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+
+        const file = files[0];
+        // Make sure it's a video
+        if (!file.type.startsWith('video/')) {
+            alert('Please select a video file.');
+            return;
+        }
+
+        try {
+            setIsUploading(true);
+
+            // Create a copy of the file with a normalized name
+            const videoFile = new File(
+                [file],
+                `video-${Date.now()}.${file.name.split('.').pop()}`,
+                { type: file.type }
+            );
+
+            // Start cleanup before calling onCapture
+            await performFullCleanup();
+
+            // Reset the file input for future uploads
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+
+            // Send the file through the same flow as camera-captured videos
+            onCapture(videoFile);
+        } catch (error) {
+            console.error('Error processing uploaded video:', error);
+        } finally {
+            setIsUploading(false);
+        }
+    }, [onCapture, performFullCleanup]);
+
+    // Trigger file input click
+    const triggerFileUpload = useCallback(() => {
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
+    }, []);
+
     // Loading state
-    if (isInitializing || isCleaning) {
+    if (isInitializing || isCleaning || isUploading) {
         return (
             <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
                 <div className="bg-background p-8 rounded-lg flex flex-col items-center gap-4">
                     <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                    <p>{isInitializing ? "Initializing camera..." : "Releasing camera..."}</p>
+                    <p>
+                        {isInitializing
+                            ? "Initializing camera..."
+                            : isUploading
+                                ? "Processing video..."
+                                : "Releasing camera..."}
+                    </p>
                 </div>
             </div>
         );
@@ -488,6 +542,16 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             role="dialog"
             aria-label="Camera Capture"
         >
+            {/* Hidden file input for video uploads */}
+            <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/*"
+                className="hidden"
+                onChange={handleFileUpload}
+                aria-label="Upload video"
+            />
+
             <div
                 className={cn(
                     "bg-background flex flex-col overflow-hidden",
@@ -634,6 +698,22 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                                 <div className="text-destructive animate-pulse">
                                     REC
                                 </div>
+                            )}
+
+                            {/* Video upload button - only shown when not recording */}
+                            {recorderStatus !== 'recording' && (
+                                <Button
+                                    variant={isMobile ? "ghost" : "outline"}
+                                    className={cn(
+                                        "flex items-center gap-2 ml-2",
+                                        isMobile && isDarkMode && "text-white"
+                                    )}
+                                    onClick={triggerFileUpload}
+                                    aria-label="Upload video"
+                                >
+                                    <UploadIcon size={18} />
+                                    <span>{isMobile ? "" : "Upload"}</span>
+                                </Button>
                             )}
                         </>
                     )}
