@@ -1,4 +1,4 @@
-import { verifyMuxWebhook, getStaticRenditionDownloadUrl } from '@/lib/mux';
+import { verifyMuxWebhook } from '@/lib/mux';
 import { MuxWebhookEvent } from '@/types/mux';
 import { createServiceSupabaseClient } from '@/lib/auth/supabase';
 
@@ -144,7 +144,6 @@ export async function POST(request: Request) {
         // Now try to process it immediately using multiple lookup strategies
         // Try different ways to find the asset as a recovery mechanism
         let foundAsset = null;
-        let findError = null;
       
         // 1. Try to find asset by mux_asset_id directly (exact match)
         if (!foundAsset) {
@@ -155,7 +154,6 @@ export async function POST(request: Request) {
             .limit(1);
             
           if (error) {
-            findError = error;
             console.error('Error finding asset by mux_asset_id:', error);
           } else if (data && data.length > 0) {
             foundAsset = data[0];
@@ -172,7 +170,6 @@ export async function POST(request: Request) {
             .limit(1);
             
           if (error) {
-            findError = error;
             console.error('Error finding asset by mux_correlation_id:', error);
           } else if (data && data.length > 0) {
             foundAsset = data[0];
@@ -189,7 +186,6 @@ export async function POST(request: Request) {
             .limit(1);
             
           if (error) {
-            findError = error;
             console.error('Error finding asset by upload_id:', error);
           } else if (data && data.length > 0) {
             foundAsset = data[0];
