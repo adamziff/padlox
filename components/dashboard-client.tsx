@@ -23,7 +23,7 @@ type DashboardClientProps = {
 // Upload notification type
 type ActiveUpload = {
     assetId: string;
-    status: 'uploading' | 'processing' | 'complete' | 'error';
+    status: 'uploading' | 'processing' | 'transcribing' | 'complete' | 'error';
     message: string;
     startTime: number;
 }
@@ -96,7 +96,13 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                 const newUploads = { ...prev };
                                 Object.keys(newUploads).forEach(uploadId => {
                                     if (newUploads[uploadId].assetId === updatedAsset.id) {
-                                        delete newUploads[uploadId];
+                                        // If transcript processing is pending, change the message
+                                        if (updatedAsset.transcript_processing_status === 'pending') {
+                                            newUploads[uploadId].status = 'transcribing';
+                                            newUploads[uploadId].message = 'Video ready. Generating transcript...';
+                                        } else {
+                                            delete newUploads[uploadId];
+                                        }
                                     }
                                 });
                                 return newUploads;
@@ -105,6 +111,27 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                             // Fetch thumbnail token for newly ready assets
                             if (updatedAsset.mux_playback_id && !thumbnailTokens[updatedAsset.mux_playback_id]) {
                                 fetchThumbnailToken(updatedAsset.mux_playback_id);
+                            }
+                        }
+
+                        // Handle transcript status updates
+                        if ('transcript_processing_status' in updatedAsset &&
+                            'transcript_processing_status' in oldAsset &&
+                            updatedAsset.transcript_processing_status !== oldAsset.transcript_processing_status) {
+
+                            // If transcript is completed or errored, clear related upload notifications
+                            if (updatedAsset.transcript_processing_status === 'completed' ||
+                                updatedAsset.transcript_processing_status === 'error') {
+                                setActiveUploads(prev => {
+                                    const newUploads = { ...prev };
+                                    Object.keys(newUploads).forEach(uploadId => {
+                                        if (newUploads[uploadId].assetId === updatedAsset.id &&
+                                            newUploads[uploadId].status === 'transcribing') {
+                                            delete newUploads[uploadId];
+                                        }
+                                    });
+                                    return newUploads;
+                                });
                             }
                         }
 

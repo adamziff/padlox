@@ -87,7 +87,7 @@ export async function createMuxUpload(correlationId?: string): Promise<{
     
     log(`Creating new Mux upload with correlation ID: ${uploadCorrelationId}`);
     
-    // Create direct upload using the Mux REST API with more metadata
+    // Create direct upload using the Mux REST API with minimal configuration
     const response = await fetch('https://api.mux.com/video/v1/uploads', {
       method: 'POST',
       headers: {
@@ -98,7 +98,11 @@ export async function createMuxUpload(correlationId?: string): Promise<{
         cors_origin: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
         new_asset_settings: {
           playback_policies: ['signed'],
-          // Add metadata to help track uploads
+          static_renditions : [ 
+            {
+              "resolution" : "audio-only"
+            }
+          ],
           metadata: {
             correlation_id: uploadCorrelationId,
             created_at: new Date().toISOString(),
@@ -323,5 +327,64 @@ export async function deleteMuxAsset(assetId: string): Promise<boolean> {
   } catch (error) {
     console.error('Error deleting Mux asset:', error);
     return false;
+  }
+}
+
+/**
+ * Generate a signed URL for a static rendition
+ * @param assetId - The Mux asset ID
+ * @param renditionId - The rendition ID (not used in the direct streaming URL)
+ * @param renditionName - The filename (e.g., 'audio.m4a')
+ * @returns The signed URL for the static rendition
+ */
+export async function getStaticRenditionDownloadUrl(
+  assetId: string,
+  renditionId: string, 
+  renditionName: string = 'audio.m4a'
+): Promise<string> {
+  try {
+    // Create Basic Auth credentials for Mux API
+    const auth = Buffer.from(`${process.env.MUX_TOKEN_ID}:${process.env.MUX_TOKEN_SECRET}`).toString('base64');
+    
+    log(`Getting playback ID for asset ${assetId} to construct static rendition URL`);
+    
+    // First, we need to get the asset details to get the playback ID
+    const response = await fetch(`https://api.mux.com/video/v1/assets/${assetId}`, {
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'No error details available');
+      throw new Error(`Mux API error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+    
+    const data = await response.json();
+    
+    if (!data.data || !data.data.playback_ids || data.data.playback_ids.length === 0) {
+      throw new Error('No playback ID found for asset');
+    }
+    
+    // Get the first playback ID
+    const playbackId = data.data.playback_ids[0].id;
+    
+    if (!playbackId) {
+      throw new Error('No playback ID found in asset data');
+    }
+    
+    // Instead of just returning the static rendition URL, we need to sign it with JWT
+    // Get the signed JWT token for the playback ID
+    const token = await createMuxPlaybackJWT(playbackId, 'system', 'v');
+    
+    // Construct the signed static rendition URL with the token
+    const signedStaticRenditionUrl = `https://stream.mux.com/${playbackId}/${renditionName}?token=${token}`;
+    
+    log(`Successfully constructed signed static rendition URL: ${signedStaticRenditionUrl}`);
+    return signedStaticRenditionUrl;
+  } catch (error) {
+    console.error('Error getting static rendition URL:', error);
+    throw new Error(`Failed to get static rendition URL: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

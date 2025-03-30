@@ -1,4 +1,4 @@
-import { verifyMuxWebhook } from '@/lib/mux';
+import { verifyMuxWebhook, getStaticRenditionDownloadUrl } from '@/lib/mux';
 import { MuxWebhookEvent } from '@/types/mux';
 import { createServiceSupabaseClient } from '@/lib/auth/supabase';
 
@@ -145,118 +145,87 @@ export async function POST(request: Request) {
         // Try different ways to find the asset as a recovery mechanism
         let foundAsset = null;
         let findError = null;
-        
-        // Strategy 1: Find by upload ID (most direct match)
-        if (uploadId) {
-          const result = await serviceClient
+      
+        // 1. Try to find asset by mux_asset_id directly (exact match)
+        if (!foundAsset) {
+          const { data, error } = await serviceClient
             .from('assets')
-            .select('id, user_id, mux_asset_id, mux_processing_status, client_reference_id, mux_correlation_id')
-            .eq('mux_asset_id', uploadId)
-            .maybeSingle();
-          
-          if (result.data) {
-            foundAsset = result.data;
-            console.log('Found asset using upload ID match:', foundAsset.id);
-          } else {
-            findError = result.error;
-            console.log('No asset found with upload ID:', uploadId);
+            .select('*')
+            .eq('mux_asset_id', event.data.id)
+            .limit(1);
+            
+          if (error) {
+            findError = error;
+            console.error('Error finding asset by mux_asset_id:', error);
+          } else if (data && data.length > 0) {
+            foundAsset = data[0];
+            console.log('Found asset by exact mux_asset_id match:', foundAsset.id);
           }
         }
         
-        // Strategy 2: If we have a correlation ID and didn't find by upload ID, try that
+        // 2. Try to find by correlation ID if available
         if (!foundAsset && correlationId) {
-          const result = await serviceClient
+          const { data, error } = await serviceClient
             .from('assets')
-            .select('id, user_id, mux_asset_id, mux_processing_status, client_reference_id, mux_correlation_id')
+            .select('*')
             .eq('mux_correlation_id', correlationId)
-            .maybeSingle();
-          
-          if (result.data) {
-            foundAsset = result.data;
-            console.log('Found asset using correlation ID match:', foundAsset.id);
-          } else {
-            console.log('No asset found with correlation ID:', correlationId);
+            .limit(1);
+            
+          if (error) {
+            findError = error;
+            console.error('Error finding asset by mux_correlation_id:', error);
+          } else if (data && data.length > 0) {
+            foundAsset = data[0];
+            console.log('Found asset by mux_correlation_id:', foundAsset.id);
           }
         }
-          
-        if (findError) {
-          console.error('Error finding asset by identifiers:', findError);
+        
+        // 3. Try to find asset where mux_asset_id matches upload_id
+        if (!foundAsset && uploadId) {
+          const { data, error } = await serviceClient
+            .from('assets')
+            .select('*')
+            .eq('mux_asset_id', uploadId)
+            .limit(1);
+            
+          if (error) {
+            findError = error;
+            console.error('Error finding asset by upload_id:', error);
+          } else if (data && data.length > 0) {
+            foundAsset = data[0];
+            console.log('Found asset by upload_id as mux_asset_id:', foundAsset.id);
+          }
         }
         
+        // If we found an asset, update it with the new video information
         if (foundAsset) {
-          console.log('Found asset to update:', foundAsset.id, 
-            'owned by user:', foundAsset.user_id, 
-            'current status:', foundAsset.mux_processing_status);
-          
-          // Get playback ID
           const playbackId = event.data.playback_ids?.[0]?.id;
           
+          console.log('Updating asset with playback ID:', playbackId);
+          
           if (!playbackId) {
-            console.error('No playback ID found in webhook payload');
+            console.error('No playback ID found in webhook event');
           } else {
-            // Update the asset with the ready status and Mux metadata
             const streamUrl = `https://stream.mux.com/${playbackId}.m3u8`;
             
-            // Using service client to update by ID (bypassing RLS for this specific operation)
-            // This maintains security while allowing webhooks to update assets
-            console.log('Updating asset in database:', foundAsset.id);
-
-            const updateData = {
-              mux_processing_status: 'ready',
-              mux_playback_id: playbackId,
-              mux_max_resolution: event.data.max_stored_resolution,
-              mux_aspect_ratio: event.data.aspect_ratio,
-              mux_duration: event.data.duration,
-              media_url: streamUrl,
-              mux_asset_id: event.data.id, // Update with the actual asset ID
-              last_updated: new Date().toISOString()
-            };
-
-            // Standard update with service client
             const { error: updateError } = await serviceClient
               .from('assets')
-              .update(updateData)
+              .update({
+                mux_processing_status: 'ready',
+                mux_playback_id: playbackId,
+                mux_max_resolution: event.data.max_stored_resolution,
+                mux_aspect_ratio: event.data.aspect_ratio,
+                mux_duration: event.data.duration,
+                media_url: streamUrl,
+                mux_asset_id: event.data.id,
+                last_updated: new Date().toISOString(),
+                // Set transcript status to pending since we expect audio to be generated
+                transcript_processing_status: 'pending'
+              })
               .eq('id', foundAsset.id);
-
-            // After updating the asset, send a broadcast via EventSource to ensure clients get updated
+          
             if (!updateError) {
-              console.log('Successfully updated asset with stream URL:', streamUrl);
-              
-              // Wait briefly and send a second update to ensure clients refresh
-              await new Promise(resolve => setTimeout(resolve, 300));
-              
-              try {
-                // Send a small update to trigger another realtime update
-                await serviceClient
-                  .from('assets')
-                  .update({ 
-                    last_updated: new Date().toISOString() 
-                  })
-                  .eq('id', foundAsset.id);
-                  
-                console.log('Sent additional update notification for asset:', foundAsset.id);
-                
-                // Broadcast to the specific channel for this asset
-                try {
-                  await serviceClient
-                    .channel(`asset-${foundAsset.id}-changes`)
-                    .send({
-                      type: 'broadcast',
-                      event: 'asset-ready',
-                      payload: { 
-                        id: foundAsset.id,
-                        status: 'ready',
-                        message: 'Video processing completed'
-                      }
-                    });
-                    
-                  console.log('Broadcast sent for asset:', foundAsset.id);
-                } catch (broadcastError) {
-                  console.error('Error broadcasting update:', broadcastError);
-                }
-              } catch (additionalError) {
-                console.error('Error sending additional notification:', additionalError);
-              }
+              console.log('Successfully updated asset with new playback information');
               
               // Mark the webhook as processed now that we've updated the asset
               try {
@@ -285,6 +254,132 @@ export async function POST(request: Request) {
       } catch (e) {
         console.error('Error processing asset update:', e);
       }
+    }
+    
+    // Process static rendition ready event
+    if (event.type === 'video.asset.static_rendition.ready') {
+      console.log('Processing static rendition ready event:', event.data.id);
+      
+      try {
+        // Store the webhook event for processing
+        if (webhookTableExists) {
+          const { error: storeError } = await serviceClient
+            .from('webhook_events')
+            .insert({
+              event_type: event.type,
+              event_id: event.id,
+              payload: event,
+              mux_asset_id: event.data.asset_id,
+              processed: false
+            });
+            
+          if (storeError) {
+            console.error('Error storing static rendition webhook event:', storeError);
+          } else {
+            console.log('Successfully stored static rendition webhook event');
+          }
+        }
+        
+        // Check if this is an audio.m4a rendition
+        const renditionName = event.data.name;
+        const assetId = event.data.asset_id;
+        const renditionId = event.data.id;
+        
+        console.log(`Processing rendition: ${renditionName}, assetId: ${assetId}, renditionId: ${renditionId}`);
+        
+        if (renditionName === 'audio.m4a' && assetId) {
+          console.log(`Audio rendition ready for asset: ${assetId}`);
+          
+          // Find the asset by mux_asset_id
+          const { data: assets, error: findError } = await serviceClient
+            .from('assets')
+            .select('*')
+            .eq('mux_asset_id', assetId)
+            .limit(1);
+            
+          if (findError) {
+            console.error('Error finding asset for audio rendition:', findError);
+          } else if (assets && assets.length > 0) {
+            const asset = assets[0];
+            console.log(`Found asset for audio rendition: ${asset.id}`);
+            
+            try {
+              // Set pending URL format for now - the actual URL will be constructed during transcription
+              // This follows format: "pending:{assetId}/{renditionId}/{renditionName}"
+              const pendingUrl = `pending:${assetId}/${renditionId}/${renditionName}`;
+              
+              // Update the asset with the pending URL and set transcript status to pending
+              const { error: updateError } = await serviceClient
+                .from('assets')
+                .update({
+                  mux_audio_url: pendingUrl,
+                  transcript_processing_status: 'pending',
+                  last_updated: new Date().toISOString()
+                })
+                .eq('id', asset.id);
+                
+              if (updateError) {
+                console.error('Error updating asset with audio URL:', updateError);
+              } else {
+                console.log('Updated asset with pending audio URL, initiating transcription');
+                
+                // Call the transcription API endpoint
+                try {
+                  const transcribeResponse = await fetch(
+                    `${process.env.NEXT_PUBLIC_SITE_URL}/api/transcribe`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${process.env.API_SECRET_KEY}`
+                      },
+                      body: JSON.stringify({ assetId: asset.id })
+                    }
+                  );
+                  
+                  if (transcribeResponse.ok) {
+                    console.log('Successfully initiated transcription process');
+                  } else {
+                    const errorData = await transcribeResponse.json().catch(() => ({}));
+                    console.error('Error initiating transcription:', errorData);
+                  }
+                } catch (transcribeError) {
+                  console.error('Exception calling transcribe API:', transcribeError);
+                }
+                
+                // Mark the webhook as processed
+                if (webhookTableExists) {
+                  await serviceClient
+                    .from('webhook_events')
+                    .update({ 
+                      processed: true, 
+                      processed_at: new Date().toISOString(),
+                      asset_id: asset.id 
+                    })
+                    .eq('event_id', event.id);
+                    
+                  console.log('Marked static rendition webhook event as processed');
+                }
+              }
+            } catch (error) {
+              console.error('Error processing audio rendition:', error);
+            }
+          } else {
+            console.log('No asset found for audio rendition webhook');
+          }
+        } else {
+          console.log(`Received static rendition event for: ${renditionName}`);
+        }
+      } catch (processError) {
+        console.error('Error processing static rendition webhook:', processError);
+      }
+    }
+    
+    // Call the SQL function to process any static rendition webhooks that need processing
+    try {
+      await serviceClient.rpc('process_static_rendition_webhooks');
+    } catch (sqlError) {
+      console.error('Error calling process_static_rendition_webhooks function:', sqlError);
     }
     
     // Always acknowledge receipt of the webhook to Mux

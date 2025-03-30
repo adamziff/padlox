@@ -416,6 +416,37 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                                     </div>
                                 )}
 
+                                {/* Transcript Section */}
+                                {'transcript_processing_status' in asset && asset.transcript_processing_status && (
+                                    <div>
+                                        <h3 className="font-medium mb-2">Transcript Status</h3>
+                                        <p className="text-muted-foreground">
+                                            {asset.transcript_processing_status === 'pending'
+                                                ? 'Pending'
+                                                : asset.transcript_processing_status === 'processing'
+                                                    ? 'Processing (please wait)'
+                                                    : asset.transcript_processing_status === 'completed'
+                                                        ? 'Completed'
+                                                        : 'Error'}
+                                        </p>
+                                        {asset.transcript_error && (
+                                            <p className="text-red-500 text-sm mt-1">{asset.transcript_error}</p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Show transcript if available */}
+                                {'transcript_text' in asset && asset.transcript_text && (
+                                    <div>
+                                        <h3 className="font-medium mb-2">Transcript</h3>
+                                        <div className="max-h-60 overflow-y-auto bg-muted p-3 rounded-md">
+                                            <p className="text-muted-foreground whitespace-pre-line text-sm">
+                                                {asset.transcript_text}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div>
                                     <h3 className="font-medium mb-2">Added On</h3>
                                     <p className="text-muted-foreground">
