@@ -101,4 +101,97 @@ BEGIN
     
     RETURN result;
 END;
+$$;
+
+-- Add transcript-related fields to assets table
+
+-- Add transcript column for storing the full structured transcript data
+ALTER TABLE public.assets
+ADD COLUMN IF NOT EXISTS transcript JSONB;
+
+-- Add transcript_text column for storing the plain text version of the transcript
+ALTER TABLE public.assets 
+ADD COLUMN IF NOT EXISTS transcript_text TEXT;
+
+-- Add column for tracking transcript processing status
+ALTER TABLE public.assets 
+ADD COLUMN IF NOT EXISTS transcript_processing_status VARCHAR 
+DEFAULT NULL;
+
+-- Add column for storing any transcript errors
+ALTER TABLE public.assets 
+ADD COLUMN IF NOT EXISTS transcript_error TEXT;
+
+-- Add audio URL column for storing the URL to the audio file extracted from video
+ALTER TABLE public.assets
+ADD COLUMN IF NOT EXISTS mux_audio_url TEXT;
+
+-- Create the broadcast table if it doesn't exist (used for realtime notifications)
+CREATE TABLE IF NOT EXISTS public.broadcast (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    channel TEXT NOT NULL,
+    event TEXT NOT NULL,
+    payload JSONB
+);
+
+-- Add policy to allow service role to insert broadcasts
+DROP POLICY IF EXISTS "Allow service role to insert broadcasts" ON public.broadcast;
+CREATE POLICY "Allow service role to insert broadcasts" 
+ON public.broadcast 
+FOR INSERT
+WITH CHECK (true);
+
+-- Add policy to allow any authenticated user to view broadcasts
+DROP POLICY IF EXISTS "Allow any user to view broadcasts" ON public.broadcast;
+CREATE POLICY "Allow any user to view broadcasts" 
+ON public.broadcast 
+FOR SELECT
+USING (true);
+
+-- Enable RLS on the broadcast table
+ALTER TABLE public.broadcast ENABLE ROW LEVEL SECURITY;
+
+-- Add a supabase function to broadcast transcript ready events
+CREATE OR REPLACE FUNCTION public.notify_transcript_ready(asset_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    -- Insert a broadcast event
+    INSERT INTO public.broadcast (channel, event, payload)
+    VALUES ('assets-changes', 'transcript-ready', jsonb_build_object('id', asset_id));
+    
+    RETURN TRUE;
+EXCEPTION WHEN OTHERS THEN
+    RETURN FALSE;
+END;
+$$;
+
+-- Add an index on the transcript_processing_status column
+CREATE INDEX IF NOT EXISTS idx_assets_transcript_status 
+ON public.assets(transcript_processing_status);
+
+-- Add a function to check for pending transcriptions
+CREATE OR REPLACE FUNCTION public.find_pending_transcriptions(limit_count INTEGER DEFAULT 10)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    result JSONB;
+BEGIN
+    -- Find assets with pending transcriptions
+    SELECT jsonb_agg(id)
+    INTO result
+    FROM assets
+    WHERE 
+        transcript_processing_status = 'pending'
+        AND mux_audio_url IS NOT NULL
+        AND mux_processing_status = 'ready'
+    LIMIT limit_count;
+    
+    RETURN COALESCE(result, '[]'::jsonb);
+END;
 $$; 

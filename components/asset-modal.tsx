@@ -41,20 +41,39 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                     filter: `id=eq.${asset.id}`
                 },
                 (payload) => {
+                    // Extract the old and new asset data
+                    const oldAsset = payload.old as Partial<AssetWithMuxData>;
+                    const newAsset = payload.new as AssetWithMuxData;
+
                     console.log('Asset modal received postgres update:',
                         'for asset:', asset.id,
-                        'new status:', (payload.new as { mux_processing_status?: string })?.mux_processing_status,
-                        'old status:', (payload.old as { mux_processing_status?: string })?.mux_processing_status);
+                        'new status:', newAsset.mux_processing_status,
+                        'old status:', oldAsset.mux_processing_status);
+
+                    // Add detailed logging for transcript changes
+                    if ('transcript_processing_status' in newAsset && 'transcript_processing_status' in oldAsset) {
+                        if (newAsset.transcript_processing_status !== oldAsset.transcript_processing_status) {
+                            console.log(`[ASSET MODAL] Transcript status changed: ${oldAsset.transcript_processing_status} → ${newAsset.transcript_processing_status}`);
+                        }
+                    }
+
+                    // Check if transcript text was added
+                    if ((!oldAsset.transcript_text || oldAsset.transcript_text === '') &&
+                        newAsset.transcript_text &&
+                        newAsset.transcript_text !== '') {
+                        console.log(`[ASSET MODAL] Transcript text received (${newAsset.transcript_text.length} chars)`);
+                    }
 
                     // Create a fresh copy to ensure all properties are updated
-                    const updatedAsset = { ...payload.new } as AssetWithMuxData;
+                    const updatedAsset = { ...newAsset } as AssetWithMuxData;
 
                     // Update our local state with the changes
+                    console.log(`[ASSET MODAL] Updating asset state with new data`);
                     setAsset(updatedAsset);
                 }
             )
             .on('broadcast', { event: 'asset-ready' }, (payload) => {
-                console.log('Asset modal received broadcast for asset:', payload);
+                console.log('[ASSET MODAL] Received asset-ready broadcast for asset:', payload);
 
                 // Check if the broadcast is for this asset
                 if (payload.payload && payload.payload.id === asset.id) {
@@ -66,8 +85,36 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                         .single()
                         .then(({ data, error }) => {
                             if (!error && data) {
-                                console.log('Updated asset data from broadcast:', data);
+                                console.log('[ASSET MODAL] Updated asset data from broadcast:', data);
                                 setAsset(data as AssetWithMuxData);
+                            }
+                        });
+                }
+            })
+            .on('broadcast', { event: 'transcript-ready' }, (payload) => {
+                console.log('[ASSET MODAL] Received transcript-ready broadcast:', payload);
+
+                // Check if the broadcast is for this asset
+                if (payload.payload && payload.payload.id === asset.id) {
+                    console.log('[ASSET MODAL] Transcript is ready for this asset, fetching updated data');
+
+                    // Fetch the latest asset data including the transcript
+                    supabase
+                        .from('assets')
+                        .select('*')
+                        .eq('id', asset.id)
+                        .single()
+                        .then(({ data, error }) => {
+                            if (!error && data) {
+                                const updatedAsset = data as AssetWithMuxData;
+                                console.log('[ASSET MODAL] Updated asset with transcript:',
+                                    `Status: ${updatedAsset.transcript_processing_status}`,
+                                    `Has transcript: ${!!updatedAsset.transcript}`,
+                                    `Text length: ${updatedAsset.transcript_text?.length || 0} chars`);
+
+                                setAsset(updatedAsset);
+                            } else {
+                                console.error('[ASSET MODAL] Error fetching updated asset with transcript:', error);
                             }
                         });
                 }
@@ -76,15 +123,18 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                 console.log(`Asset subscription status for ${asset.id}:`, status);
             });
 
-        // Set up a periodic check for asset updates
+        // Set up a periodic check for transcript updates as a fallback
         let refreshTimer: NodeJS.Timeout | null = null;
 
-        // Only set up the timer for processing assets
-        if (isMuxProcessing) {
-            console.log(`Setting up refresh timer for processing asset: ${asset.id}`);
+        // Only set up the timer for assets that are waiting for transcription
+        if ('transcript_processing_status' in asset &&
+            (asset.transcript_processing_status === 'pending' ||
+                asset.transcript_processing_status === 'processing')) {
+
+            console.log(`[ASSET MODAL] Setting up transcript check timer for asset: ${asset.id}`);
 
             refreshTimer = setInterval(() => {
-                console.log(`Checking status for asset: ${asset.id}`);
+                console.log(`[ASSET MODAL] Checking transcript status for asset: ${asset.id}`);
 
                 supabase
                     .from('assets')
@@ -95,17 +145,31 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                         if (!error && data) {
                             const freshAsset = data as AssetWithMuxData;
 
-                            // Only update if processing status changed
-                            if ('mux_processing_status' in freshAsset &&
-                                'mux_processing_status' in asset &&
-                                freshAsset.mux_processing_status !== asset.mux_processing_status) {
+                            // Check if transcript status or content changed
+                            const transcriptStatusChanged =
+                                'transcript_processing_status' in freshAsset &&
+                                'transcript_processing_status' in asset &&
+                                freshAsset.transcript_processing_status !== asset.transcript_processing_status;
 
-                                console.log(`Manual refresh detected status change: ${asset.mux_processing_status} -> ${freshAsset.mux_processing_status}`);
+                            const transcriptTextChanged =
+                                'transcript_text' in freshAsset &&
+                                (!('transcript_text' in asset) ||
+                                    freshAsset.transcript_text !== asset.transcript_text);
+
+                            if (transcriptStatusChanged || transcriptTextChanged) {
+                                console.log(`[ASSET MODAL] Manual refresh detected transcript change:`,
+                                    transcriptStatusChanged ?
+                                        `Status: ${asset.transcript_processing_status} → ${freshAsset.transcript_processing_status}` : '',
+                                    transcriptTextChanged ?
+                                        `Text: ${freshAsset.transcript_text ? 'received' : 'none'}` : '');
+
                                 setAsset(freshAsset);
 
-                                // If asset is ready, clear the timer
-                                if (freshAsset.mux_processing_status === 'ready') {
+                                // If transcript is completed or error, clear the timer
+                                if (freshAsset.transcript_processing_status === 'completed' ||
+                                    freshAsset.transcript_processing_status === 'error') {
                                     if (refreshTimer) {
+                                        console.log(`[ASSET MODAL] Clearing transcript check timer`);
                                         clearInterval(refreshTimer);
                                         refreshTimer = null;
                                     }

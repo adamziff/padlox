@@ -80,12 +80,21 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 (payload) => {
                     // Handle INSERT events
                     if (payload.eventType === 'INSERT') {
+                        console.log('[REALTIME UPDATE] New asset inserted:', payload.new.id);
                         setAssets(prevAssets => [payload.new as AssetWithMuxData, ...prevAssets]);
                     }
                     // Handle UPDATE events
                     else if (payload.eventType === 'UPDATE') {
                         const updatedAsset = payload.new as AssetWithMuxData;
                         const oldAsset = payload.old as AssetWithMuxData;
+
+                        // Log what changed in the asset
+                        console.log(
+                            `[REALTIME UPDATE] Asset ${updatedAsset.id} updated:`,
+                            `mux_status: ${oldAsset.mux_processing_status} → ${updatedAsset.mux_processing_status}`,
+                            `transcript_status: ${oldAsset.transcript_processing_status} → ${updatedAsset.transcript_processing_status}`,
+                            `has_transcript: ${!!oldAsset.transcript} → ${!!updatedAsset.transcript}`
+                        );
 
                         // If status changed to ready, update UI and clear notifications
                         if (updatedAsset.mux_processing_status === 'ready' &&
@@ -119,6 +128,11 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                             'transcript_processing_status' in oldAsset &&
                             updatedAsset.transcript_processing_status !== oldAsset.transcript_processing_status) {
 
+                            console.log(
+                                `[REALTIME UPDATE] Transcript status changed for asset ${updatedAsset.id}:`,
+                                `${oldAsset.transcript_processing_status} → ${updatedAsset.transcript_processing_status}`
+                            );
+
                             // If transcript is completed or errored, clear related upload notifications
                             if (updatedAsset.transcript_processing_status === 'completed' ||
                                 updatedAsset.transcript_processing_status === 'error') {
@@ -144,6 +158,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
                         // Also update selectedAsset if needed
                         if (selectedAsset && selectedAsset.id === updatedAsset.id) {
+                            console.log('[REALTIME UPDATE] Also updating currently selected asset');
                             setSelectedAsset(updatedAsset);
                         }
 
@@ -158,6 +173,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     }
                     // Handle DELETE events
                     else if (payload.eventType === 'DELETE') {
+                        console.log('[REALTIME UPDATE] Asset deleted:', payload.old.id);
                         setAssets(prevAssets =>
                             prevAssets.filter(asset => asset.id !== payload.old.id)
                         );
@@ -173,6 +189,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 // Handle broadcast message for asset readiness
                 if (payload.payload && typeof payload.payload === 'object' && 'id' in payload.payload) {
                     const assetId = payload.payload.id as string;
+                    console.log('[BROADCAST UPDATE] Received asset-ready broadcast for:', assetId);
 
                     // Check if we have this asset
                     const assetExists = assets.some(a => a.id === assetId);
@@ -187,6 +204,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                         .then(({ data, error }) => {
                             if (!error && data) {
                                 const updatedAsset = data as AssetWithMuxData;
+                                console.log('[BROADCAST UPDATE] Successfully fetched updated asset data');
 
                                 // Update asset in list
                                 setAssets(prevAssets =>
@@ -197,6 +215,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
                                 // Update selected asset if needed
                                 if (selectedAsset && selectedAsset.id === assetId) {
+                                    console.log('[BROADCAST UPDATE] Also updating currently selected asset');
                                     setSelectedAsset(updatedAsset);
                                 }
 
@@ -216,6 +235,55 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                         });
                 }
             })
+            .on('broadcast', { event: 'transcript-ready' }, (payload) => {
+                // Handle broadcast message for transcript readiness
+                if (payload.payload && typeof payload.payload === 'object' && 'id' in payload.payload) {
+                    const assetId = payload.payload.id as string;
+                    console.log('[BROADCAST UPDATE] Received transcript-ready broadcast for:', assetId);
+
+                    // Check if we have this asset
+                    const assetExists = assets.some(a => a.id === assetId);
+                    if (!assetExists) return;
+
+                    // Fetch the latest asset data
+                    supabase
+                        .from('assets')
+                        .select('*')
+                        .eq('id', assetId)
+                        .single()
+                        .then(({ data, error }) => {
+                            if (!error && data) {
+                                const updatedAsset = data as AssetWithMuxData;
+                                console.log('[BROADCAST UPDATE] Successfully fetched updated asset with transcript');
+
+                                // Update asset in list
+                                setAssets(prevAssets =>
+                                    prevAssets.map(a =>
+                                        a.id === assetId ? updatedAsset : a
+                                    )
+                                );
+
+                                // Update selected asset if needed
+                                if (selectedAsset && selectedAsset.id === assetId) {
+                                    console.log('[BROADCAST UPDATE] Also updating currently selected asset with transcript');
+                                    setSelectedAsset(updatedAsset);
+                                }
+
+                                // Clear any transcribing notifications
+                                setActiveUploads(prev => {
+                                    const newUploads = { ...prev };
+                                    Object.keys(newUploads).forEach(uploadId => {
+                                        if (newUploads[uploadId].assetId === assetId &&
+                                            newUploads[uploadId].status === 'transcribing') {
+                                            delete newUploads[uploadId];
+                                        }
+                                    });
+                                    return newUploads;
+                                });
+                            }
+                        });
+                }
+            })
             .subscribe();
 
         // Periodically check preparing assets (fallback for when real-time updates fail)
@@ -225,6 +293,8 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             );
 
             if (preparingAssets.length > 0) {
+                console.log('[POLLING] Checking status of preparing assets:', preparingAssets.length);
+
                 preparingAssets.forEach(asset => {
                     // Check once every 30 seconds per asset
                     const lastCheckedKey = `last_checked_${asset.id}`;
@@ -232,6 +302,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                     const now = Date.now();
 
                     if (now - lastChecked > 30000) {
+                        console.log(`[POLLING] Checking asset ${asset.id} (last checked ${Math.floor((now - lastChecked) / 1000)}s ago)`);
                         localStorage.setItem(lastCheckedKey, now.toString());
 
                         // Fetch the latest status from the API
@@ -246,6 +317,11 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
                                     // If status changed, update the asset
                                     if (updatedAsset.mux_processing_status !== asset.mux_processing_status) {
+                                        console.log(
+                                            `[POLLING UPDATE] Asset ${asset.id} status changed:`,
+                                            `${asset.mux_processing_status} → ${updatedAsset.mux_processing_status}`
+                                        );
+
                                         setAssets(prevState =>
                                             prevState.map(a =>
                                                 a.id === asset.id ? updatedAsset : a
@@ -254,8 +330,11 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
 
                                         // Update selected asset if needed
                                         if (selectedAsset && selectedAsset.id === asset.id) {
+                                            console.log('[POLLING UPDATE] Also updating currently selected asset');
                                             setSelectedAsset(updatedAsset);
                                         }
+                                    } else {
+                                        console.log(`[POLLING] No change for asset ${asset.id}, still ${asset.mux_processing_status}`);
                                     }
                                 }
                             });

@@ -129,7 +129,19 @@ export const POST = withAuth(async (request: Request) => {
         throw updateError;
       }
 
-      // Broadcast that the transcript is ready
+      // Broadcast that the transcript is ready using multiple methods for redundancy
+      
+      // Method 1: Use the database function
+      const { data: notifyResult, error: notifyError } = await supabase
+        .rpc('notify_transcript_ready', { asset_id: assetId });
+        
+      if (notifyError) {
+        console.warn('Error calling notify_transcript_ready function:', notifyError);
+      } else {
+        console.log('Successfully called notify_transcript_ready function:', notifyResult);
+      }
+        
+      // Method 2: Insert directly into the broadcast table
       await supabase
         .from('broadcast')
         .insert({
@@ -138,7 +150,16 @@ export const POST = withAuth(async (request: Request) => {
           payload: { id: assetId }
         });
 
-      console.log(`Broadcasting transcript-ready event for asset ${assetId}`);
+      // Method 3: Use the Supabase broadcast API
+      await supabase
+        .channel('assets-changes')
+        .send({
+          type: 'broadcast',
+          event: 'transcript-ready',
+          payload: { id: assetId }
+        });
+
+      console.log(`Broadcasting transcript-ready event for asset ${assetId} through multiple channels`);
 
       return corsJsonResponse({
         success: true,
