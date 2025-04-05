@@ -97,6 +97,10 @@ export interface AssetWithMuxData extends Omit<Asset, 'media_url'> {
   transcript_text?: string;
   transcript_processing_status?: 'pending' | 'processing' | 'completed' | 'error';
   transcript_error?: string;
+  media_type: 'image' | 'video' | 'item';
+  is_source_video?: boolean;
+  source_video_id?: string | null;
+  item_timestamp?: number | null;
 }
 
 // We need to import the Asset type from the existing type file

@@ -45,12 +45,12 @@ export interface Database {
                 Row: {
                     id: string
                     created_at: string
-                    user_id: string
+                    user_id: string // references auth.users
                     name: string
                     description: string | null
                     estimated_value: number | null
                     media_url: string
-                    media_type: 'image' | 'video'
+                    media_type: 'image' | 'video' | 'item' // Added 'item'
                     is_signed: boolean
                     signature_data: Json | null
                     // Mux specific fields
@@ -60,16 +60,26 @@ export interface Database {
                     mux_max_resolution: string | null
                     mux_aspect_ratio: string | null
                     mux_duration: number | null
+                    mux_audio_url: string | null // Added mux_audio_url
+                    // Transcript fields
+                    transcript: Json | null // Assuming Deepgram JSON structure
+                    transcript_text: string | null // Plain text version
+                    transcript_processing_status: 'pending' | 'processing' | 'completed' | 'error' | null // Added status
+                    transcript_error: string | null // Added error message field
+                    // Item specific fields
+                    is_source_video: boolean // Added flag for source video vs item
+                    source_video_id: string | null // Added link to source video asset
+                    item_timestamp: number | null // Added timestamp for items
                 }
                 Insert: {
                     id?: string
                     created_at?: string
-                    user_id: string
+                    user_id: string // references auth.users
                     name: string
                     description?: string | null
                     estimated_value?: number | null
                     media_url: string
-                    media_type: 'image' | 'video'
+                    media_type: 'image' | 'video' | 'item' // Added 'item'
                     is_signed?: boolean
                     signature_data?: Json | null
                     // Mux specific fields
@@ -79,16 +89,26 @@ export interface Database {
                     mux_max_resolution?: string | null
                     mux_aspect_ratio?: string | null
                     mux_duration?: number | null
+                    mux_audio_url?: string | null // Added mux_audio_url
+                    // Transcript fields
+                    transcript?: Json | null
+                    transcript_text?: string | null
+                    transcript_processing_status?: 'pending' | 'processing' | 'completed' | 'error' | null // Added status
+                    transcript_error?: string | null // Added error message field
+                    // Item specific fields
+                    is_source_video?: boolean // Default should be handled by DB or logic
+                    source_video_id?: string | null
+                    item_timestamp?: number | null
                 }
                 Update: {
                     id?: string
                     created_at?: string
-                    user_id?: string
+                    user_id?: string // references auth.users
                     name?: string
                     description?: string | null
                     estimated_value?: number | null
                     media_url?: string
-                    media_type?: 'image' | 'video'
+                    media_type?: 'image' | 'video' | 'item' // Added 'item'
                     is_signed?: boolean
                     signature_data?: Json | null
                     // Mux specific fields
@@ -98,7 +118,96 @@ export interface Database {
                     mux_max_resolution?: string | null
                     mux_aspect_ratio?: string | null
                     mux_duration?: number | null
+                    mux_audio_url?: string | null // Added mux_audio_url
+                    // Transcript fields
+                    transcript?: Json | null
+                    transcript_text?: string | null
+                    transcript_processing_status?: 'pending' | 'processing' | 'completed' | 'error' | null // Added status
+                    transcript_error?: string | null // Added error message field
+                    // Item specific fields
+                    is_source_video?: boolean
+                    source_video_id?: string | null
+                    item_timestamp?: number | null
                 }
+            }
+            webhook_events: {
+                Row: {
+                    id: number
+                    created_at: string
+                    event_type: string
+                    event_id: string
+                    payload: Json
+                    processed: boolean
+                    processed_at: string | null
+                    mux_asset_id: string | null
+                    mux_upload_id: string | null
+                    mux_correlation_id: string | null
+                    asset_id: string | null // Link to our assets table
+                }
+                Insert: {
+                    id?: number
+                    created_at?: string
+                    event_type: string
+                    event_id: string
+                    payload: Json
+                    processed?: boolean
+                    processed_at?: string | null
+                    mux_asset_id?: string | null
+                    mux_upload_id?: string | null
+                    mux_correlation_id?: string | null
+                    asset_id?: string | null
+                }
+                Update: {
+                    id?: number
+                    created_at?: string
+                    event_type?: string
+                    event_id?: string
+                    payload?: Json
+                    processed?: boolean
+                    processed_at?: string | null
+                    mux_asset_id?: string | null
+                    mux_upload_id?: string | null
+                    mux_correlation_id?: string | null
+                    asset_id?: string | null
+                }
+            }
+            broadcast: {
+                Row: {
+                    id: number
+                    created_at: string
+                    channel: string
+                    event: string
+                    payload: Json
+                }
+                Insert: {
+                    id?: number
+                    created_at?: string
+                    channel: string
+                    event: string
+                    payload: Json
+                }
+                Update: {
+                     id?: number
+                    created_at?: string
+                    channel?: string
+                    event?: string
+                    payload?: Json
+                }
+            }
+        }
+        Functions: {
+            notify_transcript_ready: {
+                Args: {
+                    asset_id: string
+                }
+                Returns: {
+                    success: boolean
+                    message: string
+                }
+            }
+            process_static_rendition_webhooks: {
+                Args: Record<string, never> // No arguments expected
+                Returns: void // Or define return type if needed
             }
         }
     }

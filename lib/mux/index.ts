@@ -388,3 +388,30 @@ export async function getStaticRenditionDownloadUrl(
     throw new Error(`Failed to get static rendition URL: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
+
+/**
+ * Generate a Mux thumbnail URL for a specific timestamp.
+ * Uses .webp format.
+ * Includes optional token for signed URLs.
+ */
+export function getMuxThumbnailUrl(
+  playbackId: string, 
+  timestamp: number,
+  token?: string | null // Add optional token parameter
+): string {
+  if (!playbackId) return ''; // Return empty if no playbackId
+  
+  // Ensure timestamp is non-negative
+  const validTimestamp = Math.max(0, timestamp);
+  
+  // Base URL
+  const baseUrl = `https://image.mux.com/${playbackId}/thumbnail.webp?time=${validTimestamp}`;
+  
+  // Append token if provided
+  if (token) {
+    return `${baseUrl}&token=${token}`;
+  }
+  
+  // Return base URL if no token
+  return baseUrl;
+}

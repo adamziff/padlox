@@ -161,6 +161,62 @@ export const POST = withAuth(async (request: Request) => {
 
       console.log(`Broadcasting transcript-ready event for asset ${assetId} through multiple channels`);
 
+      // Mark original video as source *before* sending for analysis
+      const { error: markSourceError } = await supabase
+        .from('assets')
+        .update({ is_source_video: true })
+        .eq('id', assetId);
+
+      if (markSourceError) {
+        // Log the error but continue, analysis is more critical
+        console.error(`[Transcribe API] Error marking asset ${assetId} as source:`, markSourceError);
+      }
+
+      // Send to AI for analysis AFTER saving transcript and marking as source
+      console.log(`[Transcribe API] Sending transcript for asset ${assetId} to analysis API...`);
+      const analysisApiUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/api/analyze-transcript`;
+      const analysisApiKey = process.env.API_SECRET_KEY;
+
+      if (!analysisApiKey) {
+        console.error('[Transcribe API] Missing API_SECRET_KEY, cannot call analysis endpoint.');
+        // Potentially update asset status to indicate analysis pending/failed?
+      } else {
+        fetch(analysisApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // Use API Key for server-to-server authentication
+            'Authorization': `Bearer ${analysisApiKey}`
+          },
+          body: JSON.stringify({
+            transcript: transcriptData, // Pass the full transcript data
+            videoAssetId: assetId
+          })
+        })
+        .then(async (analysisResponse) => {
+          if (!analysisResponse.ok) {
+            const errorBody = await analysisResponse.text();
+            console.error(`[Transcribe API] Failed to trigger transcript analysis for asset ${assetId}: ${analysisResponse.status} ${analysisResponse.statusText}`, errorBody);
+            // Update asset status to reflect analysis trigger failure?
+            await supabase
+              .from('assets')
+              .update({ transcript_error: `Failed to start analysis: ${analysisResponse.status}` })
+              .eq('id', assetId);
+          } else {
+            const successBody = await analysisResponse.json();
+            console.log(`[Transcribe API] Successfully triggered transcript analysis for asset ${assetId}. Response:`, successBody);
+          }
+        })
+        .catch((analysisError) => {
+          console.error(`[Transcribe API] Error calling analysis API for asset ${assetId}:`, analysisError);
+          // Update asset status to reflect analysis trigger failure?
+          supabase
+            .from('assets')
+            .update({ transcript_error: `Error calling analysis API: ${analysisError instanceof Error ? analysisError.message : 'Unknown fetch error'}` })
+            .eq('id', assetId);
+        });
+      }
+
       return corsJsonResponse({
         success: true,
         message: 'Transcription processed successfully',

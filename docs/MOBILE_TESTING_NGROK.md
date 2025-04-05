@@ -55,6 +55,15 @@ NEXT_PUBLIC_SITE_URL="https://your-ngrok-url.ngrok-free.app"
 # NEXT_PUBLIC_SITE_URL="http://localhost:3000"
 ```
 
+**Important Mux Webhook Note:**
+If you are testing Mux webhooks, ensure you configure the Mux webhook endpoint in the Mux dashboard to point to your full ngrok URL including the API path:
+
+```
+https://your-ngrok-url.ngrok-free.app/api/mux/webhook
+```
+
+Failure to include the `/api/mux/webhook` path will prevent Mux notifications from reaching your application.
+
 ### 5. Restart Your Development Server
 
 Stop and restart your Next.js development server to apply the environment variable changes:
