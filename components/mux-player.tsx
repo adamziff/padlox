@@ -34,9 +34,10 @@ interface MuxPlayerProps {
     aspectRatio?: string;
     poster?: string;
     title?: string;
+    startTime?: number;
 }
 
-export function MuxPlayer({ playbackId, aspectRatio = '16/9', title }: MuxPlayerProps) {
+export function MuxPlayer({ playbackId, aspectRatio = '16/9', title, startTime }: MuxPlayerProps) {
     const [tokens, setTokens] = useState<{
         playback: string | undefined;
         thumbnail: string | undefined;
@@ -166,7 +167,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title }: MuxPlayer
         );
     }
 
-    // When we have tokens, pass them to the player
+    // When we have tokens, pass them and startTime to the player
     return (
         <div
             className="h-full w-full overflow-hidden rounded-lg"
@@ -184,6 +185,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title }: MuxPlayer
                     height: "100%",
                     width: "100%"
                 }}
+                startTime={startTime}
                 onError={(evt) => {
                     console.error('Mux player error:', evt);
 

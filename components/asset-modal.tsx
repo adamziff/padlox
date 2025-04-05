@@ -7,24 +7,26 @@ import { CrossIcon, TrashIcon, DownloadIcon } from './icons'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { MuxPlayer } from './mux-player'
+import { getMuxThumbnailUrl } from '@/lib/mux'
 
 interface AssetModalProps {
-    asset: Asset | AssetWithMuxData
+    asset: AssetWithMuxData
     onClose: () => void
     onDelete?: (id: string) => void
 }
 
 export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModalProps) {
-    // Track the asset state internally to handle real-time updates
-    const [asset, setAsset] = useState<Asset | AssetWithMuxData>(initialAsset)
-    const [isDeleting, setIsDeleting] = useState(false)
-    const isVideo = asset.media_type === 'video'
-    const supabase = createClient()
+    const [asset, setAsset] = useState<AssetWithMuxData>(initialAsset);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const supabase = createClient();
+    const [modalToken, setModalToken] = useState<string | null>(null);
 
-    // Check if asset has Mux data
-    const hasMuxData = 'mux_playback_id' in asset && asset.mux_playback_id
-    const isMuxProcessing = 'mux_processing_status' in asset && asset.mux_processing_status === 'preparing'
-    const isMuxReady = 'mux_processing_status' in asset && asset.mux_processing_status === 'ready'
+    // Define these based on the current asset state
+    const isItem = asset.media_type === 'item';
+    const isVideo = asset.media_type === 'video';
+    const hasMuxData = 'mux_playback_id' in asset && !!asset.mux_playback_id;
+    const isMuxProcessing = isVideo && asset.mux_processing_status === 'preparing';
+    const isMuxReady = isVideo && asset.mux_processing_status === 'ready';
 
     // Set up a real-time subscription to update this asset if it changes
     useEffect(() => {
@@ -320,6 +322,17 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
         }
     }
 
+    // Determine media URL dynamically for rendering (mostly needed for non-player images now)
+    // This is primarily for the regular <Image> tag if needed as a fallback.
+    // The MuxPlayer component itself will handle fetching based on playbackId.
+    let displayImageUrl = '';
+    if (isItem && asset.mux_playback_id && asset.item_timestamp != null) {
+        // URL for potential direct image display (signed)
+        displayImageUrl = getMuxThumbnailUrl(asset.mux_playback_id, asset.item_timestamp, modalToken);
+    } else if (asset.media_type === 'image') {
+        displayImageUrl = asset.media_url;
+    }
+
     return (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50">
             <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50" role="dialog" aria-label="Asset Details" aria-modal="true">
@@ -365,72 +378,54 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                     {/* Content */}
                     <div className="flex-1 overflow-auto p-6">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Media */}
+                            {/* Media Display */}
                             <div className="aspect-square relative rounded-lg overflow-hidden bg-muted">
-                                {isVideo ? (
-                                    hasMuxData && isMuxReady && asset.mux_playback_id ? (
-                                        // Use MuxPlayer for Mux videos that are ready
-                                        <MuxPlayer
-                                            playbackId={asset.mux_playback_id}
-                                            title={asset.name}
-                                            aspectRatio={asset.mux_aspect_ratio || '16/9'}
-                                        />
-                                    ) : isMuxProcessing ? (
-                                        // Show a loading indicator for Mux videos still processing
-                                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                                            <div className="text-center p-4">
-                                                <div className="animate-spin h-10 w-10 mx-auto mb-2">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                        <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-                                                    </svg>
-                                                </div>
-                                                <p>Video is still processing...</p>
-                                                <p className="text-xs mt-2 text-muted-foreground">This may take a few minutes</p>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        // Only render video tag if there's a valid URL and it's not a Mux video
-                                        asset.media_url ? (
-                                            <video
-                                                src={asset.media_url}
-                                                controls
-                                                className="w-full h-full object-contain"
-                                                playsInline
-                                                preload="metadata"
-                                                controlsList="nodownload"
-                                                webkit-playsinline="true"
-                                                x-webkit-airplay="allow"
-                                            />
-                                        ) : (
-                                            <div className="flex items-center justify-center h-full text-muted-foreground">
-                                                <div className="text-center p-4">
-                                                    <p>Video is not available</p>
-                                                </div>
-                                            </div>
-                                        )
-                                    )
-                                ) : (
-                                    // Only render image if there's a valid URL
-                                    asset.media_url ? (
+                                {isItem && asset.mux_playback_id && asset.item_timestamp != null ? (
+                                    // Display Item using MuxPlayer starting at the timestamp
+                                    <MuxPlayer
+                                        playbackId={asset.mux_playback_id}
+                                        title={asset.name}
+                                        aspectRatio={asset.mux_aspect_ratio || '1/1'}
+                                        startTime={asset.item_timestamp} // Start playback at the item timestamp
+                                    />
+                                ) : isVideo && asset.mux_playback_id && isMuxReady ? (
+                                    // Display Source Video using MuxPlayer
+                                    <MuxPlayer
+                                        playbackId={asset.mux_playback_id}
+                                        title={asset.name}
+                                        aspectRatio={asset.mux_aspect_ratio || '16/9'}
+                                        startTime={0} // Start source videos from the beginning
+                                    />
+                                ) : isVideo && isMuxProcessing ? (
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                                        <p>Video is processing...</p>
+                                    </div>
+                                ) : asset.media_type === 'image' ? (
+                                    // Display Regular Image
+                                    displayImageUrl ? (
                                         <div className="relative w-full h-full">
                                             <Image
-                                                src={asset.media_url}
+                                                key={displayImageUrl} // Use URL as key
+                                                src={displayImageUrl}
                                                 alt={asset.name}
                                                 fill
                                                 className="object-contain"
                                                 sizes="(max-width: 768px) 100vw, 50vw"
                                                 priority
+                                                onError={(e) => console.error(`Modal image error for ${asset.id}:`, e)}
                                             />
                                         </div>
                                     ) : (
-                                        <div className="flex items-center justify-center h-full text-muted-foreground">
-                                            <p>Image is not available</p>
-                                        </div>
+                                        <div className="flex items-center justify-center h-full text-muted-foreground">Image Unavailable</div>
                                     )
+                                ) : (
+                                    // Fallback for unexpected states
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                                        {isItem ? 'Item Media Unavailable' : 'Media Unavailable'}
+                                    </div>
                                 )}
                             </div>
-
-                            {/* Details */}
+                            {/* Details Column */}
                             <div className="space-y-4">
                                 {asset.description && (
                                     <div>
@@ -438,16 +433,12 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                                         <p className="text-muted-foreground whitespace-pre-line">{asset.description}</p>
                                     </div>
                                 )}
-
                                 {asset.estimated_value && (
                                     <div>
                                         <h3 className="font-medium mb-2">Estimated Value</h3>
-                                        <p className="text-muted-foreground">
-                                            {formatCurrency(asset.estimated_value)}
-                                        </p>
+                                        <p className="text-muted-foreground">{formatCurrency(asset.estimated_value)}</p>
                                     </div>
                                 )}
-
                                 {/* Show Mux metadata if available */}
                                 {'mux_processing_status' in asset && asset.mux_processing_status && (
                                     <div>
@@ -461,7 +452,6 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                                         </p>
                                     </div>
                                 )}
-
                                 {'mux_max_resolution' in asset && asset.mux_max_resolution && (
                                     <div>
                                         <h3 className="font-medium mb-2">Video Resolution</h3>
@@ -470,7 +460,6 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                                         </p>
                                     </div>
                                 )}
-
                                 {'mux_duration' in asset && asset.mux_duration && (
                                     <div>
                                         <h3 className="font-medium mb-2">Duration</h3>
@@ -479,7 +468,6 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                                         </p>
                                     </div>
                                 )}
-
                                 {/* Transcript Section */}
                                 {'transcript_processing_status' in asset && asset.transcript_processing_status && (
                                     <div>
@@ -498,7 +486,6 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                                         )}
                                     </div>
                                 )}
-
                                 {/* Show transcript if available */}
                                 {'transcript_text' in asset && asset.transcript_text && (
                                     <div>
@@ -510,7 +497,6 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                                         </div>
                                     </div>
                                 )}
-
                                 <div>
                                     <h3 className="font-medium mb-2">Added On</h3>
                                     <p className="text-muted-foreground">

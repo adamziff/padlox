@@ -15,6 +15,7 @@ import { getMuxThumbnailUrl } from '@/lib/mux';
 const ItemSchema = z.object({
   name: z.string().describe('The name of the identified item.'),
   timestamp: z.number().nonnegative().describe('The start time (in seconds) when the item first clearly appears in the video.'),
+  estimated_value: z.number().nullable().describe('An estimated value of the item in USD, or null if unknown.')
 });
 
 const ItemsListSchema = z.object({
@@ -115,14 +116,7 @@ export async function POST(req: Request) {
         const result = await generateObject({
           model: model,
           schema: ItemsListSchema,
-          prompt: `Analyze the following video transcript of a home inventory recording. Identify distinct physical items mentioned or described. For each item, provide its name and the timestamp (in seconds) when it first clearly appears or is mentioned. Output *only* a valid JSON object strictly matching the required schema, with no additional text, commentary, or formatting before or after the JSON object.
-
-Transcript:
----
-${transcriptText}
----
-
-Respond ONLY with the valid JSON object.`,
+          prompt: `Analyze the following video transcript of a home inventory recording. Identify distinct physical items mentioned or described. For each item, provide its name, the timestamp (in seconds) when it first clearly appears or is mentioned, and an estimated value in USD (as a number, or null if unknown). Output *only* a valid JSON object strictly matching the required schema, with no additional text, commentary, or formatting before or after the JSON object.\n\nTranscript:\n---\n${transcriptText}\n---\n\nRespond ONLY with the valid JSON object.`,
           mode: 'json'
         });
 
@@ -167,9 +161,10 @@ Respond ONLY with the valid JSON object.`,
         media_url: '', // Store empty string or null, client will construct the signed URL
         is_source_video: false,
         source_video_id: sourceVideoAssetId,
-        item_timestamp: item.timestamp, // Store the timestamp
-        mux_playback_id: sourceAsset.mux_playback_id, // Store the playback ID
-        mux_asset_id: sourceAsset.mux_asset_id
+        item_timestamp: item.timestamp,
+        mux_playback_id: sourceAsset.mux_playback_id,
+        mux_asset_id: sourceAsset.mux_asset_id,
+        estimated_value: item.estimated_value
       };
     });
 
