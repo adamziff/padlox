@@ -542,41 +542,88 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         }
 
         setIsDeleting(true)
-        try {
-            const assetsToDelete = assets.filter(asset => selectedAssets.has(asset.id))
+        const assetsToDeleteIds = Array.from(selectedAssets);
+        const assetsToDelete = assets.filter(asset => assetsToDeleteIds.includes(asset.id));
+        let errors: { id: string, error: string }[] = [];
 
-            for (const asset of assetsToDelete) {
-                // Delete from Supabase
-                const { error: dbError } = await supabase
-                    .from('assets')
-                    .delete()
-                    .eq('id', asset.id)
+        console.log(`Attempting to bulk delete ${assetsToDelete.length} assets:`, assetsToDeleteIds);
 
-                if (dbError) throw dbError
-
-                // Delete from S3
-                const key = asset.media_url.split('/').pop()
-                const response = await fetch('/api/delete', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ key }),
-                })
-
-                if (!response.ok) {
-                    throw new Error('Failed to delete file from S3')
+        for (const asset of assetsToDelete) {
+            try {
+                console.log(`Processing deletion for asset ${asset.id}, type: ${asset.media_type}`);
+                // Handle item deletion (DB only)
+                if (asset.media_type === 'item') {
+                    console.log(`Deleting item asset (DB only): ${asset.id}`);
+                    const { error: dbError } = await supabase
+                        .from('assets')
+                        .delete()
+                        .eq('id', asset.id);
+                    if (dbError) throw new Error(`Database delete failed: ${dbError.message}`);
                 }
-            }
+                // Handle Mux video deletion (uses API which handles DB too)
+                else if (asset.media_type === 'video' && asset.mux_asset_id) {
+                    console.log(`Deleting source Mux asset via API: ${asset.id}`);
+                    const response = await fetch('/api/mux/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ assetId: asset.id }),
+                    });
+                    if (!response.ok) {
+                        const data = await response.json().catch(() => ({}));
+                        throw new Error(data.error || `Mux API delete failed (${response.status})`);
+                    }
+                }
+                // Handle S3 image deletion
+                else if (asset.media_type === 'image' && asset.media_url && !asset.mux_asset_id) {
+                    console.log(`Deleting S3 image asset (DB & S3): ${asset.id}`);
+                    // 1. Delete DB record first
+                    const { error: dbError } = await supabase
+                        .from('assets')
+                        .delete()
+                        .eq('id', asset.id);
+                    if (dbError) throw new Error(`Database delete failed: ${dbError.message}`);
 
-            setAssets(prev => prev.filter(asset => !selectedAssets.has(asset.id)))
-            setSelectedAssets(new Set())
-            setIsSelectionMode(false)
-        } catch (error) {
-            console.error('Error deleting assets:', error)
-            alert('Failed to delete some assets. Please try again.')
-        } finally {
-            setIsDeleting(false)
+                    // 2. Delete from S3
+                    const key = asset.media_url.split('/').pop();
+                    if (key) {
+                        const response = await fetch('/api/delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key }),
+                        });
+                        if (!response.ok) {
+                            // Log S3 error but let UI proceed as DB record is gone
+                            console.error(`Failed to delete S3 object for key ${key}, but DB record deleted.`);
+                        }
+                    } else {
+                        console.warn(`Could not determine S3 key for asset ${asset.id}`);
+                    }
+                }
+                // Handle unexpected cases
+                else {
+                    console.warn(`Unsupported asset type or state for deletion: ${asset.id}, type: ${asset.media_type}, mux: ${!!asset.mux_asset_id}`);
+                    throw new Error('Unsupported asset type for deletion.');
+                }
+                console.log(`Successfully processed deletion for asset ${asset.id}`);
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                console.error(`Error deleting asset ${asset.id}:`, errorMessage);
+                errors.push({ id: asset.id, error: errorMessage });
+            }
+        }
+
+        // Update UI state - remove successfully deleted assets
+        const successfulDeletes = assetsToDeleteIds.filter(id => !errors.some(e => e.id === id));
+        if (successfulDeletes.length > 0) {
+            setAssets(prev => prev.filter(asset => !successfulDeletes.includes(asset.id)));
+        }
+
+        setSelectedAssets(new Set()) // Clear selection regardless of errors
+        setIsSelectionMode(false) // Exit selection mode
+        setIsDeleting(false)
+
+        if (errors.length > 0) {
+            alert(`Failed to delete ${errors.length} asset(s). Please check the console for details.`);
         }
     }
 
@@ -758,25 +805,30 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                         const isItem = asset.media_type === 'item';
                         const isClickable = !isProcessingVideo;
 
-                        // Get the correct token for this asset if it's Mux-based
+                        // Get token specific to this asset's playbackId, if available
                         const token = asset.mux_playback_id ? thumbnailTokens[asset.mux_playback_id] : null;
 
                         // Determine the image source URL dynamically
                         let imageUrl = '';
+                        let imageKey = asset.id; // Base key for React list
+
                         if (isItem && asset.mux_playback_id && asset.item_timestamp != null) {
-                            // Generate signed URL for items using the helper
+                            // Generate signed URL for items using the helper and current token state
                             imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, asset.item_timestamp, token);
+                            imageKey = `${asset.id}-item-${token || 'no-token'}`; // Include token status in key
                         } else if (asset.media_type === 'video' && asset.mux_playback_id && asset.mux_processing_status === 'ready') {
-                            // Generate signed URL for ready source videos (base thumbnail)
-                            imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, 0, token); // Use time=0 for default video thumb
+                            // Generate signed URL for ready source videos (base thumbnail, time=0)
+                            imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, 0, token);
+                            imageKey = `${asset.id}-video-${token || 'no-token'}`; // Include token status in key
                         } else if (asset.media_type === 'image') {
                             imageUrl = asset.media_url; // Direct URL for regular images
+                            imageKey = `${asset.id}-image`;
                         }
-                        // else: leave imageUrl empty for processing videos or error states
+                        // else: imageUrl remains '' for processing videos or errors
 
                         return (
                             <div
-                                key={asset.id}
+                                key={asset.id} // Keep base ID for outer div key
                                 className={`group relative aspect-square rounded-lg overflow-hidden bg-muted ${isClickable ? 'cursor-pointer hover:opacity-90' : 'cursor-not-allowed'} transition-opacity ${selectedAssets.has(asset.id) ? 'ring-2 ring-primary' : ''}`}
                                 onClick={(e) => handleAssetClick(asset, e)}
                             >
@@ -820,19 +872,19 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                                             </button>
                                         </div>
                                     </div>
-                                ) : imageUrl ? (
+                                ) : imageUrl ? ( // Render Image only if we determined a valid URL
                                     <Image
-                                        key={`${asset.id}-${imageUrl}`}
+                                        key={imageKey} // Use more specific key for Image re-render on token change
                                         src={imageUrl}
                                         alt={asset.name}
                                         fill
                                         className="object-cover group-hover:scale-105 transition-transform"
                                         onError={(e) => {
                                             if (asset.mux_playback_id && !token) {
-                                                console.warn(`Thumbnail failed for ${asset.id}, attempting token refetch.`);
+                                                console.warn(`Thumbnail failed for ${asset.id} (no token), attempting token refetch.`);
                                                 fetchThumbnailToken(asset.mux_playback_id);
                                             } else {
-                                                console.error(`Final error loading image for ${asset.id}:`, e);
+                                                console.error(`Final error loading image for ${asset.id} URL: ${imageUrl}`, e);
                                                 handleMediaError(asset.id, imageUrl, 'image', e);
                                             }
                                         }}

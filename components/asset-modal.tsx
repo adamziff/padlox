@@ -8,6 +8,10 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { MuxPlayer } from './mux-player'
 import { getMuxThumbnailUrl } from '@/lib/mux'
+import { Input } from './ui/input'
+import { Textarea } from './ui/textarea'
+import { Label } from './ui/label'
+import { useDebouncedCallback } from 'use-debounce'
 
 interface AssetModalProps {
     asset: AssetWithMuxData
@@ -20,6 +24,14 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
     const [isDeleting, setIsDeleting] = useState(false);
     const supabase = createClient();
     const [modalToken, setModalToken] = useState<string | null>(null);
+
+    // Add state for editable fields
+    const [editableName, setEditableName] = useState(asset.name || '');
+    const [editableDescription, setEditableDescription] = useState(asset.description || '');
+    const [editableValue, setEditableValue] = useState<string>(asset.estimated_value != null ? String(asset.estimated_value) : '');
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [saveSuccess, setSaveSuccess] = useState(false);
 
     // Define these based on the current asset state
     const isItem = asset.media_type === 'item';
@@ -198,6 +210,71 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
         setAsset(initialAsset);
     }, [initialAsset]);
 
+    // Update editable state when the underlying asset changes (e.g., due to realtime updates)
+    useEffect(() => {
+        setEditableName(asset.name || '');
+        setEditableDescription(asset.description || '');
+        setEditableValue(asset.estimated_value != null ? String(asset.estimated_value) : '');
+    }, [asset]);
+
+    // Debounced save function
+    const debouncedSave = useDebouncedCallback(async () => {
+        if (!editableName) { // Add validation if needed
+            setSaveError('Name cannot be empty.');
+            return;
+        }
+
+        const valueToSave = editableValue.trim() === '' ? null : parseFloat(editableValue);
+        if (editableValue.trim() !== '' && (isNaN(valueToSave!) || valueToSave! < 0)) {
+            setSaveError('Invalid estimated value. Must be a non-negative number.');
+            return;
+        }
+
+        setIsSaving(true);
+        setSaveError(null);
+        setSaveSuccess(false);
+
+        try {
+            const { error } = await supabase
+                .from('assets')
+                .update({
+                    name: editableName,
+                    description: editableDescription || null,
+                    estimated_value: valueToSave
+                })
+                .eq('id', asset.id);
+
+            if (error) throw error;
+
+            // Update local asset state immediately for perceived speed
+            setAsset(prev => ({
+                ...prev,
+                name: editableName,
+                description: editableDescription || null,
+                estimated_value: valueToSave
+            }));
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 2000); // Hide success message after 2s
+
+        } catch (error) {
+            console.error('Error saving asset details:', error);
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            setSaveError(`Save failed: ${message}`);
+        } finally {
+            setIsSaving(false);
+        }
+    }, 500); // Debounce time in ms
+
+    // Trigger save when inputs change
+    useEffect(() => {
+        // Avoid saving on initial load
+        if (editableName !== initialAsset.name ||
+            editableDescription !== (initialAsset.description || '') ||
+            editableValue !== (initialAsset.estimated_value != null ? String(initialAsset.estimated_value) : '')) {
+            debouncedSave();
+        }
+    }, [editableName, editableDescription, editableValue, initialAsset, debouncedSave]);
+
     // Log asset state for debugging
     useEffect(() => {
         if (process.env.NODE_ENV !== 'production') {
@@ -220,22 +297,39 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
 
         setIsDeleting(true)
         try {
-            if (hasMuxData) {
+            // Handle item deletion (only delete from DB)
+            if (isItem) {
+                console.log(`Deleting item asset (DB only): ${asset.id}`)
+                const { error: dbError } = await supabase
+                    .from('assets')
+                    .delete()
+                    .eq('id', asset.id)
+
+                if (dbError) {
+                    console.error('Error deleting item asset from database:', dbError);
+                    throw dbError;
+                }
+            }
+            // Handle source video/image deletion (Mux API or S3 API)
+            else if (hasMuxData && asset.mux_asset_id) { // Ensure we have the mux_asset_id for source videos
+                console.log(`Deleting source Mux asset: ${asset.id} (Mux ID: ${asset.mux_asset_id})`);
                 // Delete using the Mux API endpoint
                 const response = await fetch('/api/mux/delete', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
+                    // Pass the Supabase asset ID, the API route will find the Mux asset ID
                     body: JSON.stringify({ assetId: asset.id }),
                 });
 
                 if (!response.ok) {
-                    const data = await response.json();
+                    const data = await response.json().catch(() => ({}));
                     throw new Error(data.error || 'Failed to delete Mux asset');
                 }
-            } else {
-                // For non-Mux assets, delete from Supabase and S3
+            } else if (asset.media_type === 'image' && asset.media_url) {
+                console.log(`Deleting image asset (DB & S3): ${asset.id}`);
+                // For non-Mux images, delete from Supabase and S3
                 const { error: dbError } = await supabase
                     .from('assets')
                     .delete()
@@ -245,24 +339,32 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
 
                 // Delete from S3
                 const key = asset.media_url.split('/').pop()
-                const response = await fetch('/api/delete', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ key }),
-                })
-
-                if (!response.ok) {
-                    throw new Error('Failed to delete file from S3')
+                if (key) { // Ensure we have a key
+                    const response = await fetch('/api/delete', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ key }),
+                    })
+                    if (!response.ok) {
+                        // Log S3 deletion error but maybe don't block UI update?
+                        console.error('Failed to delete file from S3, but DB record deleted.')
+                        // throw new Error('Failed to delete file from S3') 
+                    }
+                } else {
+                    console.warn('Could not determine S3 key from media_url for deletion.')
                 }
+            } else {
+                console.warn(`Cannot determine deletion method for asset ${asset.id} of type ${asset.media_type}`);
+                throw new Error('Unsupported asset type for deletion.');
             }
 
-            onDelete?.(asset.id)
-            onClose()
+            onDelete?.(asset.id) // Notify parent (e.g., dashboard) via prop
+            onClose() // Close the modal
         } catch (error) {
             console.error('Error deleting asset:', error)
-            alert('Failed to delete asset. Please try again.')
+            alert(`Failed to delete asset: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`)
         } finally {
             setIsDeleting(false)
         }
@@ -427,6 +529,50 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                             </div>
                             {/* Details Column */}
                             <div className="space-y-4">
+                                {/* Editable Name */}
+                                <div>
+                                    <Label htmlFor="asset-name" className="font-medium mb-1 block">Name</Label>
+                                    <Input
+                                        id="asset-name"
+                                        value={editableName}
+                                        onChange={(e) => setEditableName(e.target.value)}
+                                        placeholder="Item Name"
+                                    />
+                                </div>
+
+                                {/* Editable Description */}
+                                <div>
+                                    <Label htmlFor="asset-description" className="font-medium mb-1 block">Description</Label>
+                                    <Textarea
+                                        id="asset-description"
+                                        value={editableDescription}
+                                        onChange={(e) => setEditableDescription(e.target.value)}
+                                        placeholder="Item description..."
+                                        rows={3}
+                                    />
+                                </div>
+
+                                {/* Editable Estimated Value */}
+                                <div>
+                                    <Label htmlFor="asset-value" className="font-medium mb-1 block">Estimated Value ($)</Label>
+                                    <Input
+                                        id="asset-value"
+                                        type="number"
+                                        value={editableValue}
+                                        onChange={(e) => setEditableValue(e.target.value)}
+                                        placeholder="e.g., 199.99"
+                                        min="0"
+                                        step="0.01"
+                                    />
+                                </div>
+
+                                {/* Save Status Indicator */}
+                                <div className="h-4 text-sm">
+                                    {isSaving && <span className="text-muted-foreground italic">Saving...</span>}
+                                    {saveError && <span className="text-destructive">{saveError}</span>}
+                                    {saveSuccess && <span className="text-green-600">Saved!</span>}
+                                </div>
+
                                 {asset.description && (
                                     <div>
                                         <h3 className="font-medium mb-2">Description</h3>

@@ -13,9 +13,10 @@ import { getMuxThumbnailUrl } from '@/lib/mux';
 
 // Define the Zod schema for expected LLM output
 const ItemSchema = z.object({
-  name: z.string().describe('The name of the identified item.'),
-  timestamp: z.number().nonnegative().describe('The start time (in seconds) when the item first clearly appears in the video.'),
-  estimated_value: z.number().nullable().describe('An estimated value of the item in USD, or null if unknown.')
+  name: z.string().describe('The name of the identified item, formatted in Title Case.'),
+  timestamp: z.number().nonnegative().describe('The start time (in seconds) marking the earliest moment the item is first clearly shown or initially mentioned.'),
+  estimated_value: z.number().nullable().describe('An estimated value of the item in USD. MUST be provided (guess if necessary, null if impossible).'),
+  description: z.string().describe('A concise description of the item based on the transcript context.')
 });
 
 const ItemsListSchema = z.object({
@@ -113,10 +114,28 @@ export async function POST(req: Request) {
       attempts++;
       console.log(`[Analyze API] Attempt ${attempts} to analyze transcript for asset ${sourceVideoAssetId}`);
       try {
+        // Prepare detailed transcript data for the prompt
+        const wordsWithTimestamps = transcriptData.results.channels[0]?.alternatives[0]?.words || [];
+        const detailedTranscriptContext = JSON.stringify(wordsWithTimestamps.map(w => ({ w: w.punctuated_word || w.word, s: w.start, e: w.end })));
+
         const result = await generateObject({
           model: model,
           schema: ItemsListSchema,
-          prompt: `Analyze the following video transcript of a home inventory recording. Identify distinct physical items mentioned or described. For each item, provide its name, the timestamp (in seconds) when it first clearly appears or is mentioned, and an estimated value in USD (as a number, or null if unknown). Output *only* a valid JSON object strictly matching the required schema, with no additional text, commentary, or formatting before or after the JSON object.\n\nTranscript:\n---\n${transcriptText}\n---\n\nRespond ONLY with the valid JSON object.`,
+          prompt: `Analyze the following video transcript data of a home inventory recording. Identify distinct physical items mentioned or described.
+For each item:
+1. Provide its name, formatted in **Title Case**.
+2. Provide the timestamp (in seconds) marking the **earliest moment** the item is first clearly shown or initially mentioned. Use the start time ('s') of the relevant word(s) from the detailed data below.
+3. Provide an estimated value in USD (as a number). **You MUST provide an estimate for every item**, even if the user doesn't state a value. Use the context to make a reasonable guess. If no context is available, estimate as null.
+4. Provide a concise, one-sentence description of the item based on the context in which it was mentioned.
+
+Output *only* a valid JSON object strictly matching the required schema, with no additional text, commentary, or formatting before or after the JSON object.
+
+Detailed Transcript Data (word, start time, end time):
+---
+${detailedTranscriptContext}
+---
+
+Respond ONLY with the valid JSON object.`,
           mode: 'json'
         });
 
@@ -150,15 +169,21 @@ export async function POST(req: Request) {
     console.log(`[Analyze API] Creating ${identifiedItems.length} item assets for source video ${sourceVideoAssetId}`);
 
     const itemsToInsert: Database['public']['Tables']['assets']['Insert'][] = identifiedItems.map(item => {
-      // Do NOT generate the full thumbnail URL here. Store components needed by client.
-      // const thumbnailUrl = getMuxThumbnailUrl(sourceAsset.mux_playback_id!, item.timestamp);
-      const itemName = item.name.trim().substring(0, 255);
+      // Basic Title Case formatting (can be improved with a utility)
+      const titleCaseName = item.name
+        .trim()
+        .toLowerCase()
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ')
+        .substring(0, 255);
 
       return {
         user_id: sourceAsset.user_id,
-        name: itemName || 'Unnamed Item',
+        name: titleCaseName || 'Unnamed Item',
+        description: item.description,
         media_type: 'item',
-        media_url: '', // Store empty string or null, client will construct the signed URL
+        media_url: '',
         is_source_video: false,
         source_video_id: sourceVideoAssetId,
         item_timestamp: item.timestamp,

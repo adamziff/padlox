@@ -15,13 +15,32 @@ DROP CONSTRAINT IF EXISTS assets_media_type_check; -- <<< REPLACE constraint_nam
 ALTER TABLE public.assets
 ADD CONSTRAINT assets_media_type_check CHECK (media_type IN ('image', 'video', 'item'));
 
--- Step 2: Add new columns for item tracking
+-- Step 2: Update the source_video_id Foreign Key Constraint for CASCADE delete
 
--- Add columns only if they don't already exist
+-- IMPORTANT: Find the existing foreign key constraint name for source_video_id first!
+-- Execute this command in your Supabase SQL editor:
+-- SELECT constraint_name
+-- FROM information_schema.key_column_usage
+-- WHERE table_schema = 'public'
+--   AND table_name = 'assets'
+--   AND column_name = 'source_video_id'
+-- Note the constraint name (e.g., assets_source_video_id_fkey) and use it below.
+
+-- Drop the existing foreign key constraint (Replace 'assets_source_video_id_fkey' if needed)
+ALTER TABLE public.assets
+DROP CONSTRAINT IF EXISTS assets_source_video_id_fkey; -- <<< REPLACE constraint_name HERE
+
+-- Add new columns (or ensure they exist) and the CASCADE constraint
 ALTER TABLE public.assets
 ADD COLUMN IF NOT EXISTS is_source_video BOOLEAN NOT NULL DEFAULT false,
-ADD COLUMN IF NOT EXISTS source_video_id UUID REFERENCES public.assets(id) ON DELETE SET NULL, -- Setting to NULL if source video is deleted
-ADD COLUMN IF NOT EXISTS item_timestamp DOUBLE PRECISION;
+ADD COLUMN IF NOT EXISTS item_timestamp DOUBLE PRECISION,
+-- Add the source_video_id column if it doesn't exist, OR just add the constraint if it does
+ADD COLUMN IF NOT EXISTS source_video_id UUID,
+-- Add the foreign key constraint with ON DELETE CASCADE
+ADD CONSTRAINT assets_source_video_id_fkey
+    FOREIGN KEY (source_video_id)
+    REFERENCES public.assets(id)
+    ON DELETE CASCADE; -- This is the crucial change
 
 -- Step 3: Add an index for faster lookup
 
