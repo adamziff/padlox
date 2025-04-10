@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
+import { cn } from '@/lib/utils';
 
 // Helper for controlled logging - only log when DEBUG is set
 function log(message: string, ...args: unknown[]) {
@@ -35,9 +36,10 @@ interface MuxPlayerProps {
     poster?: string;
     title?: string;
     startTime?: number;
+    className?: string;
 }
 
-export function MuxPlayer({ playbackId, aspectRatio = '16/9', title, startTime }: MuxPlayerProps) {
+export function MuxPlayer({ playbackId, aspectRatio = '16/9', title, startTime, className }: MuxPlayerProps) {
     const [tokens, setTokens] = useState<{
         playback: string | undefined;
         thumbnail: string | undefined;
@@ -170,7 +172,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title, startTime }
     // When we have tokens, pass them and startTime to the player
     return (
         <div
-            className="h-full w-full overflow-hidden rounded-lg"
+            className={cn("h-full w-full overflow-hidden rounded-lg", className)}
             style={{ aspectRatio }}
         >
             <MuxPlayerComponent
