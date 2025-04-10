@@ -8,7 +8,7 @@ export async function GET(request: Request) {
 
     if (code) {
         // Use the server client from lib/auth
-        const supabase = createClient()
+        const supabase = await createClient()
 
         try {
             // Exchange the code for a session

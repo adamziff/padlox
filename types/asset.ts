@@ -1,4 +1,6 @@
 import { MuxData } from './mux';
+import { Room } from './room';
+import { Tag } from './tag';
 
 /**
  * Represents an asset (item or media file) stored in the database.
@@ -48,4 +50,8 @@ export interface Asset {
     mux_upload_id?: string
     mux_data?: MuxData | null
     processing_status?: 'pending' | 'processing' | 'completed' | 'failed' | null
+
+    // Nested data from Supabase joins
+    rooms?: Room | null;      // Expect a single related room object
+    tags?: Tag[] | null;       // Expect an array of related tag objects
 } 
