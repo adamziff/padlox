@@ -1,14 +1,14 @@
-import { createServerSupabaseClient } from '@/lib/auth/supabase'
+import { createClient } from '@/utils/supabase/server'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
-    const { searchParams } = new URL(request.url)
+    const { searchParams, origin } = new URL(request.url)
     const code = searchParams.get('code')
-    const next = searchParams.get('next') ?? '/app/myhome'
+    const next = searchParams.get('next') ?? '/myhome'
 
     if (code) {
         // Use the server client from lib/auth
-        const supabase = await createServerSupabaseClient()
+        const supabase = createClient()
 
         try {
             // Exchange the code for a session
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
                 })
             }
 
-            return NextResponse.redirect(new URL(next, request.url))
+            return NextResponse.redirect(`${origin}${next}`)
         } catch (error) {
             console.error('Auth callback error:', error)
             return NextResponse.redirect(new URL('/login?error=auth_callback_failed', request.url))

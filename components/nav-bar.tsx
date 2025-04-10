@@ -32,18 +32,26 @@ export function NavBar() {
     return (
         <div className="border-b">
             <div className="flex h-16 items-center px-4 container mx-auto">
-                <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+                <Link href={isLoggedIn ? "/myhome" : "/"} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                     <Image src="/lock.svg" alt="Padlox logo" width={24} height={24} className="dark:invert" />
                     <div className="font-semibold">Padlox</div>
                 </Link>
                 <nav className="flex items-center space-x-4 lg:space-x-6 mx-6">
                     {isLoggedIn && (
-                        <Link
-                            href="/dashboard"
-                            className="text-sm font-medium transition-colors hover:text-primary"
-                        >
-                            Dashboard
-                        </Link>
+                        <>
+                            <Link
+                                href="/myhome"
+                                className="text-sm font-medium transition-colors hover:text-primary"
+                            >
+                                My Home
+                            </Link>
+                            <Link
+                                href="/dashboard"
+                                className="text-sm font-medium transition-colors hover:text-primary"
+                            >
+                                Dashboard
+                            </Link>
+                        </>
                     )}
                 </nav>
                 <div className="ml-auto flex items-center space-x-4">

@@ -118,13 +118,13 @@ export default function MyHomeClient({ recentItems, totalItems, totalValue }: My
                     <section>
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-semibold">Recently Added</h2>
-                            <Link href="/app/catalog" passHref>
+                            <Link href="/catalog" passHref>
                                 <Button variant="outline" size="sm">View All Items</Button>
                             </Link>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-4">
                             {recentItems.map((item) => (
-                                <Link key={item.id} href={`/app/item/${item.id}`} passHref> {/* Link to future item detail page */}
+                                <Link key={item.id} href={`/item/${item.id}`} passHref> {/* Link to future item detail page */}
                                     <ItemPreviewCard item={item} />
                                 </Link>
                             ))}
@@ -142,7 +142,7 @@ export default function MyHomeClient({ recentItems, totalItems, totalValue }: My
                         <Boxes size={64} className="text-muted-foreground" />
                         <p>You haven't added any items yet.</p>
                         {/* Link to capture flow (Prompt 4) */}
-                        <Link href="/app/capture" passHref>
+                        <Link href="/capture" passHref>
                             <Button size="lg">
                                 <Plus className="mr-2 h-4 w-4" /> Start Capturing
                             </Button>

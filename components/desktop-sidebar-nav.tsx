@@ -10,14 +10,14 @@ import { Button } from '@/components/ui/button';
 // import { useUser } from '@/hooks/useUser'; // Example
 
 const mainNavItems = [
-    { href: '/app/myhome', label: 'My Home', icon: Home },
-    { href: '/app/catalog', label: 'Catalog', icon: LayoutGrid },
-    { href: '/app/capture', label: 'Capture', icon: Camera },
-    { href: '/app/activity', label: 'Activity', icon: Activity },
+    { href: '/myhome', label: 'My Home', icon: Home },
+    { href: '/catalog', label: 'Catalog', icon: LayoutGrid },
+    { href: '/capture', label: 'Capture', icon: Camera },
+    { href: '/activity', label: 'Activity', icon: Activity },
 ];
 
 const secondaryNavItems = [
-    { href: '/app/settings', label: 'Settings', icon: Settings },
+    { href: '/settings', label: 'Settings', icon: Settings },
     // Add logout functionality later
     // { href: '/auth/logout', label: 'Logout', icon: LogOut },
 ];
@@ -30,7 +30,7 @@ export default function DesktopSidebarNav() {
         <aside className="hidden md:flex md:flex-col md:fixed md:left-0 md:top-0 md:bottom-0 md:z-40 md:w-60 md:border-r md:bg-background">
             <div className="flex h-16 items-center border-b px-6">
                 {/* Replace with Logo */}
-                <Link href="/app/myhome" className="flex items-center gap-2 font-semibold">
+                <Link href="/myhome" className="flex items-center gap-2 font-semibold">
                     <Boxes className="h-6 w-6" /> {/* Placeholder Logo */}
                     <span>Padlox</span>
                 </Link>
@@ -38,7 +38,7 @@ export default function DesktopSidebarNav() {
             <nav className="flex-1 overflow-y-auto p-4">
                 <ul className="space-y-1">
                     {mainNavItems.map((item) => {
-                        const isActive = pathname === item.href || (item.href !== '/app/myhome' && pathname.startsWith(item.href));
+                        const isActive = pathname === item.href || (item.href !== '/myhome' && pathname.startsWith(item.href));
                         return (
                             <li key={item.href}>
                                 <Link href={item.href} passHref>
