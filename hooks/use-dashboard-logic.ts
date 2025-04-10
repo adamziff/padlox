@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase';
+// import { createClient } from '@/lib/supabase'; // Remove this problematic import
+import { createClient } from '@/utils/supabase/client'; // Use the dedicated client-side creator
 import { uploadToS3 } from '@/utils/s3';
 import { AssetWithMuxData } from '@/types/mux';
 import { User } from '@supabase/supabase-js';

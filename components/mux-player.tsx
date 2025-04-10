@@ -186,7 +186,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title, startTime }
                     width: "100%"
                 }}
                 startTime={startTime}
-                onError={(evt) => {
+                onError={(evt: ErrorEvent) => {
                     console.error('Mux player error:', evt);
 
                     // Check if it's an auth error

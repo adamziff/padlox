@@ -1,14 +1,14 @@
-import { createClient } from '@/utils/supabase/server'
+import { createServerSupabaseClient } from '@/lib/auth/supabase'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const code = searchParams.get('code')
-    const next = searchParams.get('next') ?? '/dashboard'
+    const next = searchParams.get('next') ?? '/app/myhome'
 
     if (code) {
-        // Create a supabase client for authentication
-        const supabase = await createClient()
+        // Use the server client from lib/auth
+        const supabase = await createServerSupabaseClient()
 
         try {
             // Exchange the code for a session
@@ -20,49 +20,33 @@ export async function GET(request: Request) {
             if (userError) throw userError
             if (!user) throw new Error('No user found after authentication')
 
-            // Create a service role client for database operations
-            const serviceRoleClient = await createClient()
-
             // Create or update the user in our database
-            const { error: dbError } = await serviceRoleClient
+            const { error: dbError } = await supabase
                 .from('users')
                 .upsert({
                     id: user.id,
                     email: user.email,
-                    created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()
                 }, {
                     onConflict: 'id'
                 })
 
             if (dbError) {
-                console.error('Error creating user in database:', {
+                console.error('Error upserting user in database:', {
                     message: dbError.message,
                     details: dbError.details,
                     hint: dbError.hint,
                     code: dbError.code
                 })
-                throw dbError
             }
 
             return NextResponse.redirect(new URL(next, request.url))
-        } catch (error: unknown) {
-            const err = error as Error & {
-                details?: string
-                hint?: string
-                code?: string
-            }
-            console.error('Auth callback error:', {
-                message: err?.message,
-                details: err?.details,
-                hint: err?.hint,
-                code: err?.code,
-                stack: err?.stack
-            })
-            return NextResponse.redirect(new URL('/auth/auth-error', request.url))
+        } catch (error) {
+            console.error('Auth callback error:', error)
+            return NextResponse.redirect(new URL('/login?error=auth_callback_failed', request.url))
         }
     }
 
-    // Return the user to an error page with some instructions
-    return NextResponse.redirect(new URL('/auth/auth-error', request.url))
+    console.log('Auth callback: No code found, redirecting to login.')
+    return NextResponse.redirect(new URL('/login?error=no_code', request.url))
 } 

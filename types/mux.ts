@@ -31,6 +31,10 @@ export interface MuxWebhookEvent {
     max_stored_resolution?: string;
     max_stored_frame_rate?: number;
     upload_id?: string;
+    static_renditions?: {
+      status: 'ready' | 'preparing' | 'errored';
+      files: Array<{ name: string; ext: string; height: number; width: number; bitrate?: number; filesize?: number; }>;
+    } | null;
     rendition?: {
       name: string;
       url: string;
@@ -104,4 +108,23 @@ export interface AssetWithMuxData extends Omit<Asset, 'media_url'> {
 }
 
 // We need to import the Asset type from the existing type file
-import { Asset } from './asset'; 
+import { Asset } from './asset';
+
+// Define possible Mux Asset statuses
+export type MuxAssetStatus = 'preparing' | 'ready' | 'errored';
+
+/**
+ * Represents the detailed data returned by Mux for an asset.
+ * Often stored as JSONB in the database.
+ */
+export interface MuxData {
+  id: string;
+  status: MuxAssetStatus;
+  playback_ids?: Array<{ id: string; policy: 'public' | 'signed' }>;
+  created_at: string; // Represented as string, consider Date object if needed
+  duration?: number;
+  max_stored_resolution?: 'audio-only' | 'SD' | 'HD' | 'FHD' | 'UHD';
+  max_stored_frame_rate?: number;
+  aspect_ratio?: string;
+  // Add other relevant fields from Mux Asset object as needed
+} 

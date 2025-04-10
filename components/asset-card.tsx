@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { AssetWithMuxData } from '@/types/mux';
 import { ImageIcon, VideoIcon, SpinnerIcon } from './icons';
-import { formatCurrency } from '@/utils/format';
+import { formatCurrency } from '@/lib/format';
 import { getMuxThumbnailUrl } from '@/lib/mux';
 import React from 'react';
 

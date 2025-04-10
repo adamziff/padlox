@@ -1,0 +1,99 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Padlox Home Inventory Application
+
+Project context and architecture overview for the Padlox home inventory application.
+
+<rule>
+name: padlox_context
+description: Project context and architecture for the Padlox home inventory application
+filters:
+  - type: content
+    pattern: ".*"
+  - type: file_extension
+    pattern: ".*\\.(tsx|ts|js|jsx|json|md)$"
+
+actions:
+  - type: suggest
+    message: |
+      ## Padlox: Home Inventory Application
+
+      ### Project Context
+      Padlox is a home inventory application for people to track what they own for insurance purposes, especially in case of disasters like fires or hurricanes. The primary focus is on building a mobile-friendly Next.js web app using TailwindCSS and shadcn/ui, with plans to eventually build native mobile apps with the same features.
+
+      ### Core Requirements
+      1. **Media Capture**: Users can take photos and videos (up to ~30 minutes)
+      2. **Storage**: All media goes to a database/storage, with photos stored in AWS S3 and videos stored in Mux
+      3. **AI Analysis**: 
+         - Videos: Generate transcripts, then use an LLM to detect all items and note timestamps
+         - Photos: Analyze images to identify items and store textual descriptions
+      4. **Dashboard**: Users see all uploaded media and a list of items contained in them
+      5. **C2PA / Adobe CAI**: Immediately sign media with C2PA at capture time
+      6. **Valuation**: Estimate and display the value of identified items
+
+      ### Architecture
+      ```
+      Frontend (Vercel)                    Backend (AWS/Supabase/Mux)
+      +------------------------+            +------------------------+
+      |                        |            |                        |
+      |  Next.js 15 App Router |<---------->|  Supabase PostgreSQL   |
+      |  - TailwindCSS         |    API     |  - Auth                |
+      |  - shadcn/ui           |  Requests  |  - App Data            |
+      |  - TypeScript          |            |  - Relationships       |
+      |  - Media Capture       |            |                        |
+      |                        |            +------------------------+
+      +------------------------+            |                        |
+                                            |  AWS S3                |
+                                            |  - Photo Storage       |
+                                            |                        |
+                                            +------------------------+
+                                            |                        |
+                                            |  Mux                   |
+                                            |  - Video Storage       |
+                                            |  - Video Processing    |
+                                            |                        |
+                                            +------------------------+
+                                            |                        |
+                                            |  AI Processing         |
+                                            |  - Deepgram (Audio)    |
+                                            |  - LLM (Content)       |
+                                            |  - Vercel AI SDK       |
+                                            |                        |
+                                            +------------------------+
+      ```
+
+      ### Tech Stack
+      - **Frontend**: Next.js 15, TypeScript, TailwindCSS, RadixUI, shadcn/ui
+      - **Package Manager**: pnpm
+      - **Backend**: Supabase (PostgreSQL), AWS S3 (photos), Mux (videos)
+      - **Deployment**: Vercel (frontend), AWS (backend services)
+      - **AI Tools**: Cursor, ChatGPT, Deepgram, Vercel AI SDK
+
+      ### Future Extensions
+      - Native mobile apps (iOS/Android) using the same backend APIs
+      - Enhanced AI-powered item recognition and valuation
+
+      Note: Update this rule whenever the architecture changes to keep it current.
+
+examples:
+  - input: "How should I structure the media upload flow?"
+    output: "Consider the architecture diagram showing media uploads flow through Next.js to AWS S3 for photos or Mux for videos, with AI processing happening afterward."
+metadata:
+  priority: high
+  version: 1.0
+  update_instructions: |
+    This rule should be updated whenever there are significant changes to:
+    1. Project architecture or component relationships
+    2. Technology stack choices
+    3. Core features or requirements
+    4. Backend services or infrastructure
+    
+    To update:
+    1. Edit the architecture diagram to reflect the current system
+    2. Update the tech stack section with any new technologies
+    3. Revise the core requirements if they've changed
+    4. Increment the version number in metadata
+</rule>

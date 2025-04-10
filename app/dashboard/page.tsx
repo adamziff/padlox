@@ -8,7 +8,7 @@ import { SupabaseClient } from '@supabase/supabase-js'
 
 // Use async/await for server-side data fetching
 export default async function Dashboard() {
-    // Create the Supabase client (it's an async function)
+    // Create the Supabase client using the correct function
     const supabase = await createClient()
 
     const { data: { user } } = await supabase.auth.getUser()

@@ -1,3 +1,9 @@
+import { MuxData } from './mux';
+
+/**
+ * Represents an asset (item or media file) stored in the database.
+ * Corresponds to the 'assets' table.
+ */
 export interface Asset {
     id: string
     name: string
@@ -24,4 +30,22 @@ export interface Asset {
     transcript_text?: string | null
     transcript_processing_status?: 'pending' | 'processing' | 'completed' | 'error' | null
     transcript_error?: string | null
+    room_id?: string | null
+    inferred_room_name?: string | null
+    purchase_date?: string | null
+    purchase_price?: number | null
+    condition?: string | null
+    serial_number?: string | null
+    brand?: string | null
+    model?: string | null
+    notes?: string | null
+    is_processed?: boolean
+    updated_at: string
+    file_type: 'image' | 'video'
+    width?: number
+    height?: number
+    duration?: number
+    mux_upload_id?: string
+    mux_data?: MuxData | null
+    processing_status?: 'pending' | 'processing' | 'completed' | 'failed' | null
 } 

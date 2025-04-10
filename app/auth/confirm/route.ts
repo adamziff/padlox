@@ -1,15 +1,15 @@
-import { createClient } from '@/utils/supabase/server'
+import { createServerSupabaseClient } from '@/lib/auth/supabase'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const token_hash = searchParams.get('token_hash')
     const type = searchParams.get('type')
-    const next = searchParams.get('next') ?? '/dashboard'
+    const next = searchParams.get('next') ?? '/app/myhome'
 
     if (token_hash && type) {
         try {
-            const supabase = await createClient()
+            const supabase = await createServerSupabaseClient()
             const { error } = await supabase.auth.verifyOtp({
                 token_hash,
                 type: 'email',
@@ -18,11 +18,12 @@ export async function GET(request: Request) {
             if (!error) {
                 return NextResponse.redirect(new URL(next, request.url))
             }
+            console.error('Auth confirm OTP error:', error)
         } catch (error) {
-            console.error('Auth confirm error:', error)
+            console.error('Auth confirm unexpected error:', error)
         }
     }
 
-    // Return the user to an error page with some instructions
-    return NextResponse.redirect(new URL('/auth/auth-error', request.url))
+    console.log('Auth confirm: Verification failed or params missing, redirecting to login.')
+    return NextResponse.redirect(new URL('/login?error=confirmation_failed', request.url))
 }

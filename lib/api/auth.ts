@@ -70,8 +70,9 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
 /**
  * Extract the user from the request headers
  * Uses cookie-based authentication
+ * INTERNAL USE ONLY - Should not be called directly from client components
  */
-export async function getUserFromRequest() {
+async function getUserFromRequestInternal() {
   try {
     // Use the new createServerSupabaseClient with proper cookie handling
     const supabase = await createServerSupabaseClient();
