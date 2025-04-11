@@ -124,7 +124,7 @@ export default function MyHomeClient({ recentItems, totalItems, totalValue }: My
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-4">
                             {recentItems.map((item) => (
-                                <Link key={item.id} href={`/item/${item.id}`} passHref> {/* Link to future item detail page */}
+                                <Link key={item.id} href={`/items/${item.id}`} passHref> {/* Link to future item detail page */}
                                     <ItemPreviewCard item={item} />
                                 </Link>
                             ))}

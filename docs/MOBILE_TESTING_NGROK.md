@@ -64,6 +64,8 @@ https://your-ngrok-url.ngrok-free.app/api/mux/webhook
 
 Failure to include the `/api/mux/webhook` path will prevent Mux notifications from reaching your application.
 
+Make sure to update the MUX_WEBHOOK_SECRET environment variable with the signing secret from the new webhook.
+
 ### 5. Restart Your Development Server
 
 Stop and restart your Next.js development server to apply the environment variable changes:
