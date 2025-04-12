@@ -45,9 +45,26 @@ export function AssetGrid({
         }
     };
 
+    // Filter assets before rendering
+    const filteredAssets = assets.filter(asset => {
+        // Always show items
+        if (asset.media_type === 'item') {
+            return true;
+        }
+        // Show videos only if their Mux status exists and is 'preparing' or 'processing'
+        if (asset.media_type === 'video') {
+            const status = asset.mux_processing_status;
+            if (status && (status === 'preparing' || status === 'processing')) {
+                return true;
+            }
+        }
+        // Hide all other cases
+        return false;
+    });
+
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-            {assets.map(asset => {
+            {filteredAssets.map(asset => {
                 const token = asset.mux_playback_id ? thumbnailTokens[asset.mux_playback_id] ?? null : null;
                 const hasError = !!mediaErrors[asset.id];
                 const isSelected = selectedAssets.has(asset.id);

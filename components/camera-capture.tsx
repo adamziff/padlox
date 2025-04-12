@@ -930,7 +930,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                                 </div>
                             )}
 
-                            {(recorderStatus === 'idle' || recorderStatus === 'error') && !isInitializing && (
+                            {(recorderStatus === 'idle' || recorderStatus === 'error') && !isInitializing && process.env.NODE_ENV === 'development' && (
                                 <Button
                                     variant={isMobile ? "ghost" : "outline"}
                                     className={cn(

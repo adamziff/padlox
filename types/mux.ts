@@ -89,7 +89,7 @@ export interface AssetWithMuxData extends Omit<Asset, 'media_url'> {
   mux_asset_id?: string;
   mux_playback_id?: string;
   mux_max_resolution?: string;
-  mux_processing_status?: 'preparing' | 'ready' | 'error';
+  mux_processing_status?: 'preparing' | 'processing' | 'ready' | 'error';
   mux_aspect_ratio?: string;
   mux_duration?: number;
   mux_audio_url?: string;

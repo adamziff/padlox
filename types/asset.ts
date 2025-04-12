@@ -15,7 +15,7 @@ export interface Asset {
     item_timestamp?: number | null
     mux_asset_id?: string | null
     mux_playback_id?: string | null
-    mux_processing_status?: 'preparing' | 'ready' | 'error' | null
+    mux_processing_status?: 'preparing' | 'processing' | 'ready' | 'error' | null
     mux_max_resolution?: string | null
     mux_aspect_ratio?: string | null
     mux_duration?: number | null

@@ -67,13 +67,19 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                     filter: `user_id=eq.${user.id}`
                 },
                 (payload) => {
+                    console.log('[REALTIME HANDLER] Received payload:', payload);
                     if (payload.eventType === 'INSERT') {
                         const newAsset = payload.new as AssetWithMuxData;
-                        console.log(`[REALTIME UPDATE] New asset inserted: ${newAsset.id}, type: ${newAsset.media_type}, is_source: ${newAsset.is_source_video}`);
-                        setAssets(prevAssets => [
-                            newAsset,
-                            ...prevAssets.filter(a => a.id !== newAsset.id)
-                        ]);
+                        console.log(`[REALTIME HANDLER] INSERT detected: ${newAsset.id}, type: ${newAsset.media_type}, status: ${newAsset.mux_processing_status}`);
+                        setAssets(prevAssets => {
+                            // Add the new asset, ensuring no duplicates if event fires multiple times
+                            const exists = prevAssets.some(a => a.id === newAsset.id);
+                            if (exists) return prevAssets;
+                            // Add to the beginning for most recent first
+                            const updated = [newAsset, ...prevAssets];
+                            console.log(`[REALTIME HANDLER] State updated after INSERT. New count: ${updated.length}`);
+                            return updated;
+                        });
                     }
                     else if (payload.eventType === 'UPDATE') {
                         const updatedAsset = payload.new as AssetWithMuxData;
@@ -82,7 +88,7 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                             .filter(key => updatedAsset[key as keyof AssetWithMuxData] !== oldAsset[key as keyof AssetWithMuxData])
                             .map(key => `${key}: ${oldAsset[key as keyof AssetWithMuxData]} → ${updatedAsset[key as keyof AssetWithMuxData]}`)
                             .join(', ');
-                        console.log(`[REALTIME UPDATE] Asset ${updatedAsset.id} updated: ${changes}`);
+                        console.log(`[REALTIME HANDLER] UPDATE detected for asset ${updatedAsset.id}: ${changes}`);
 
                         if ('mux_processing_status' in updatedAsset && 'mux_processing_status' in oldAsset &&
                             updatedAsset.mux_processing_status !== oldAsset.mux_processing_status) {
@@ -123,7 +129,11 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                             }
                         }
 
-                        setAssets(prevAssets => prevAssets.map(asset => asset.id === updatedAsset.id ? updatedAsset : asset));
+                        setAssets(prevAssets => {
+                            const updated = prevAssets.map(asset => asset.id === updatedAsset.id ? updatedAsset : asset);
+                            console.log(`[REALTIME HANDLER] State updated after UPDATE for ${updatedAsset.id}.`);
+                            return updated;
+                        });
 
                         if (selectedAsset && selectedAsset.id === updatedAsset.id) {
                             console.log('[REALTIME UPDATE] Also updating currently selected asset in modal');
@@ -140,8 +150,12 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                     }
                     else if (payload.eventType === 'DELETE') {
                         const deletedAssetId = payload.old.id;
-                        console.log('[REALTIME UPDATE] Asset deleted:', deletedAssetId);
-                        setAssets(prevAssets => prevAssets.filter(asset => asset.id !== deletedAssetId));
+                        console.log(`[REALTIME HANDLER] DELETE detected: ${deletedAssetId}`);
+                        setAssets(prevAssets => {
+                            const updated = prevAssets.filter(asset => asset.id !== deletedAssetId);
+                            console.log(`[REALTIME HANDLER] State updated after DELETE. New count: ${updated.length}`);
+                            return updated;
+                        });
                         if (selectedAsset && selectedAsset.id === deletedAssetId) {
                             setSelectedAsset(null);
                         }
@@ -155,47 +169,22 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                     }
                 }
             )
-            .subscribe((status) => {
-                console.log(`Assets realtime subscription status: ${status}`);
+            .subscribe((status, err) => {
+                // Log status changes and errors
+                console.log(`[REALTIME SUBSCRIBE] Assets subscription status: ${status}`);
+                if (err) {
+                    console.error('[REALTIME SUBSCRIBE] Subscription error:', err);
+                }
+                if (status === 'SUBSCRIBED') {
+                    console.log('[REALTIME SUBSCRIBE] Successfully subscribed to asset changes!');
+                }
             });
 
-        const checkInterval = setInterval(() => {
-            const preparingAssets = assets.filter(asset => asset.mux_processing_status === 'preparing' && asset.mux_asset_id);
-            if (preparingAssets.length > 0) {
-                console.log('[POLLING] Checking status of preparing assets:', preparingAssets.length);
-                preparingAssets.forEach(asset => {
-                    const lastCheckedKey = `last_checked_${asset.id}`;
-                    const lastChecked = parseInt(localStorage.getItem(lastCheckedKey) || '0', 10);
-                    const now = Date.now();
-                    if (now - lastChecked > 30000) {
-                        console.log(`[POLLING] Checking asset ${asset.id} (last checked ${Math.floor((now - lastChecked) / 1000)}s ago)`);
-                        localStorage.setItem(lastCheckedKey, now.toString());
-                        supabase.from('assets').select('*').eq('id', asset.id).single()
-                            .then(({ data, error }) => {
-                                if (!error && data) {
-                                    const updatedAsset = data as AssetWithMuxData;
-                                    if (updatedAsset.mux_processing_status !== asset.mux_processing_status) {
-                                        console.log(`[POLLING UPDATE] Asset ${asset.id} status changed:`, `${asset.mux_processing_status} → ${updatedAsset.mux_processing_status}`);
-                                        setAssets(prevState => prevState.map(a => a.id === asset.id ? updatedAsset : a));
-                                        if (selectedAsset && selectedAsset.id === asset.id) {
-                                            console.log('[POLLING UPDATE] Also updating currently selected asset');
-                                            setSelectedAsset(updatedAsset);
-                                        }
-                                    } else {
-                                        console.log(`[POLLING] No change for asset ${asset.id}, still ${asset.mux_processing_status}`);
-                                    }
-                                }
-                            });
-                    }
-                });
-            }
-        }, 15000);
-
         return () => {
+            console.log('[REALTIME CLEANUP] Unsubscribing from asset changes.');
             channel.unsubscribe();
-            clearInterval(checkInterval);
         };
-    }, [user.id, selectedAsset, mediaErrors, thumbnailTokens, fetchThumbnailToken, supabase, activeUploads, assets, selectedAssets]);
+    }, [user.id, supabase, fetchThumbnailToken, selectedAsset, mediaErrors]);
 
     // Handle captured media files
     const handleCapture = useCallback(async (file: File) => {
