@@ -7,6 +7,11 @@ import { CrossIcon, CameraIcon, VideoIcon, CameraFlipIcon, UploadIcon } from './
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 
+// Type guard for DOMException
+function isDOMException(error: unknown, name?: string): error is DOMException {
+    return typeof error === 'object' && error !== null && 'name' in error && (name === undefined || (error as DOMException).name === name);
+}
+
 // Refined MediaRecorder helper class with improved cleanup
 class MediaRecorderHelper {
     private mediaRecorder: MediaRecorder | null = null;
@@ -16,7 +21,6 @@ class MediaRecorderHelper {
 
     async setup({ video, audio }: { video: MediaTrackConstraints, audio: boolean }) {
         try {
-            // Stop existing stream if one exists - ensure this is completed before continuing
             await this.cleanup();
 
             this.stream = await navigator.mediaDevices.getUserMedia({
@@ -26,23 +30,63 @@ class MediaRecorderHelper {
             return {
                 status: 'idle',
                 previewStream: this.stream,
-                error: null
+                error: null // Explicitly null on success
             };
         } catch (err) {
-            console.error('Failed to get media devices', err);
+            // Log the actual error from getUserMedia
+            console.error('Failed to get media devices:', err);
+            let errorMessage = 'Failed to access camera or microphone.';
+
+            // Provide more specific error messages based on the DOMException name
+            if (isDOMException(err)) {
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    errorMessage = 'Camera/Microphone permission denied. Please grant access in browser settings and refresh.';
+                } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+                    errorMessage = 'No camera/microphone found, or the selected camera is unavailable.';
+                } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+                    errorMessage = 'Camera/Microphone might be in use by another application or hardware error occurred.';
+                } else if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
+                    errorMessage = 'The selected camera settings (e.g., resolution) are not supported by your device.';
+                } else {
+                    errorMessage = `Error accessing media devices: ${err.message} (${err.name})`;
+                }
+            } else if (err instanceof Error) {
+                errorMessage = `Error accessing media devices: ${err.message}`;
+            }
+
             return {
                 status: 'error',
                 previewStream: null,
-                error: err
+                // Return the detailed error message
+                error: errorMessage
             };
         }
     }
 
-    startRecording(onDataAvailable: (data: BlobEvent) => void) {
+    startRecording(onDataAvailable: (data: BlobEvent) => void, mimeType?: string) {
         if (!this.stream) return false;
 
         this.chunks = [];
-        this.mediaRecorder = new MediaRecorder(this.stream);
+        try {
+            // Attempt to use the specified mimeType if provided and supported
+            if (mimeType && MediaRecorder.isTypeSupported(mimeType)) {
+                this.mediaRecorder = new MediaRecorder(this.stream, { mimeType });
+                console.log(`Using specified mimeType: ${mimeType}`);
+            } else {
+                // Fallback to default or previously used type
+                this.mediaRecorder = new MediaRecorder(this.stream);
+                if (mimeType) {
+                    console.warn(`Specified mimeType "${mimeType}" not supported. Falling back to default.`);
+                } else {
+                    console.log('Using default mimeType.');
+                }
+            }
+        } catch (e) {
+            console.error('Error creating MediaRecorder:', e);
+            // Fallback to default if constructor with options fails
+            this.mediaRecorder = new MediaRecorder(this.stream);
+            console.log('Fell back to default MediaRecorder due to error.');
+        }
 
         this.mediaRecorder.ondataavailable = onDataAvailable;
         this.mediaRecorder.start();
@@ -53,7 +97,11 @@ class MediaRecorderHelper {
     stopRecording() {
         if (!this.mediaRecorder) return false;
 
-        this.mediaRecorder.stop();
+        // Note: Actual blob creation now happens in CameraCapture component's stopRecording
+        // This method just stops the recorder instance.
+        if (this.mediaRecorder.state === 'recording') {
+            this.mediaRecorder.stop();
+        }
         return true;
     }
 
@@ -136,6 +184,11 @@ class MediaRecorderHelper {
     getStream() {
         return this.stream;
     }
+
+    // Add a method to get the recorder instance for checking mimeType later
+    getRecorderInstance(): MediaRecorder | null {
+        return this.mediaRecorder;
+    }
 }
 
 export interface CameraCaptureProps {
@@ -152,6 +205,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     const [isInitializing, setIsInitializing] = useState(true)
     const [isCleaning, setIsCleaning] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
+    // Add state for error messages
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
     const videoRef = useRef<HTMLVideoElement>(null)
     const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -167,7 +222,13 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     const isDarkMode = resolvedTheme === 'dark'
     const isMobile = useMediaQuery('(max-width: 768px)')
 
-    // Thorough cleanup function to be called in all exit paths
+    // Define preferred and fallback MIME types
+    const preferredMimeType = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"'; // H.264 + AAC in MP4
+    const simplerMp4MimeType = 'video/mp4'; // Simpler MP4 type as another option
+    const fallbackMimeType = 'video/webm'; // Keep webm as fallback
+    const [actualMimeType, setActualMimeType] = useState<string>(fallbackMimeType);
+
+    // Thorough cleanup function (memoized)
     const performFullCleanup = useCallback(async () => {
         try {
             setIsCleaning(true);
@@ -198,15 +259,173 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             }
         }
     }, []);
-    // Ensure full cleanup on unmount
+
+    // Initialize camera function (memoized)
+    const initializeCamera = useCallback(async () => {
+        console.log("initializeCamera START"); // Log start
+        setIsInitializing(true);
+        setErrorMessage(null);
+        setRecorderStatus('idle');
+
+        // 1. Permissions Check (Keep this)
+        let permissionsOk = true;
+        let permErrorMessage: string | null = null;
+        if (navigator.permissions?.query) {
+            try {
+                const cameraPerm = await navigator.permissions.query({ name: 'camera' as PermissionName });
+                const micPerm = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+
+                if (cameraPerm.state === 'denied' || micPerm.state === 'denied') {
+                    permissionsOk = false;
+                    permErrorMessage = 'Camera or Microphone permission is blocked. Please enable it in your browser settings and refresh the page.';
+                }
+                console.log(`Permission states: Camera=${cameraPerm.state}, Microphone=${micPerm.state}`);
+            } catch (permError) {
+                console.warn("Permissions API query failed:", permError);
+            }
+        }
+
+        console.log(`Permissions check result: ok=${permissionsOk}, msg=${permErrorMessage}`);
+
+        if (!permissionsOk) {
+            console.log("Permissions check failed, exiting initializeCamera.");
+            setErrorMessage(permErrorMessage);
+            setRecorderStatus('error');
+            setIsInitializing(false); // Set init false here too
+            return;
+        }
+
+        // 2. Proceed with getUserMedia via setup
+        try {
+            console.log("initializeCamera: Calling cleanup before setup...");
+            await mediaRecorderRef.current.cleanup();
+
+            console.log("initializeCamera: Calling setup...");
+            const result = await mediaRecorderRef.current.setup({
+                video: { facingMode },
+                audio: true
+            });
+            console.log(`initializeCamera: Setup finished. Error: ${result.error}, Stream: ${!!result.previewStream}`);
+
+            // Check the error status returned from setup FIRST.
+            if (result.error) {
+                console.error("initializeCamera: Setup failed with error:", result.error);
+                setErrorMessage(result.error);
+                setRecorderStatus('error');
+            } else if (result.previewStream && videoRef.current) {
+                console.log("initializeCamera: Setup successful, stream exists. Assigning to video element...");
+                streamRef.current = result.previewStream;
+                videoRef.current.srcObject = result.previewStream;
+
+                // Try to play the video
+                try {
+                    console.log("initializeCamera: Attempting to play video via onloadedmetadata promise...");
+                    await new Promise<void>((resolve, reject) => {
+                        if (!videoRef.current) {
+                            reject(new Error("Video ref became null"));
+                            return;
+                        }
+                        videoRef.current.onloadedmetadata = () => {
+                            console.log("initializeCamera: onloadedmetadata fired.");
+                            videoRef.current?.play()
+                                .then(() => {
+                                    console.log("initializeCamera: Play successful.");
+                                    resolve();
+                                })
+                                .catch(playError => {
+                                    console.error("initializeCamera: Play failed (catch inside promise):", playError);
+                                    reject(playError);
+                                });
+                        };
+                        setTimeout(() => {
+                            console.warn("initializeCamera: Timeout waiting for loadedmetadata.");
+                            reject(new Error("Timeout waiting for loadedmetadata"))
+                        }, 5000);
+                    });
+
+                    console.log("initializeCamera: Play promise resolved. Clearing errors, checking MIME types...");
+                    setErrorMessage(null);
+                    // Now check supported MIME types *after* successful stream assignment/play
+                    if (MediaRecorder.isTypeSupported(preferredMimeType)) {
+                        setActualMimeType(preferredMimeType);
+                    } else if (MediaRecorder.isTypeSupported(simplerMp4MimeType)) {
+                        setActualMimeType(simplerMp4MimeType);
+                    } else if (MediaRecorder.isTypeSupported(fallbackMimeType)) {
+                        setActualMimeType(fallbackMimeType);
+                    } else {
+                        console.error("No supported MIME types for recording.");
+                        setErrorMessage("Video recording is not supported by your browser/device.");
+                    }
+                } catch (playError) {
+                    console.error("initializeCamera: CATCH block for playError executing:", playError);
+                    setErrorMessage("Could not start camera preview. Please try again or check device.");
+                    setRecorderStatus('error');
+                    console.log("initializeCamera: Calling cleanup due to playError...");
+                    if (videoRef.current) videoRef.current.srcObject = null;
+                    streamRef.current = null;
+                    await mediaRecorderRef.current.cleanup();
+                }
+            } else {
+                console.error("initializeCamera: Setup seemed to succeed but stream is missing or videoRef invalid.");
+                setErrorMessage("Failed to initialize camera stream components.");
+                setRecorderStatus('error');
+            }
+            console.log("initializeCamera: TRY block finished successfully (before finally).");
+        } catch (err) {
+            console.error('initializeCamera: CATCH block for outer setup/initialization error executing:', err);
+            setErrorMessage('An unexpected error occurred during camera setup.');
+            setRecorderStatus('error');
+        } finally {
+            console.log(`initializeCamera: FINALLY block executing. Current state: isInitializing=${isInitializing}, recorderStatus=${recorderStatus}, errorMessage=${errorMessage}`);
+            console.log(`initializeCamera: FINALLY block. isMountedRef.current: ${isMountedRef.current}`);
+            if (isMountedRef.current) {
+                console.log("initializeCamera: FINALLY calling setIsInitializing(false).");
+                setIsInitializing(false);
+            } else {
+                console.log("initializeCamera: FINALLY component unmounted, NOT setting isInitializing.");
+            }
+        }
+        console.log("initializeCamera END"); // Log the very end
+    }, [facingMode, preferredMimeType, simplerMp4MimeType, fallbackMimeType, performFullCleanup, errorMessage, isInitializing, recorderStatus]);
+
+    // --- Ref Callback --- Trigger initialization when the video node is attached
+    const videoRefCallback = useCallback((node: HTMLVideoElement | null) => {
+        console.log("videoRefCallback executed. Node:", node);
+        if (node && !videoRef.current) { // Only run if node exists and ref isn't already set
+            console.log("Attaching node to videoRef.current and calling initializeCamera.");
+            videoRef.current = node;
+            initializeCamera(); // Initialize first time ref is set
+        } else if (!node) {
+            // This might be called on unmount
+            console.log("videoRefCallback called with null node (likely unmount/cleanup).");
+            // Cleanup is handled by the main unmount effect
+        }
+    }, [initializeCamera]); // Depends on initializeCamera
+
+    // --- Effects ---
+
+    // Cleanup on unmount
     useEffect(() => {
         isMountedRef.current = true;
-
         return () => {
+            console.log("Component unmounting. Performing full cleanup.");
             isMountedRef.current = false;
             performFullCleanup();
         };
-    }, [performFullCleanup]);
+    }, [performFullCleanup]); // Depends only on cleanup function
+
+    // Handle initialization *after* first mount (via callback ref) and on facingMode changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+    useEffect(() => {
+        console.log(`FacingMode effect running. Current facingMode: ${facingMode}. videoRef ready: ${!!videoRef.current}`);
+        // If the ref is already set (meaning the callback ran and initial setup happened),
+        // re-initialize when facingMode changes.
+        if (videoRef.current) {
+            console.log("FacingMode changed and ref exists, re-initializing camera.");
+            initializeCamera();
+        }
+        // Cleanup for the *previous* facingMode stream is handled by initializeCamera itself.
+    }, [facingMode]);
 
     // Check for camera devices
     useEffect(() => {
@@ -226,59 +445,6 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
         checkCameras();
     }, []);
-
-    // Initialize camera - only when facingMode changes
-    const initializeCamera = useCallback(async () => {
-        try {
-            setIsInitializing(true);
-
-            // Make sure any previous stream is fully cleaned up before initializing new one
-            await mediaRecorderRef.current.cleanup();
-
-            // Initialize media recorder with both video and audio permissions
-            const result = await mediaRecorderRef.current.setup({
-                video: { facingMode },
-                audio: true
-            });
-
-            if (result.previewStream && videoRef.current) {
-                videoRef.current.srcObject = result.previewStream;
-                videoRef.current?.play().catch(console.error);
-                streamRef.current = result.previewStream;
-
-                // More robust video play attempt with retries
-                const attemptPlay = async (retries = 3, delay = 300) => {
-                    try {
-                        await videoRef.current?.play();
-                        console.log('Video playback started successfully');
-                    } catch (err) {
-                        console.warn(`Play attempt failed (${retries} retries left):`, err);
-                        if (retries > 0 && videoRef.current) {
-                            // Retry after a short delay
-                            setTimeout(() => attemptPlay(retries - 1, delay), delay);
-                        }
-                    }
-                };
-
-                // Start first attempt
-                attemptPlay();
-            }
-
-            if (isMountedRef.current) {
-                setIsInitializing(false);
-            }
-        } catch (err) {
-            console.error('Error initializing camera', err);
-            if (isMountedRef.current) {
-                setIsInitializing(false);
-            }
-        }
-    }, [facingMode]);
-
-    // Initialize camera on mount and facingMode changes
-    useEffect(() => {
-        initializeCamera();
-    }, [facingMode, initializeCamera]);
 
     // Handle mode changes separately to avoid reinitializing the camera
     useEffect(() => {
@@ -371,8 +537,14 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         }
     }, [takePhoto]);
 
-    // Start recording
+    // Start recording - uses actualMimeType
     const startRecording = useCallback(() => {
+        // Check status *before* trying to record
+        if (recorderStatus === 'error' || !streamRef.current || isInitializing || errorMessage === "Video recording is not supported by your browser/device.") {
+            console.error("Cannot start recording due to error state, lack of stream, initialization, or unsupported format.");
+            // Optionally show a message to the user here if needed
+            return;
+        }
         setRecorderStatus('recording');
         chunks.current = [];
 
@@ -382,69 +554,112 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             }
         };
 
-        mediaRecorderRef.current.startRecording(onDataAvailable);
-    }, []);
+        // Pass the determined actualMimeType
+        const success = mediaRecorderRef.current.startRecording(onDataAvailable, actualMimeType);
+        if (!success) {
+            console.error("Failed to start media recorder.");
+            setErrorMessage("Failed to start recording."); // Provide user feedback
+            if (isMountedRef.current) {
+                setRecorderStatus('idle'); // Revert status if start fails immediately
+            }
+        }
 
-    // Stop recording
+    }, [actualMimeType, recorderStatus, isInitializing, errorMessage]); // Ensure all dependencies are listed
+
+    // Stop recording - handles blob creation and file naming
     const stopRecording = useCallback(async () => {
         setRecorderStatus('stopping');
 
-        // Create a promise to wait for the final data
-        const recordedBlob = await new Promise<Blob>((resolve) => {
-            const mr = mediaRecorderRef.current;
+        const recorderInstance = mediaRecorderRef.current.getRecorderInstance();
 
-            // Set up a listener for the stop event
-            if (mr.getStream()) {
+        const recordedBlob = await new Promise<Blob | null>((resolve) => {
+            if (recorderInstance) {
                 const onStop = () => {
+                    recorderInstance.removeEventListener('stop', onStop); // Clean up listener
                     if (chunks.current.length > 0) {
-                        const blob = new Blob(chunks.current, { type: 'video/webm' });
+                        let blobType = actualMimeType; // Default to the type we requested
+                        // Use the recorder's reported mimeType if available and different, it's more reliable
+                        if (recorderInstance.mimeType && recorderInstance.mimeType !== actualMimeType) {
+                            console.log(`Recorder used mimeType: ${recorderInstance.mimeType}`);
+                            blobType = recorderInstance.mimeType;
+                        }
+                        const blob = new Blob(chunks.current, { type: blobType });
                         resolve(blob);
+                    } else {
+                        console.warn("No data chunks recorded.");
+                        resolve(null);
                     }
                 };
 
-                mr.stopRecording();
+                // Add listener before stopping
+                recorderInstance.addEventListener('stop', onStop);
+                mediaRecorderRef.current.stopRecording();
 
-                // Create the blob after a short delay to ensure all data is collected
-                setTimeout(onStop, 500);
+                // Timeout fallback in case 'stop' event doesn't fire reliably
+                setTimeout(() => {
+                    // Check if already resolved by onStop
+                    // This is a bit tricky; ideally, onStop works consistently.
+                    // If chunks exist but we haven't resolved, try creating the blob.
+                    // This might lead to double resolution if not handled carefully,
+                    // but let's rely on onStop primarily.
+                    console.warn("Stop event might not have fired within timeout.");
+                }, 1500); // Adjust timeout as needed
+
+            } else {
+                console.warn("MediaRecorder instance not found during stop.");
+                resolve(null);
             }
         });
 
         if (recordedBlob) {
-            const file = new File([recordedBlob], `video-${Date.now()}.webm`, {
-                type: 'video/webm'
-            });
+            // Determine file extension based on the blob's actual MIME type
+            const finalMimeType = recordedBlob.type || actualMimeType; // Use blob type if available
+            const fileExtension = finalMimeType.includes('mp4') ? 'mp4' : finalMimeType.includes('webm') ? 'webm' : 'bin'; // Basic extension logic
+            const fileName = `video-${Date.now()}.${fileExtension}`;
+
+            console.log(`Creating file: ${fileName} with type: ${finalMimeType}`);
+
+            const file = new File([recordedBlob], fileName, { type: finalMimeType });
 
             if (isMountedRef.current) {
                 setRecorderStatus('idle');
             }
 
-            // Start cleanup before calling onCapture to release camera resources faster
-            performFullCleanup();
-
+            await performFullCleanup(); // Await cleanup before capture
             onCapture(file);
+
+        } else {
+            console.error("Failed to create recorded blob.");
+            if (isMountedRef.current) {
+                setRecorderStatus('idle'); // Reset status even on failure
+            }
+            await performFullCleanup(); // Still cleanup on failure
         }
-    }, [onCapture, performFullCleanup]);
+    }, [onCapture, performFullCleanup, actualMimeType]); // Depend on actualMimeType
 
     // Handle mode switch with proper cleanup
     const handleModeChange = useCallback((newMode: 'photo' | 'video') => {
         if (recorderStatus === 'recording') {
-            // If recording, stop it before switching modes
-            stopRecording();
+            stopRecording(); // Stop recording before switching modes
         }
-
         setMode(newMode);
     }, [recorderStatus, stopRecording]);
 
     // Close and cleanup
     const handleClose = useCallback(() => {
         if (recorderStatus === 'recording') {
+            // Stop recording first, but don't process the data
             mediaRecorderRef.current.stopRecording();
+            if (isMountedRef.current) {
+                setRecorderStatus('idle');
+            }
         }
-
-        // Perform thorough cleanup before calling onClose
-        performFullCleanup();
-
-        onClose();
+        // Perform thorough cleanup immediately before calling onClose
+        performFullCleanup().then(() => {
+            if (isMountedRef.current) { // Check mount status again after async cleanup
+                onClose();
+            }
+        });
     }, [recorderStatus, onClose, performFullCleanup]);
 
     // Additional effect to ensure video plays after user interaction
@@ -469,13 +684,12 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         }
     }, [videoRef.current?.srcObject, isInitializing]);
 
-    // Handle file upload
+    // Handle file upload - slightly updated file naming
     const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files || files.length === 0) return;
 
         const file = files[0];
-        // Make sure it's a video
         if (!file.type.startsWith('video/')) {
             alert('Please select a video file.');
             return;
@@ -484,27 +698,28 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         try {
             setIsUploading(true);
 
-            // Create a copy of the file with a normalized name
+            // Create a copy, normalize name, use original extension
+            const extension = file.name.split('.').pop() || 'mp4'; // Default to mp4 if no extension
             const videoFile = new File(
                 [file],
-                `video-${Date.now()}.${file.name.split('.').pop()}`,
+                `video-upload-${Date.now()}.${extension}`,
                 { type: file.type }
             );
 
-            // Start cleanup before calling onCapture
-            await performFullCleanup();
+            await performFullCleanup(); // Cleanup camera resources if they were open
 
-            // Reset the file input for future uploads
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
             }
 
-            // Send the file through the same flow as camera-captured videos
             onCapture(videoFile);
         } catch (error) {
             console.error('Error processing uploaded video:', error);
         } finally {
-            setIsUploading(false);
+            // Check mount status before setting state
+            if (isMountedRef.current) {
+                setIsUploading(false);
+            }
         }
     }, [onCapture, performFullCleanup]);
 
@@ -514,24 +729,6 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             fileInputRef.current.click();
         }
     }, []);
-
-    // Loading state
-    if (isInitializing || isCleaning || isUploading) {
-        return (
-            <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
-                <div className="bg-background p-8 rounded-lg flex flex-col items-center gap-4">
-                    <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                    <p>
-                        {isInitializing
-                            ? "Initializing camera..."
-                            : isUploading
-                                ? "Processing video..."
-                                : "Releasing camera..."}
-                    </p>
-                </div>
-            </div>
-        );
-    }
 
     return (
         <div
@@ -554,13 +751,47 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
             <div
                 className={cn(
-                    "bg-background flex flex-col overflow-hidden",
+                    "bg-background flex flex-col overflow-hidden relative",
                     isMobile
                         ? "w-full h-full"
                         : "w-full max-w-3xl rounded-lg max-h-[90vh]"
                 )}
             >
-                {/* Header */}
+                {(isInitializing && recorderStatus !== 'error') && (
+                    <div className="absolute inset-0 z-40 bg-background/90 flex items-center justify-center">
+                        <div className="flex flex-col items-center gap-4 p-8 bg-background rounded-lg shadow-xl">
+                            <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                            <p>Initializing camera...</p>
+                        </div>
+                    </div>
+                )}
+                {(isCleaning || isUploading) && (
+                    <div className="absolute inset-0 z-40 bg-background/90 flex items-center justify-center">
+                        <div className="flex flex-col items-center gap-4 p-8 bg-background rounded-lg shadow-xl">
+                            <div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                            <p>
+                                {isUploading
+                                    ? "Processing video..."
+                                    : "Releasing camera..."}
+                            </p>
+                        </div>
+                    </div>
+                )}
+                {(recorderStatus === 'error' || (errorMessage && errorMessage.includes("permission")) || (errorMessage && errorMessage.includes("supported"))) && (
+                    <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/75 p-4 text-center">
+                        <p className="text-destructive text-lg font-semibold mb-2">Camera Issue</p>
+                        <p className="text-neutral-200 mb-4">{errorMessage || 'An unknown camera error occurred.'}</p>
+                        {!(errorMessage && (errorMessage.includes("blocked") || errorMessage.includes("supported"))) && (
+                            <Button variant="outline" size="sm" onClick={() => initializeCamera()} disabled={isInitializing}>
+                                {isInitializing ? "Retrying..." : "Try Again"}
+                            </Button>
+                        )}
+                        {errorMessage && errorMessage.includes("blocked") && (
+                            <p className="text-sm text-neutral-400 mt-2">Check browser site settings to grant access.</p>
+                        )}
+                    </div>
+                )}
+
                 <div className={cn(
                     "p-4 flex justify-between items-center",
                     !isMobile && "border-b"
@@ -620,8 +851,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                     )}
                 </div>
 
-                {/* Camera Preview */}
                 <div className="relative bg-black flex-1 flex items-center justify-center overflow-hidden">
+                    {/* Countdown Timer */}
                     {countdown !== null && (
                         <div className="absolute inset-0 flex items-center justify-center z-20">
                             <div className="text-white text-8xl font-bold animate-pulse">
@@ -631,77 +862,80 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                     )}
 
                     <video
-                        ref={videoRef}
+                        ref={videoRefCallback}
                         autoPlay
                         playsInline
                         muted
                         className={cn(
                             "w-full h-full object-contain",
-                            facingMode === 'user' && "transform scale-x-[-1]"
+                            facingMode === 'user' && "transform scale-x-[-1]",
+                            (recorderStatus === 'error' && errorMessage) && "invisible"
                         )}
                         data-testid="camera-feed"
                     />
 
-                    {/* Hidden canvas for photo capture */}
                     <canvas
                         ref={canvasRef}
                         className="hidden"
                     />
                 </div>
 
-                {/* Capture Controls */}
                 <div className={cn(
                     "p-6 flex justify-center items-center gap-4",
                     isMobile ? "bg-black" : "bg-background/80 backdrop-blur-sm"
                 )}>
                     {mode === 'photo' ? (
                         <>
-                            {/* Photo capture button */}
                             <Button
                                 size="lg"
                                 className="rounded-full w-16 h-16 p-0 relative hover:bg-primary/90 transition-colors"
                                 onClick={() => capturePhoto(false)}
                                 data-testid="capture-button"
+                                disabled={isInitializing || (recorderStatus === 'error' && !!errorMessage)}
                             >
                                 <div className="absolute inset-2 rounded-full border-4 border-white bg-transparent" />
                                 <div className="absolute inset-4 rounded-full bg-white" />
                             </Button>
-
-                            {/* Timer button for photos */}
                             <Button
                                 variant={isMobile ? "ghost" : "outline"}
                                 className={isMobile ? "text-white" : ""}
                                 onClick={() => capturePhoto(true)}
+                                disabled={isInitializing || (recorderStatus === 'error' && !!errorMessage)}
                             >
                                 3s
                             </Button>
                         </>
                     ) : (
                         <>
-                            {/* Video recording button */}
                             <Button
                                 size="lg"
                                 className="rounded-full w-16 h-16 p-0 relative hover:bg-primary/90 transition-colors"
                                 onClick={recorderStatus === 'recording' ? stopRecording : startRecording}
                                 variant={recorderStatus === 'recording' ? 'destructive' : 'default'}
                                 data-testid="capture-button"
+                                disabled={
+                                    isInitializing ||
+                                    recorderStatus === 'stopping' ||
+                                    recorderStatus === 'error' ||
+                                    !!errorMessage
+                                }
                             >
                                 {recorderStatus === 'recording' ? (
-                                    <div className="w-8 h-8 rounded-sm bg-destructive" />
+                                    <div className="w-8 h-8 bg-white rounded-sm" />
+                                ) : recorderStatus === 'stopping' ? (
+                                    <div className="h-6 w-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                                 ) : (
-                                    <div className="w-8 h-8 rounded-full bg-destructive animate-pulse" />
+                                    <div className="w-8 h-8 rounded-full bg-destructive" />
                                 )}
                             </Button>
 
-                            {/* Recording status indicator */}
                             {recorderStatus === 'recording' && (
-                                <div className="text-destructive animate-pulse">
+                                <div className="text-destructive animate-pulse font-semibold">
                                     REC
                                 </div>
                             )}
 
-                            {/* Video upload button - only shown when not recording */}
-                            {recorderStatus !== 'recording' && (
+                            {(recorderStatus === 'idle' || recorderStatus === 'error') && !isInitializing && (
                                 <Button
                                     variant={isMobile ? "ghost" : "outline"}
                                     className={cn(
@@ -710,6 +944,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                                     )}
                                     onClick={triggerFileUpload}
                                     aria-label="Upload video"
+                                    disabled={isUploading}
                                 >
                                     <UploadIcon size={18} />
                                     <span>{isMobile ? "" : "Upload"}</span>
