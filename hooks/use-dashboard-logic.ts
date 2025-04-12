@@ -72,11 +72,9 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                         const newAsset = payload.new as AssetWithMuxData;
                         console.log(`[REALTIME HANDLER] INSERT detected: ${newAsset.id}, type: ${newAsset.media_type}, status: ${newAsset.mux_processing_status}`);
                         setAssets(prevAssets => {
-                            // Add the new asset, ensuring no duplicates if event fires multiple times
-                            const exists = prevAssets.some(a => a.id === newAsset.id);
-                            if (exists) return prevAssets;
-                            // Add to the beginning for most recent first
-                            const updated = [newAsset, ...prevAssets];
+                            // Add the new asset, ensuring no duplicates
+                            // Filter out any existing asset with the same ID before adding the new one
+                            const updated = [newAsset, ...prevAssets.filter(a => a.id !== newAsset.id)];
                             console.log(`[REALTIME HANDLER] State updated after INSERT. New count: ${updated.length}`);
                             return updated;
                         });

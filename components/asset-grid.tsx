@@ -54,6 +54,11 @@ export function AssetGrid({
         // Show videos only if their Mux status exists and is 'preparing' or 'processing'
         if (asset.media_type === 'video') {
             const status = asset.mux_processing_status;
+            // Hide video if it's ready AND marked as the source video (implying items were generated)
+            if (status === 'ready' && asset.is_source_video === true) {
+                return false;
+            }
+            // Show video if it's preparing or processing
             if (status && (status === 'preparing' || status === 'processing')) {
                 return true;
             }
