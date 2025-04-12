@@ -47,6 +47,20 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
         handleAssetDeletedFromModal,
     } = useDashboardLogic({ initialAssets, user })
 
+    // Filter out processed source videos
+    const displayedAssets = assets.filter(asset => {
+        // Keep items and regular images
+        if (asset.media_type === 'item' || asset.media_type === 'image') {
+            return true;
+        }
+        // Keep videos that are NOT processed source videos
+        if (asset.media_type === 'video') {
+            return !(asset.is_source_video === true && asset.is_processed === true);
+        }
+        // Fallback for unknown types (shouldn't happen)
+        return true;
+    });
+
     // You might want to display active uploads here
     const renderActiveUploads = () => {
         const uploads = Object.values(activeUploads);
@@ -70,7 +84,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
             <NavBar />
             <div className="container mx-auto p-4 sm:p-6">
                 <DashboardHeader
-                    hasAssets={assets.length > 0}
+                    hasAssets={displayedAssets.length > 0}
                     isSelectionMode={isSelectionMode}
                     selectedCount={selectedAssets.size}
                     isDeleting={isDeleting}
@@ -96,7 +110,7 @@ export function DashboardClient({ initialAssets, user }: DashboardClientProps) {
                 )}
 
                 <AssetGrid
-                    assets={assets}
+                    assets={displayedAssets}
                     selectedAssets={selectedAssets}
                     isSelectionMode={isSelectionMode}
                     thumbnailTokens={thumbnailTokens}

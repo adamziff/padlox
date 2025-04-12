@@ -367,7 +367,7 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                 console.log(`Deleting source Mux asset: ${asset.id} (Mux ID: ${asset.mux_asset_id})`);
                 // Delete using the Mux API endpoint
                 const response = await fetch('/api/mux/delete', {
-                    method: 'POST',
+                    method: 'DELETE',
                     headers: {
                         'Content-Type': 'application/json',
                     },

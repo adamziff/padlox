@@ -172,11 +172,20 @@ Respond ONLY with the valid JSON object.`,
 
     console.log(`[Analyze API] Successfully inserted ${insertedItems?.length ?? 0} items.`);
 
-    // Update source video using service client
-    await serviceClient 
+    // Update source video using service client - Mark as source AND set transcript status
+    const { error: updateError } = await serviceClient
       .from('assets')
-      .update({ is_source_video: true })
+      .update({ 
+        is_source_video: true, 
+        transcript_processing_status: 'completed',
+        is_processed: true
+      })
       .eq('id', sourceVideoAssetId);
+
+    if (updateError) {
+      // Log the error but don't fail the request, as items were already inserted
+      console.error(`[Analyze API] Error updating source video asset ${sourceVideoAssetId} status after item insertion:`, updateError);
+    }
 
     return corsJsonResponse({
       success: true,

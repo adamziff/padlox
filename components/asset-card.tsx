@@ -83,8 +83,10 @@ export function AssetCard({
             {isProcessingVideo ? (
                 <div className="w-full h-full flex items-center justify-center">
                     <div className="text-center">
-                        <div className="animate-spin h-10 w-10 mx-auto mb-2">
-                            <SpinnerIcon />
+                        <div className="h-10 w-10 mx-auto mb-2 flex items-center justify-center">
+                            <span className="animate-spin">
+                                <SpinnerIcon />
+                            </span>
                         </div>
                         <p className="text-sm text-muted-foreground">Video analysis in progress...</p>
                     </div>

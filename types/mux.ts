@@ -95,7 +95,7 @@ export interface AssetWithMuxData extends Omit<Asset, 'media_url'> {
   mux_audio_url?: string;
   transcript?: TranscriptData;
   transcript_text?: string;
-  transcript_processing_status?: 'pending' | 'processing' | 'completed' | 'error';
+  transcript_processing_status?: 'pending' | 'processing' | 'completed' | 'error' | 'items_generated';
   transcript_error?: string;
   media_type: 'image' | 'video' | 'item';
   is_source_video?: boolean;

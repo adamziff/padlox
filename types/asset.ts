@@ -22,6 +22,8 @@ export interface Asset {
     mux_audio_url?: string | null
     transcript?: any | null
     transcript_text?: string | null
-    transcript_processing_status?: 'pending' | 'processing' | 'completed' | 'error' | null
+    transcript_processing_status?: 'pending' | 'processing' | 'completed' | 'error' | 'items_generated' | null
     transcript_error?: string | null
+    items_generated?: boolean | null
+    is_processed?: boolean | null
 } 

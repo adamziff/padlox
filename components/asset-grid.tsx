@@ -53,13 +53,16 @@ export function AssetGrid({
         }
         // Show videos only if their Mux status exists and is 'preparing' or 'processing'
         if (asset.media_type === 'video') {
-            const status = asset.mux_processing_status;
-            // Hide video if it's ready AND marked as the source video (implying items were generated)
-            if (status === 'ready' && asset.is_source_video === true) {
+            const muxStatus = asset.mux_processing_status;
+            const transcriptStatus = asset.transcript_processing_status;
+
+            // Hide video only if Mux is ready AND transcript/item generation is complete
+            if (muxStatus === 'ready' && transcriptStatus === 'items_generated') {
                 return false;
             }
-            // Show video if it's preparing or processing
-            if (status && (status === 'preparing' || status === 'processing')) {
+            // Show video if Mux is preparing/processing OR if Mux is ready but item generation isn't complete yet
+            // (This covers pending, processing, completed, error, or null transcript statuses)
+            if (muxStatus === 'preparing' || muxStatus === 'processing' || (muxStatus === 'ready' && transcriptStatus !== 'items_generated')) {
                 return true;
             }
         }

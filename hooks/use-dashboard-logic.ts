@@ -88,6 +88,7 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                             .join(', ');
                         console.log(`[REALTIME HANDLER] UPDATE detected for asset ${updatedAsset.id}: ${changes}`);
 
+                        // Update Mux processing status display
                         if ('mux_processing_status' in updatedAsset && 'mux_processing_status' in oldAsset &&
                             updatedAsset.mux_processing_status !== oldAsset.mux_processing_status) {
                             if (updatedAsset.mux_processing_status === 'ready') {
@@ -95,25 +96,30 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                                     const newUploads = { ...prev };
                                     Object.keys(newUploads).forEach(uploadId => {
                                         if (newUploads[uploadId].assetId === updatedAsset.id) {
+                                            // Check transcript status *before* deciding to remove or update notification
                                             if (updatedAsset.transcript_processing_status === 'pending' || updatedAsset.transcript_processing_status === 'processing') {
                                                 newUploads[uploadId].status = 'transcribing';
                                                 newUploads[uploadId].message = 'Video ready. Generating transcript...';
                                             } else {
+                                                // Transcript already done or not applicable, remove notification
                                                 delete newUploads[uploadId];
                                             }
                                         }
                                     });
                                     return newUploads;
                                 });
+                                // Fetch thumbnail if ready and token not already present
                                 if (updatedAsset.mux_playback_id && !thumbnailTokens[updatedAsset.mux_playback_id]) {
                                     fetchThumbnailToken(updatedAsset.mux_playback_id);
                                 }
                             }
                         }
 
+                        // Update transcript processing status display
                         if ('transcript_processing_status' in updatedAsset && 'transcript_processing_status' in oldAsset &&
                             updatedAsset.transcript_processing_status !== oldAsset.transcript_processing_status) {
                             console.log(`[REALTIME UPDATE] Transcript status changed for asset ${updatedAsset.id}: `, `${oldAsset.transcript_processing_status} → ${updatedAsset.transcript_processing_status}`);
+                            // Remove notification if transcript completes/errors *while* it was in 'transcribing' state
                             if (updatedAsset.transcript_processing_status === 'completed' || updatedAsset.transcript_processing_status === 'error') {
                                 setActiveUploads(prev => {
                                     const newUploads = { ...prev };
@@ -128,16 +134,24 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                         }
 
                         setAssets(prevAssets => {
-                            const updated = prevAssets.map(asset => asset.id === updatedAsset.id ? updatedAsset : asset);
-                            console.log(`[REALTIME HANDLER] State updated after UPDATE for ${updatedAsset.id}.`);
-                            return updated;
+                            // Ensure uniqueness: Map existing assets by ID
+                            const assetMap = new Map(prevAssets.map(asset => [asset.id, asset]));
+                            // Set the updated asset in the map (replaces if exists)
+                            assetMap.set(updatedAsset.id, updatedAsset);
+                            // Convert map back to array, maintaining a reasonable order (e.g., new/updated first)
+                            const updatedArray = Array.from(assetMap.values())
+                                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()); // Sort by creation date descending
+                            console.log(`[REALTIME HANDLER] State updated after UPDATE for ${updatedAsset.id}. New count: ${updatedArray.length}`);
+                            return updatedArray;
                         });
 
+                        // Update modal if the asset being viewed is the one updated
                         if (selectedAsset && selectedAsset.id === updatedAsset.id) {
                             console.log('[REALTIME UPDATE] Also updating currently selected asset in modal');
-                            setSelectedAsset(updatedAsset);
+                            setSelectedAsset(updatedAsset); // Update modal state
                         }
 
+                        // Clear media errors if the asset updates successfully
                         if (mediaErrors[updatedAsset.id]) {
                             setMediaErrors(prev => {
                                 const next = { ...prev };
@@ -324,8 +338,18 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                     if (dbError) throw new Error(`Database delete failed: ${dbError.message}`);
                 } else if (asset.media_type === 'video' && asset.mux_asset_id) {
                     console.log(`Deleting source Mux asset via API: ${asset.id}`);
-                    const response = await fetch('/api/mux/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assetId: asset.id }) });
-                    if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || `Mux API delete failed (${response.status})`); }
+                    try {
+                        const response = await fetch('/api/mux/delete', {
+                            method: 'DELETE',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ assetId: asset.id }),
+                        });
+                        if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || `Mux API delete failed (${response.status})`); }
+                    } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                        console.error(`Error deleting asset ${asset.id}:`, errorMessage);
+                        errors.push({ id: asset.id, error: errorMessage });
+                    }
                 } else if (asset.media_type === 'image' && asset.media_url && !asset.mux_asset_id) {
                     console.log(`Deleting S3 image asset (DB & S3): ${asset.id}`);
                     const { error: dbError } = await supabase.from('assets').delete().eq('id', asset.id);
