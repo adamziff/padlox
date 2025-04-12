@@ -1,9 +1,8 @@
 import { NavBar } from "@/components/nav-bar";
-import Image from "next/image";
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
-import { ArrowRight, CheckCircle, ShieldCheck, BarChart, Layers } from 'lucide-react'; // Example icons
+import { ArrowRight, CheckCircle, BarChart, Layers } from 'lucide-react'; // Example icons
 
 export default async function Home() {
   const supabase = await createClient();
@@ -24,7 +23,7 @@ export default async function Home() {
                     Close the Coverage Gap
                   </h1>
                   <p className="max-w-[700px] text-muted-foreground md:text-xl">
-                    Padlox offers the industry's best video capture experience for home inventories, identifying coverage gaps and helping accelerate legitimate claims through comprehensive documentation.
+                    Padlox offers the industry&apos;s best video capture experience for home inventories, identifying coverage gaps and helping accelerate legitimate claims through comprehensive documentation.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2 min-[400px]:flex-row justify-center lg:justify-start">
@@ -194,7 +193,7 @@ export default async function Home() {
             <div className="space-y-3">
               <h2 className="text-3xl font-bold tracking-tighter md:text-4xl">Optimize Coverage & Streamline Claims Today</h2>
               <p className="mx-auto max-w-[600px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
-                Discover how Padlox's AI-powered capture can enhance your underwriting precision and claims efficiency through better data.
+                Discover how Padlox&apos;s AI-powered capture can enhance your underwriting precision and claims efficiency through better data.
               </p>
             </div>
             <div className="mx-auto w-full max-w-sm space-y-2">
