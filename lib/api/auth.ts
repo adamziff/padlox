@@ -71,7 +71,7 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
  * Extract the user from the request headers
  * Uses cookie-based authentication
  */
-export async function getUserFromRequest(req: Request): Promise<User | null> {
+export async function getUserFromRequest(): Promise<User | null> {
   // Use the client that handles cookies/user sessions
   const supabase = await createClient()
   try {
@@ -83,7 +83,7 @@ export async function getUserFromRequest(req: Request): Promise<User | null> {
   }
 }
 
-export async function requireUser(req: Request): Promise<User> {
+export async function requireUser(): Promise<User> {
     // Use the client that handles cookies/user sessions
     const supabase = await createClient()
     try {

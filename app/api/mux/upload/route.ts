@@ -3,8 +3,6 @@ import { corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 import { withAuth } from '@/lib/api/auth';
 import { createClient } from '@/utils/supabase/server';
 import { parseJsonBody, ValidationError } from '@/lib/api/validation';
-import { User } from '@supabase/supabase-js';
-import { NextRequest, NextResponse } from 'next/server';
 
 export const POST = withAuth(async (request: Request) => {
   try {

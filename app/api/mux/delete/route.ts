@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { deleteMuxAsset } from '@/lib/mux';
 import { withAuth } from '@/lib/api/auth';
-import { User } from '@supabase/supabase-js';
 
 export const DELETE = withAuth(async (request: Request) => {
   try {

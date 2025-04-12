@@ -2,7 +2,6 @@ import { createClient } from '@/utils/supabase/server';
 import { corsOptionsResponse, corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 import { withAuth } from '@/lib/api/auth';
 import { getStaticRenditionDownloadUrl } from '@/lib/mux';
-import { NextRequest, NextResponse } from 'next/server';
 
 // Add support for OPTIONS method (for CORS preflight requests)
 export async function OPTIONS() {
