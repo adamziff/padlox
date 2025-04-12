@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import { DashboardClient } from '@/components/dashboard-client'
 import { Asset } from '@/types/asset'
+import { AssetWithMuxData } from '@/types/mux'
 import { redirect } from 'next/navigation'
 import { SupabaseClient } from '@supabase/supabase-js'
 
@@ -67,11 +68,37 @@ export default async function Dashboard() {
         // You could handle this error by returning a specific UI or redirecting
     }
 
-    // Transform the assets to use the correct S3 URL format
-    const transformedAssets = assets?.map((asset: Asset) => ({
-        ...asset,
-        media_url: `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${asset.media_url}`
-    })) || []
+    // Transform the assets to align types with AssetWithMuxData
+    const transformedAssets = assets?.map((asset: Asset): AssetWithMuxData => {
+        // Explicitly map fields, converting nulls to undefined where necessary
+        return {
+            id: asset.id,
+            user_id: asset.user_id,
+            name: asset.name,
+            description: asset.description,
+            media_type: asset.media_type,
+            media_url: `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${asset.media_url}`,
+            created_at: asset.created_at,
+            client_reference_id: asset.client_reference_id === null ? undefined : asset.client_reference_id,
+            is_source_video: asset.is_source_video === null ? undefined : asset.is_source_video,
+            source_video_id: asset.source_video_id === null ? undefined : asset.source_video_id,
+            item_timestamp: asset.item_timestamp === null ? undefined : asset.item_timestamp,
+            estimated_value: asset.estimated_value,
+            // Mux specific fields
+            mux_asset_id: asset.mux_asset_id === null ? undefined : asset.mux_asset_id,
+            mux_playback_id: asset.mux_playback_id === null ? undefined : asset.mux_playback_id,
+            mux_max_resolution: asset.mux_max_resolution === null ? undefined : asset.mux_max_resolution,
+            mux_processing_status: asset.mux_processing_status === null ? undefined : asset.mux_processing_status,
+            mux_aspect_ratio: asset.mux_aspect_ratio === null ? undefined : asset.mux_aspect_ratio,
+            mux_duration: asset.mux_duration === null ? undefined : asset.mux_duration,
+            mux_audio_url: asset.mux_audio_url === null ? undefined : asset.mux_audio_url,
+            // Transcript specific fields
+            transcript: asset.transcript === null ? undefined : asset.transcript,
+            transcript_text: asset.transcript_text === null ? undefined : asset.transcript_text,
+            transcript_processing_status: asset.transcript_processing_status === null ? undefined : asset.transcript_processing_status,
+            transcript_error: asset.transcript_error === null ? undefined : asset.transcript_error,
+        };
+    }) || []
 
     // Pass the pre-fetched data to the client component
     return <DashboardClient initialAssets={transformedAssets} user={user} />

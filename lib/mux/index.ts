@@ -396,22 +396,22 @@ export async function getStaticRenditionDownloadUrl(
  */
 export function getMuxThumbnailUrl(
   playbackId: string, 
-  timestamp: number,
+  timestamp: number, // Keep timestamp for potential token generation logic (server-side)
   token?: string | null // Add optional token parameter
 ): string {
   if (!playbackId) return ''; // Return empty if no playbackId
   
-  // Ensure timestamp is non-negative
-  const validTimestamp = Math.max(0, timestamp);
+  // Base URL without the time parameter
+  const baseUrl = `https://image.mux.com/${playbackId}/thumbnail.webp`;
   
-  // Base URL
-  const baseUrl = `https://image.mux.com/${playbackId}/thumbnail.webp?time=${validTimestamp}`;
-  
-  // Append token if provided
+  // Append token ONLY if provided
   if (token) {
-    return `${baseUrl}&token=${token}`;
+    return `${baseUrl}?token=${token}`; 
   }
   
-  // Return base URL if no token
-  return baseUrl;
+  // Return base URL if no token (or for public assets, though parameters won't work here)
+  // For signed assets, a token is required for any access.
+  // We might need different logic here if public assets need time parameters.
+  // Assuming signed tokens are the primary use case based on the issue.
+  return baseUrl; // Or potentially throw an error if token is missing for signed playback?
 }

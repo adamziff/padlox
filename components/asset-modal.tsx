@@ -1,3 +1,5 @@
+'use client'
+
 import { AssetWithMuxData } from '@/types/mux'
 import Image from 'next/image'
 import { Button } from './ui/button'
@@ -9,7 +11,7 @@ import { MuxPlayer } from './mux-player'
 import { getMuxThumbnailUrl } from '@/lib/mux'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
-import { Label } from './ui/label'
+import { Label } from '@/components/ui/label'
 import { useDebouncedCallback } from 'use-debounce'
 
 interface AssetModalProps {
@@ -23,6 +25,7 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
     const [isDeleting, setIsDeleting] = useState(false);
     const supabase = createClient();
     const [modalToken, setModalToken] = useState<string | null>(null);
+    const [isLoadingToken, setIsLoadingToken] = useState(false);
 
     // Add state for editable fields
     const [editableName, setEditableName] = useState(asset.name || '');
@@ -38,6 +41,56 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
     const hasMuxData = 'mux_playback_id' in asset && !!asset.mux_playback_id;
     const isMuxProcessing = isVideo && asset.mux_processing_status === 'preparing';
     const isMuxReady = isVideo && asset.mux_processing_status === 'ready';
+
+    // Fetch the signed token when the asset changes or modal opens
+    useEffect(() => {
+        let isMounted = true;
+        const fetchToken = async () => {
+            if (asset?.mux_playback_id) {
+                setIsLoadingToken(true);
+                setModalToken(null); // Clear previous token
+                try {
+                    // Fetch token from the API endpoint
+                    const response = await fetch(`/api/mux/token?playbackId=${asset.mux_playback_id}&_=${Date.now()}`);
+                    if (!response.ok) {
+                        let errorMessage = `${response.status} ${response.statusText}`;
+                        try {
+                            const errorData = await response.json();
+                            errorMessage += `: ${errorData.message || 'Unknown error'}`;
+                        } catch {
+                            // Ignore error during error message generation
+                        }
+                        throw new Error(`Failed to fetch token: ${errorMessage}`);
+                    }
+                    const data = await response.json();
+
+                    // The API returns tokens for different purposes
+                    const token = data.tokens?.thumbnail;
+
+                    if (isMounted && token) {
+                        setModalToken(token);
+                    } else if (isMounted) {
+                        console.warn("Thumbnail token not found in API response for", asset.mux_playback_id);
+                    }
+                } catch (error) {
+                    console.error("Failed to fetch thumbnail token:", error);
+                    if (isMounted) {
+                        // Handle token fetch error appropriately (e.g., show message)
+                    }
+                } finally {
+                    if (isMounted) {
+                        setIsLoadingToken(false);
+                    }
+                }
+            }
+        };
+
+        fetchToken();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [asset]); // Re-fetch if the asset changes
 
     // Set up a real-time subscription to update this asset if it changes
     useEffect(() => {
@@ -428,10 +481,13 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
     // The MuxPlayer component itself will handle fetching based on playbackId.
     let displayImageUrl = '';
     if (isItem && asset.mux_playback_id && asset.item_timestamp != null) {
-        // URL for potential direct image display (signed)
+        // Pass the fetched modalToken to the URL function
         displayImageUrl = getMuxThumbnailUrl(asset.mux_playback_id, asset.item_timestamp, modalToken);
     } else if (asset.media_type === 'image') {
         displayImageUrl = asset.media_url;
+    } else if (isVideo && asset.mux_playback_id && isMuxReady) {
+        // Use token for the main video thumbnail too (timestamp 0)
+        displayImageUrl = getMuxThumbnailUrl(asset.mux_playback_id, 0, modalToken);
     }
 
     return (
@@ -481,7 +537,9 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {/* Media Display */}
                             <div className="aspect-square relative rounded-lg overflow-hidden bg-muted">
-                                {isItem && asset.mux_playback_id && asset.item_timestamp != null ? (
+                                {isLoadingToken ? (
+                                    <div className="flex items-center justify-center h-full text-muted-foreground">Loading preview...</div>
+                                ) : isItem && asset.mux_playback_id && asset.item_timestamp != null ? (
                                     // Display Item using MuxPlayer starting at the timestamp
                                     <MuxPlayer
                                         playbackId={asset.mux_playback_id}

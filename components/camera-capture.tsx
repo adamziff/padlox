@@ -396,6 +396,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
         }
         console.log("initializeCamera END"); // Log the very end
         isInitializingRef.current = false; // Allow re-initialization now
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [facingMode, preferredMimeType, simplerMp4MimeType, fallbackMimeType, performFullCleanup]); // Removed state dependencies like errorMessage, isInitializing, recorderStatus
 
     // --- Ref Callback --- Trigger initialization when the video node is attached
