@@ -71,13 +71,39 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                     if (payload.eventType === 'INSERT') {
                         const newAsset = payload.new as AssetWithMuxData;
                         console.log(`[REALTIME HANDLER] INSERT detected: ${newAsset.id}, type: ${newAsset.media_type}, status: ${newAsset.mux_processing_status}`);
+
+                        // Check if the asset already exists to prevent duplicates from rapid events
+                        if (assets.some(asset => asset.id === newAsset.id)) {
+                            console.warn(`[REALTIME HANDLER] Duplicate INSERT event ignored for asset ${newAsset.id}`);
+                            return;
+                        }
+
+                        // Construct full media URL for S3 images if necessary
+                        let assetToAdd = newAsset;
+                        if (assetToAdd.media_type === 'image' && assetToAdd.media_url && !assetToAdd.media_url.startsWith('http')) {
+                            assetToAdd = {
+                                ...assetToAdd,
+                                media_url: `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${assetToAdd.media_url}`
+                            };
+                            console.log(`[REALTIME HANDLER] Transformed INSERT image media_url for ${assetToAdd.id} to: ${assetToAdd.media_url}`);
+                        }
+
                         setAssets(prevAssets => {
-                            // Add the new asset, ensuring no duplicates
-                            // Filter out any existing asset with the same ID before adding the new one
-                            const updated = [newAsset, ...prevAssets.filter(a => a.id !== newAsset.id)];
-                            console.log(`[REALTIME HANDLER] State updated after INSERT. New count: ${updated.length}`);
-                            return updated;
+                            // Add the new asset and re-sort
+                            const updatedAssets = [assetToAdd, ...prevAssets]
+                                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                            console.log(`[REALTIME HANDLER] State updated after INSERT. New count: ${updatedAssets.length}`);
+                            return updatedAssets;
                         });
+
+                        // Clear potential errors for this asset if it was previously errored
+                        if (mediaErrors[newAsset.id]) {
+                            setMediaErrors(prev => {
+                                const next = { ...prev };
+                                delete next[newAsset.id];
+                                return next;
+                            });
+                        }
                     }
                     else if (payload.eventType === 'UPDATE') {
                         const updatedAsset = payload.new as AssetWithMuxData;

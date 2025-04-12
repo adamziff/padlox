@@ -45,34 +45,9 @@ export function AssetGrid({
         }
     };
 
-    // Filter assets before rendering
-    const filteredAssets = assets.filter(asset => {
-        // Always show items
-        if (asset.media_type === 'item') {
-            return true;
-        }
-        // Show videos only if their Mux status exists and is 'preparing' or 'processing'
-        if (asset.media_type === 'video') {
-            const muxStatus = asset.mux_processing_status;
-            const transcriptStatus = asset.transcript_processing_status;
-
-            // Hide video only if Mux is ready AND transcript/item generation is complete
-            if (muxStatus === 'ready' && transcriptStatus === 'items_generated') {
-                return false;
-            }
-            // Show video if Mux is preparing/processing OR if Mux is ready but item generation isn't complete yet
-            // (This covers pending, processing, completed, error, or null transcript statuses)
-            if (muxStatus === 'preparing' || muxStatus === 'processing' || (muxStatus === 'ready' && transcriptStatus !== 'items_generated')) {
-                return true;
-            }
-        }
-        // Hide all other cases
-        return false;
-    });
-
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-            {filteredAssets.map(asset => {
+            {assets.map(asset => {
                 const token = asset.mux_playback_id ? thumbnailTokens[asset.mux_playback_id] ?? null : null;
                 const hasError = !!mediaErrors[asset.id];
                 const isSelected = selectedAssets.has(asset.id);

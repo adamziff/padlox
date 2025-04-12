@@ -49,6 +49,11 @@ export function AssetCard({
         imageKey = `${asset.id}-image`;
     }
 
+    // Add logging for image URLs
+    // if (asset.media_type === 'image') {
+    //     console.log(`[AssetCard] Rendering image. Asset ID: ${asset.id}, media_url: ${asset.media_url}, calculated imageUrl: ${imageUrl}`);
+    // }
+
     const handleCardClick = (event: React.MouseEvent) => {
         if (isClickable) {
             onCardClick(asset, event);
@@ -132,7 +137,7 @@ export function AssetCard({
             </div>
 
             <div className="absolute bottom-2 right-2 bg-black/50 rounded-full p-1.5 z-10">
-                {isItem ? <ImageIcon size={14} /> : <VideoIcon size={14} />}
+                {asset.media_type === 'video' ? <VideoIcon size={14} /> : <ImageIcon size={14} />}
             </div>
         </div>
     );
