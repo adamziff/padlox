@@ -1,6 +1,7 @@
 ---
 description: Agentic Workflow Best Practices
 globs: *
+alwaysApply: false
 ---
 
 # Agentic Workflow Best Practices

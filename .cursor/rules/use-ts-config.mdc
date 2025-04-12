@@ -1,6 +1,7 @@
 ---
 description: Use next.config.ts, not next.config.js
 globs: 
+alwaysApply: false
 ---
  # Use TypeScript Configuration Files
 

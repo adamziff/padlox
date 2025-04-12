@@ -1,6 +1,7 @@
 ---
 description: TailwindCSS Best Practices
-globs: "**/*.tsx"
+globs: *.tsx
+alwaysApply: false
 ---
 
 # TailwindCSS Best Practices

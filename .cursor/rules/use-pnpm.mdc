@@ -1,6 +1,7 @@
 ---
 description: Use PNPM Package Manager
-globs: *.json, *.js, *.ts, *.tsx, *.jsx
+globs: *.json,*.tsx,*.jsx,*.ts,*.js
+alwaysApply: false
 ---
  # Use PNPM Package Manager
 

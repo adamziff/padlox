@@ -1,6 +1,7 @@
 ---
 description: Modern Next.js 15 Best Practices
-globs: *.{js,jsx,ts,tsx}
+globs: *.tsx,*.ts,*.jsx,*.ts
+alwaysApply: false
 ---
 # Modern Next.js 15 Best Practices
 

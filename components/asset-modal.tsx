@@ -1,4 +1,3 @@
-import { Asset } from '@/types/asset'
 import { AssetWithMuxData } from '@/types/mux'
 import Image from 'next/image'
 import { Button } from './ui/button'
