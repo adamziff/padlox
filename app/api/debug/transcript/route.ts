@@ -1,4 +1,4 @@
-import { createServiceSupabaseClient } from '@/lib/auth/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { corsOptionsResponse, corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 import { withAuth } from '@/lib/api/auth';
 import { getStaticRenditionDownloadUrl } from '@/lib/mux';
@@ -25,7 +25,7 @@ export const GET = withAuth(async (request: Request) => {
     }
 
     // Get service client for database operations
-    const supabase = await createServiceSupabaseClient();
+    const supabase = await createClient();
 
     // Find the asset
     const { data: asset, error } = await supabase
@@ -82,7 +82,7 @@ export const POST = withAuth(async (request: Request) => {
     }
 
     // Get service client for database operations
-    const supabase = await createServiceSupabaseClient();
+    const supabase = await createClient();
 
     // Find the asset
     const { data: asset, error: fetchError } = await supabase

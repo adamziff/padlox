@@ -1,7 +1,7 @@
 /**
  * API authentication middleware
  */
-import { createServerSupabaseClient } from '@/lib/auth/supabase'
+import { createClient } from '@/utils/supabase/server'
 import { unauthorizedResponse } from './response'
 
 /**
@@ -37,8 +37,8 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
       
       // If not authenticated via API key, try cookie-based authentication
       if (!user) {
-        // Use the new createServerSupabaseClient with proper cookie handling
-        const supabase = await createServerSupabaseClient();
+        // Use the new createClient with proper cookie handling
+        const supabase = await createClient();
         
         // Get the authenticated user
         const { data: { user: cookieUser } } = await supabase.auth.getUser();
@@ -74,8 +74,8 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
  */
 async function getUserFromRequestInternal() {
   try {
-    // Use the new createServerSupabaseClient with proper cookie handling
-    const supabase = await createServerSupabaseClient();
+    // Use the new createClient with proper cookie handling
+    const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     return user;
   } catch (error) {

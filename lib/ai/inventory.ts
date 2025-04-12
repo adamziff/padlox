@@ -3,7 +3,7 @@ import { Asset } from '@/types/asset';
 import { generateObject, GenerateObjectResult } from 'ai';
 import { z } from 'zod';
 import { getAiModel } from './config'; // Import the centralized model getter
-import { createServiceSupabaseClient } from '@/lib/auth/supabase'; // Import service client creator
+import { createClient } from '@/utils/supabase/server'; // Import service client creator
 import { Database } from '@/lib/db/schema'; // Import generated DB types
 
 // Define the expected structure for each item extracted by the LLM
@@ -124,7 +124,7 @@ export async function processTranscriptAndSaveItems(
   userId: string
 ): Promise<void> {
   console.log(`[AI Inventory] Starting processing for asset ${sourceAssetId}, user ${userId}`);
-  const supabaseAdmin = createServiceSupabaseClient(); // Create client instance here
+  const supabaseAdmin = await createClient(); // Create client instance here
 
   try {
     // 1. Fetch user tags from Supabase

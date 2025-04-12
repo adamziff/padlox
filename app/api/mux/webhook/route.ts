@@ -1,6 +1,6 @@
 import { verifyMuxWebhook } from '@/lib/mux';
 import { MuxWebhookEvent } from '@/types/mux';
-import { createServiceSupabaseClient } from '@/lib/auth/supabase';
+import { createServiceClient } from '@/utils/supabase/server';
 
 import { corsOptionsResponse, corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 
@@ -49,8 +49,8 @@ export async function POST(request: Request) {
     
     console.log(`Received webhook from Mux: ${event.type}`);
     
-    // We'll store all webhook events for processing, but we'll only act immediately on specific types
-    const serviceClient = await createServiceSupabaseClient();
+    // Use the SERVICE CLIENT consistently throughout the webhook handler
+    const serviceClient = createServiceClient();
     
     // Check if webhook_events table exists
     let webhookTableExists = false;
@@ -283,85 +283,69 @@ export async function POST(request: Request) {
         
         console.log(`Processing rendition: ${renditionName}, assetId: ${assetId}, renditionId: ${renditionId}`);
         
-        if (renditionName === 'audio.m4a' && assetId) {
-          console.log(`Audio rendition ready for asset: ${assetId}`);
+        if (renditionName === 'audio.m4a') {
+          // Use the correct assetId from the outer scope!
+          const correctMuxAssetId = assetId; 
+
+          console.log(`Audio rendition ready for asset: ${correctMuxAssetId}`); // Log correct ID
+
+          let foundAsset = null;
+          let assetError = null;
+
+          // Lookup using the CORRECT Mux Asset ID
+          const { data: assetsById, error: errorById } = await serviceClient
+              .from('assets')
+              .select('*')
+              .eq('mux_asset_id', correctMuxAssetId) // Use the correct variable
+              .limit(1);
+
+          if (errorById) {
+              console.error('Error finding asset for audio by mux_asset_id:', errorById);
+              assetError = errorById; 
+          } else if (assetsById && assetsById.length > 0) {
+              foundAsset = assetsById[0];
+              console.log(`Found asset ${foundAsset.id} for audio by mux_asset_id`);
+          }
           
-          // Find the asset by mux_asset_id
-          const { data: assets, error: findError } = await serviceClient
-            .from('assets')
-            .select('*')
-            .eq('mux_asset_id', assetId)
-            .limit(1);
-            
-          if (findError) {
-            console.error('Error finding asset for audio rendition:', findError);
-          } else if (assets && assets.length > 0) {
-            const asset = assets[0];
-            console.log(`Found asset for audio rendition: ${asset.id}`);
-            
-            try {
-              // Set pending URL format for now - the actual URL will be constructed during transcription
-              // This follows format: "pending:{assetId}/{renditionId}/{renditionName}"
-              const pendingUrl = `pending:${assetId}/${renditionId}/${renditionName}`;
+          // Remove the fallback lookup by uploadId - it should be unnecessary now
+          /*
+          if (!foundAsset && muxUploadId) { ... }
+          */
+
+          // Now proceed with the found asset (if any)
+          if (assetError && !foundAsset) {
+              console.error('Persistent error finding asset for audio rendition:', assetError);
+          } else if (foundAsset) {
+              const asset = foundAsset; // Use the found asset
               
-              // Update the asset with the pending URL and set transcript status to pending
-              const { error: updateError } = await serviceClient
-                .from('assets')
-                .update({
-                  mux_audio_url: pendingUrl,
-                  transcript_processing_status: 'pending',
-                  last_updated: new Date().toISOString()
-                })
-                .eq('id', asset.id);
-                
-              if (updateError) {
-                console.error('Error updating asset with audio URL:', updateError);
+              // Use the renditionId variable defined around line 274
+              const audioUrl = renditionId ? `https://stream.mux.com/${renditionId}.m4a` : null;
+
+              console.log(`Found asset ${asset.id}. Updating with audio URL: ${audioUrl}`);
+
+              if (!audioUrl) {
+                   console.error('Could not determine audio rendition ID/URL from webhook payload.');
+                   // Decide how to handle: maybe skip update, set status to error?
               } else {
-                console.log('Updated asset with pending audio URL, initiating transcription');
-                
-                // Call the transcription API endpoint
-                try {
-                  const transcribeResponse = await fetch(
-                    `${process.env.NEXT_PUBLIC_SITE_URL}/api/transcribe`,
-                    {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${process.env.API_SECRET_KEY}`
-                      },
-                      body: JSON.stringify({ assetId: asset.id })
-                    }
-                  );
-                  
-                  if (transcribeResponse.ok) {
-                    console.log('Successfully initiated transcription process');
+                  const { error: updateError } = await serviceClient
+                      .from('assets')
+                      .update({
+                          mux_audio_url: audioUrl,
+                          transcript_processing_status: 'audio_ready',
+                          last_updated: new Date().toISOString()
+                      })
+                      .eq('id', asset.id);
+
+                  if (updateError) {
+                      console.error(`Error updating asset ${asset.id} with audio info:`, updateError);
                   } else {
-                    const errorData = await transcribeResponse.json().catch(() => ({}));
-                    console.error('Error initiating transcription:', errorData);
+                      console.log(`Successfully updated asset ${asset.id} with audio info.`);
+                      // Potentially mark webhook as processed here if storing individually
                   }
-                } catch (transcribeError) {
-                  console.error('Exception calling transcribe API:', transcribeError);
-                }
-                
-                // Mark the webhook as processed
-                if (webhookTableExists) {
-                  await serviceClient
-                    .from('webhook_events')
-                    .update({ 
-                      processed: true, 
-                      processed_at: new Date().toISOString(),
-                      asset_id: asset.id 
-                    })
-                    .eq('event_id', event.id);
-                    
-                  console.log('Marked static rendition webhook event as processed');
-                }
-              }
-            } catch (error) {
-              console.error('Error processing audio rendition:', error);
-            }
+               }
           } else {
-            console.log('No asset found for audio rendition webhook');
+              // Updated log message
+              console.log(`No asset found for audio rendition webhook using Asset ID: ${correctMuxAssetId}`);
           }
         } else {
           console.log(`Received static rendition event for: ${renditionName}`);

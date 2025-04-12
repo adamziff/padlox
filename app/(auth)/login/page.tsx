@@ -20,22 +20,30 @@ import Image from 'next/image'
 export default function LoginPage() {
     const [emailSent, setEmailSent] = useState(false)
     const [sentTo, setSentTo] = useState<string>('')
+    const [error, setError] = useState<string | null>(null)
+    const [isLoading, setIsLoading] = useState(false)
 
     async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault()
+        setError(null)
+        setIsLoading(true)
         const formData = new FormData(e.currentTarget)
         const email = formData.get('email') as string
 
         try {
-            await loginOrRegister(formData)
-            setEmailSent(true)
-            setSentTo(email)
-        } catch (err: unknown) {
-            const error = err as ApiError
-            if (error?.digest?.includes('NEXT_REDIRECT')) {
+            const result = await loginOrRegister(formData)
+            if (result?.success) {
                 setEmailSent(true)
                 setSentTo(email)
+            } else {
+                console.warn('Login action returned unexpected result:', result)
+                setError('An unexpected issue occurred. Please try again.')
             }
+        } catch (err: unknown) {
+            console.error("Login page error:", err)
+            setError(err instanceof Error ? err.message : 'An unexpected server error occurred.')
+        } finally {
+            setIsLoading(false)
         }
     }
 
@@ -120,10 +128,14 @@ export default function LoginPage() {
                                 className="w-full"
                                 autoComplete="email"
                                 autoFocus
+                                disabled={isLoading}
                             />
                         </div>
-                        <Button type="submit" className="w-full font-medium" size="lg">
-                            Continue with Email
+                        {error && (
+                            <p className="text-sm text-destructive text-center">{error}</p>
+                        )}
+                        <Button type="submit" className="w-full font-medium" size="lg" disabled={isLoading}>
+                            {isLoading ? 'Sending...' : 'Continue with Email'}
                         </Button>
                     </form>
                 </CardContent>

@@ -1,5 +1,5 @@
 // app/myhome/page.tsx
-import { createServerSupabaseClient } from '@/lib/auth/supabase'; // Use server component client
+import { createClient } from '@/utils/supabase/server'; // Changed path and function name
 import { Database } from '@/lib/db/schema';
 import MyHomeClient from '@/components/my-home-client';
 import { Asset } from '@/types/asset'; // Use the existing Asset type
@@ -14,7 +14,7 @@ interface MyHomeData {
 }
 
 async function getMyHomeData(): Promise<MyHomeData> {
-    const supabase = await createServerSupabaseClient();
+    const supabase = await createClient();
     const {
         data: { user },
     } = await supabase.auth.getUser();

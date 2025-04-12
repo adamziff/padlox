@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { createServerSupabaseClient } from '@/lib/auth/supabase'
+import { createClient } from '@/utils/supabase/server'
 
 /**
  * Unified loginOrRegister action:
@@ -10,7 +10,7 @@ import { createServerSupabaseClient } from '@/lib/auth/supabase'
  * - Uses the new serverSupabaseClient for better cookie handling
  */
 export async function loginOrRegister(formData: FormData) {
-    const supabase = await createServerSupabaseClient()
+    const supabase = await createClient()
     const email = formData.get('email') as string
 
     try {
@@ -24,19 +24,23 @@ export async function loginOrRegister(formData: FormData) {
 
         if (error) {
             console.error('Magic Link error:', error.message)
-            return { error: error.message }
+            throw new Error(`Magic Link Error: ${error.message}`);
         }
 
-        // On success, we redirect to /verify (just one place to handle user input of code, if needed)
-        redirect(`/verify?email=${encodeURIComponent(email)}`)
+        console.log(`Magic link sent successfully to ${email}`);
+        return { success: true, email: email };
+
     } catch (error) {
         console.error('Unexpected error during loginOrRegister:', error)
-        return { error: 'An unexpected error occurred' }
+        if (error instanceof Error) {
+           throw error;
+        }
+        throw new Error('An unexpected error occurred during login/register');
     }
 }
 
 export async function logout() {
-    const supabase = await createServerSupabaseClient()
+    const supabase = await createClient()
     await supabase.auth.signOut()
     revalidatePath('/', 'layout')
     redirect('/login')

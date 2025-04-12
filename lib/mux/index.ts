@@ -9,7 +9,7 @@ import crypto from 'crypto';
 import { MuxAsset, MuxWebhookEvent } from '@/types/mux';
 import { transcribeAudioUrl, extractPlainText } from '@/lib/deepgram';
 import { processTranscriptAndSaveItems } from '@/lib/ai/inventory';
-import { createServiceSupabaseClient } from '@/lib/auth/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { Database } from '@/lib/db/schema';
 
 /**
@@ -267,7 +267,7 @@ export async function processMuxWebhookEvent(
 ): Promise<boolean> {
   log(`Processing Mux event: ${event.type}`);
   const muxAssetId = event.data?.id || event.data?.asset_id;
-  const supabaseAdmin = createServiceSupabaseClient();
+  const supabaseAdmin = await createClient();
 
   if (!muxAssetId) {
     console.error('[Mux Webhook] Event missing Mux Asset ID:', event);
@@ -456,7 +456,7 @@ export async function getStaticRenditionDownloadUrl(
   renditionId: string,
   renditionName: string = 'audio.m4a'
 ): Promise<string> {
-  const supabaseAdmin = createServiceSupabaseClient();
+  const supabaseAdmin = await createClient();
   try {
     // Create Basic Auth credentials for Mux API
     const auth = Buffer.from(`${process.env.MUX_TOKEN_ID}:${process.env.MUX_TOKEN_SECRET}`).toString('base64');

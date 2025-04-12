@@ -1,7 +1,7 @@
 import { createMuxTokens } from '@/lib/mux';
 import { jsonResponse, errorResponse, notFoundResponse } from '@/lib/api/response';
 import { withAuth } from '@/lib/api/auth';
-import { createServiceSupabaseClient } from '@/lib/auth/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { User } from '@supabase/supabase-js';
 
 // Helper for controlled logging
@@ -30,7 +30,7 @@ export const GET = withAuth(async (request: Request) => {
     log(`Generating tokens for playback ID: ${playbackId}`);
 
     // Create a supabase client for the server context
-    const supabase = await createServiceSupabaseClient();
+    const supabase = await createClient();
 
     // Try to access with user session first
     const { data: assets, error: queryError } = await supabase

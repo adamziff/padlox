@@ -1,4 +1,4 @@
-import { createServiceSupabaseClient } from '@/lib/auth/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { generateObject } from 'ai';
@@ -85,7 +85,7 @@ export async function POST(req: Request) {
 
     console.log(`[Analyze API] Received request for asset: ${sourceVideoAssetId}, transcript length: ${transcriptText.length}`);
 
-    const supabase = createServiceSupabaseClient();
+    const supabase = await createClient();
 
     const { data: sourceAsset, error: sourceAssetError } = await supabase
       .from('assets')

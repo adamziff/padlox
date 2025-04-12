@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/auth/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { deleteMuxAsset } from '@/lib/mux';
 
 export async function POST(request: Request) {
   try {
     // Verify authentication
-    const supabase = await createServerSupabaseClient();
+    const supabase = await createClient();
     const { data: { user }, error } = await supabase.auth.getUser();
 
     if (error || !user) {
