@@ -214,6 +214,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     const mediaRecorderRef = useRef<MediaRecorderHelper>(new MediaRecorderHelper())
     const chunks = useRef<BlobPart[]>([])
     const fileInputRef = useRef<HTMLInputElement>(null)
+    // Track if initialization is already running
+    const isInitializingRef = useRef(false);
 
     // Track if component is mounted to prevent state updates after unmounting
     const isMountedRef = useRef(true)
@@ -262,6 +264,13 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
     // Initialize camera function (memoized)
     const initializeCamera = useCallback(async () => {
+        // Prevent multiple simultaneous initializations
+        if (isInitializingRef.current) {
+            console.log("initializeCamera: Already initializing, skipping.");
+            return;
+        }
+        isInitializingRef.current = true;
+
         console.log("initializeCamera START"); // Log start
         setIsInitializing(true);
         setErrorMessage(null);
@@ -386,7 +395,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             }
         }
         console.log("initializeCamera END"); // Log the very end
-    }, [facingMode, preferredMimeType, simplerMp4MimeType, fallbackMimeType, performFullCleanup, errorMessage, isInitializing, recorderStatus]);
+        isInitializingRef.current = false; // Allow re-initialization now
+    }, [facingMode, preferredMimeType, simplerMp4MimeType, fallbackMimeType, performFullCleanup]); // Removed state dependencies like errorMessage, isInitializing, recorderStatus
 
     // --- Ref Callback --- Trigger initialization when the video node is attached
     const videoRefCallback = useCallback((node: HTMLVideoElement | null) => {
@@ -417,12 +427,14 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     // Handle initialization *after* first mount (via callback ref) and on facingMode changes
     // eslint-disable-next-line react-hooks/exhaustive-deps 
     useEffect(() => {
-        console.log(`FacingMode effect running. Current facingMode: ${facingMode}. videoRef ready: ${!!videoRef.current}`);
+        console.log(`FacingMode effect running. Current facingMode: ${facingMode}. videoRef ready: ${!!videoRef.current}. isInitializing: ${isInitializingRef.current}`);
         // If the ref is already set (meaning the callback ran and initial setup happened),
-        // re-initialize when facingMode changes.
-        if (videoRef.current) {
-            console.log("FacingMode changed and ref exists, re-initializing camera.");
+        // re-initialize when facingMode changes, but only if not already initializing.
+        if (videoRef.current && !isInitializingRef.current) {
+            console.log("FacingMode changed, ref exists, not initializing: re-initializing camera.");
             initializeCamera();
+        } else if (isInitializingRef.current) {
+            console.log("FacingMode effect: Skipping initialize because initialization is already in progress.");
         }
         // Cleanup for the *previous* facingMode stream is handled by initializeCamera itself.
     }, [facingMode]);
@@ -493,7 +505,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                     type: 'image/jpeg'
                 });
 
-                // Start cleanup immediately after capturing the photo
+                // Start cleanup immediately *before* calling onCapture
                 performFullCleanup();
 
                 // Trigger the onCapture callback
@@ -621,12 +633,14 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
             const file = new File([recordedBlob], fileName, { type: finalMimeType });
 
+            // Cleanup *before* calling onCapture
+            await performFullCleanup();
+
             if (isMountedRef.current) {
                 setRecorderStatus('idle');
             }
 
-            await performFullCleanup(); // Await cleanup before capture
-            onCapture(file);
+            onCapture(file); // Call onCapture *after* cleanup starts
 
         } else {
             console.error("Failed to create recorded blob.");
@@ -654,35 +668,15 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                 setRecorderStatus('idle');
             }
         }
-        // Perform thorough cleanup immediately before calling onClose
+        // Perform *immediate* minimal cleanup first to release camera quickly
+        mediaRecorderRef.current.immediateCleanup();
+        // Then, start thorough async cleanup and close when done
         performFullCleanup().then(() => {
             if (isMountedRef.current) { // Check mount status again after async cleanup
                 onClose();
             }
         });
     }, [recorderStatus, onClose, performFullCleanup]);
-
-    // Additional effect to ensure video plays after user interaction
-    useEffect(() => {
-        if (videoRef.current && videoRef.current.srcObject && !isInitializing) {
-            const playVideo = async () => {
-                try {
-                    await videoRef.current?.play();
-                    console.log('Video playback started via useEffect');
-                } catch (playError) {
-                    console.warn('Could not autoplay video in effect:', playError);
-                }
-            };
-
-            // Try to play immediately 
-            playVideo();
-
-            // Also try after a short delay (helps with certain browsers)
-            const delayedPlayTimer = setTimeout(playVideo, 500);
-
-            return () => clearTimeout(delayedPlayTimer);
-        }
-    }, [videoRef.current?.srcObject, isInitializing]);
 
     // Handle file upload - slightly updated file naming
     const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -706,13 +700,14 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                 { type: file.type }
             );
 
-            await performFullCleanup(); // Cleanup camera resources if they were open
+            // Cleanup camera resources if they were open *before* calling onCapture
+            await performFullCleanup();
 
             if (fileInputRef.current) {
                 fileInputRef.current.value = '';
             }
 
-            onCapture(videoFile);
+            onCapture(videoFile); // Call onCapture *after* cleanup starts
         } catch (error) {
             console.error('Error processing uploaded video:', error);
         } finally {
