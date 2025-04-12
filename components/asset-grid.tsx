@@ -13,7 +13,7 @@ type AssetGridProps = {
     onAssetClick: (asset: AssetWithMuxData, event: React.MouseEvent) => void;
     onCheckboxChange: (assetId: string, event: React.ChangeEvent<HTMLInputElement>) => void;
     onRetryMedia: (assetId: string, event: React.MouseEvent) => void;
-    onImageError: (assetId: string, imageUrl: string, error: any) => void;
+    onImageError: (assetId: string, imageUrl: string, error: Error) => void;
     fetchThumbnailToken: (playbackId: string) => Promise<string | null>;
 };
 
@@ -33,7 +33,7 @@ export function AssetGrid({
     const handleImageError = (
         assetId: string,
         imageUrl: string,
-        error: any
+        error: Error
     ) => {
         const asset = assets.find(a => a.id === assetId);
         if (asset?.mux_playback_id && !thumbnailTokens[asset.mux_playback_id]) {

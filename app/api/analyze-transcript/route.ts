@@ -1,15 +1,11 @@
 import { createServiceSupabaseClient } from '@/lib/auth/supabase';
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { generateObject } from 'ai';
-import { DEFAULT_MODEL, AI_MODELS } from '@/lib/llm';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { Database } from '@/lib/db/schema';
 import { getAiModel } from '@/lib/ai/config';
 import { corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 import { extractParagraphText } from '@/lib/deepgram';
 import { TranscriptData } from '@/types/mux';
-import { getMuxThumbnailUrl } from '@/lib/mux';
 
 // Define the Zod schema for expected LLM output
 const ItemSchema = z.object({
@@ -22,44 +18,6 @@ const ItemSchema = z.object({
 const ItemsListSchema = z.object({
   items: z.array(ItemSchema).describe('An array of items found in the transcript.'),
 });
-
-type ItemAnalysis = z.infer<typeof ItemsListSchema>;
-
-async function createItemAssets(
-  items: ItemAnalysis['items'],
-  videoAssetId: string,
-  supabase: SupabaseClient<Database>
-) {
-  const { data: sourceVideo, error: sourceVideoError } = await supabase
-    .from('assets')
-    .select('mux_playback_id')
-    .eq('id', videoAssetId)
-    .single();
-
-  if (sourceVideoError || !sourceVideo?.mux_playback_id) {
-    throw new Error('Source video not found or missing playback ID');
-  }
-
-  const insertPromises = items.map((item) => ({
-    name: item.name,
-    description: '',
-    estimated_value: null,
-    is_source_video: false,
-    source_video_id: videoAssetId,
-    timestamp_start: item.timestamp,
-    timestamp_end: item.timestamp,
-    thumbnail_timestamp: item.timestamp,
-    mux_playback_id: sourceVideo.mux_playback_id
-  }));
-
-  const { error: insertError } = await supabase
-    .from('assets')
-    .insert(insertPromises);
-
-  if (insertError) {
-    throw new Error(`Failed to create item assets: ${insertError.message}`);
-  }
-}
 
 export async function POST(req: Request) {
   let sourceVideoAssetId: string;

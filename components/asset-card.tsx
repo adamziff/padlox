@@ -16,7 +16,7 @@ type AssetCardProps = {
     onCardClick: (asset: AssetWithMuxData, event: React.MouseEvent) => void;
     onCheckboxChange: (assetId: string, event: React.ChangeEvent<HTMLInputElement>) => void;
     onRetryMedia: (assetId: string, event: React.MouseEvent) => void;
-    onImageError: (assetId: string, imageUrl: string, error: any) => void;
+    onImageError: (assetId: string, imageUrl: string, error: Error) => void;
 };
 
 export function AssetCard({
@@ -108,7 +108,7 @@ export function AssetCard({
                     alt={asset.name}
                     fill
                     className="object-cover group-hover:scale-105 transition-transform"
-                    onError={(e) => onImageError(asset.id, imageUrl, e)}
+                    onError={() => onImageError(asset.id, imageUrl, new Error('Image failed to load'))}
                     sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
                     priority={false} // Generally false for grid items, maybe true for first few?
                 />

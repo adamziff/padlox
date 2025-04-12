@@ -425,7 +425,6 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     }, [performFullCleanup]); // Depends only on cleanup function
 
     // Handle initialization *after* first mount (via callback ref) and on facingMode changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps 
     useEffect(() => {
         console.log(`FacingMode effect running. Current facingMode: ${facingMode}. videoRef ready: ${!!videoRef.current}. isInitializing: ${isInitializingRef.current}`);
         // If the ref is already set (meaning the callback ran and initial setup happened),
@@ -437,7 +436,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             console.log("FacingMode effect: Skipping initialize because initialization is already in progress.");
         }
         // Cleanup for the *previous* facingMode stream is handled by initializeCamera itself.
-    }, [facingMode]);
+    }, [facingMode, initializeCamera]);
 
     // Check for camera devices
     useEffect(() => {
