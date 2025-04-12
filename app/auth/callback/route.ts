@@ -1,4 +1,6 @@
 import { createClient } from '@/utils/supabase/server'
+// Import the service role client specifically for DB operations
+import { createServiceSupabaseClient } from '@/lib/auth/supabase' 
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
@@ -7,7 +9,7 @@ export async function GET(request: Request) {
     const next = searchParams.get('next') ?? '/dashboard'
 
     if (code) {
-        // Create a supabase client for authentication
+        // Create a supabase client for authentication (handles cookies for user context)
         const supabase = await createClient()
 
         try {
@@ -15,13 +17,13 @@ export async function GET(request: Request) {
             const { error: authError } = await supabase.auth.exchangeCodeForSession(code)
             if (authError) throw authError
 
-            // Get the authenticated user
+            // Get the authenticated user using the *same* client instance
             const { data: { user }, error: userError } = await supabase.auth.getUser()
             if (userError) throw userError
             if (!user) throw new Error('No user found after authentication')
 
-            // Create a service role client for database operations
-            const serviceRoleClient = await createClient()
+            // Create a service role client ONLY for database operations requiring elevated privileges
+            const serviceRoleClient = createServiceSupabaseClient() // Use the specific function
 
             // Create or update the user in our database
             const { error: dbError } = await serviceRoleClient
@@ -59,10 +61,12 @@ export async function GET(request: Request) {
                 code: err?.code,
                 stack: err?.stack
             })
-            return NextResponse.redirect(new URL('/auth/auth-error', request.url))
+            // Redirect with error code for better debugging/user feedback
+            const errorParam = err?.code ? `?error_code=${encodeURIComponent(err.code)}` : ''
+            return NextResponse.redirect(new URL(`/auth/auth-error${errorParam}`, request.url))
         }
     }
 
-    // Return the user to an error page with some instructions
-    return NextResponse.redirect(new URL('/auth/auth-error', request.url))
+    // Return the user to an error page if no code is present
+    return NextResponse.redirect(new URL('/auth/auth-error?error_code=missing_code', request.url))
 } 

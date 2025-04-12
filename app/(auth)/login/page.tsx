@@ -1,6 +1,7 @@
 'use client'
 
 import { FormEvent, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ApiError } from '@/types/errors'
 import { loginOrRegister } from '../actions'
 import { Button } from '@/components/ui/button'
@@ -20,22 +21,28 @@ import Image from 'next/image'
 export default function LoginPage() {
     const [emailSent, setEmailSent] = useState(false)
     const [sentTo, setSentTo] = useState<string>('')
+    const [error, setError] = useState<string | null>(null)
+    const router = useRouter()
 
     async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault()
+        setError(null)
         const formData = new FormData(e.currentTarget)
         const email = formData.get('email') as string
 
         try {
-            await loginOrRegister(formData)
-            setEmailSent(true)
-            setSentTo(email)
-        } catch (err: unknown) {
-            const error = err as ApiError
-            if (error?.digest?.includes('NEXT_REDIRECT')) {
-                setEmailSent(true)
-                setSentTo(email)
+            const result = await loginOrRegister(formData)
+
+            if (result?.success && result.email) {
+                router.push(`/verify?email=${encodeURIComponent(result.email)}`)
+            } else if (result?.error) {
+                setError(result.error)
+            } else {
+                setError('An unexpected error occurred. Please try again.')
             }
+        } catch (err: unknown) {
+            console.error('Client-side form submission error:', err)
+            setError('An unexpected client-side error occurred. Please try again.')
         }
     }
 
@@ -107,6 +114,9 @@ export default function LoginPage() {
                 </CardHeader>
                 <CardContent>
                     <form onSubmit={handleSubmit} className="space-y-4">
+                        {error && (
+                            <p className="text-sm font-medium text-destructive">{error}</p>
+                        )}
                         <div className="space-y-2">
                             <label htmlFor="email" className="text-sm font-medium leading-none">
                                 Email
