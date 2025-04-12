@@ -2,7 +2,6 @@
 
 import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ApiError } from '@/types/errors'
 import { loginOrRegister } from '../actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,7 +27,6 @@ export default function LoginPage() {
         e.preventDefault()
         setError(null)
         const formData = new FormData(e.currentTarget)
-        const email = formData.get('email') as string
 
         try {
             const result = await loginOrRegister(formData)

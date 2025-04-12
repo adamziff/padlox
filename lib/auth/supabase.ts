@@ -1,9 +1,7 @@
 /**
  * Supabase authentication clients for various contexts
  */
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { type CookieOptions } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 
 /**
  * Creates a Supabase client with service role for admin operations
@@ -14,17 +12,11 @@ export function createServiceSupabaseClient() {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY is required for service client')
   }
   
-  // For service client, we don't actually need cookies since we're using the service role
-  return createServerClient(
+  // Use the standard createClient from @supabase/supabase-js for the service role
+  // It doesn't require cookie handling options when used server-side with a service key.
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { 
-      // Service client doesn't need to handle cookies since it's not user-bound
-      cookies: {
-        get: () => '',
-        set: () => {},
-        remove: () => {}
-      }
-    }
+    // No 'cookies' option needed here for the standard client
   )
 }

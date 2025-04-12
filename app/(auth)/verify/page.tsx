@@ -1,8 +1,8 @@
 'use client'
 
 import { Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { useSearchParams } from 'next/navigation'
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 function VerifyContent() {
     const searchParams = useSearchParams()
