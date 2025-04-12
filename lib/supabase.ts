@@ -17,7 +17,7 @@ export function createClient() {
 // for code that expects them. They should eventually be migrated to use the
 // specific imports from lib/auth/supabase.ts
 export function createServerClient() {
-  throw new Error('Use createServerSupabaseClient() from lib/auth/supabase.ts instead')
+  throw new Error('Use createServiceSupabaseClient() from lib/auth/supabase.ts instead')
 }
 
 export function createServiceClient() {

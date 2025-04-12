@@ -1,3 +1,5 @@
+import { createClient } from '@/utils/supabase/server';
+// Import the service role client for privileged operations
 import { createServiceSupabaseClient } from '@/lib/auth/supabase';
 import { z } from 'zod';
 import { generateObject } from 'ai';
@@ -6,6 +8,7 @@ import { getAiModel } from '@/lib/ai/config';
 import { corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 import { extractParagraphText } from '@/lib/deepgram';
 import { TranscriptData } from '@/types/mux';
+import { withAuth } from '@/lib/api/auth';
 
 // Define the Zod schema for expected LLM output
 const ItemSchema = z.object({
@@ -19,12 +22,12 @@ const ItemsListSchema = z.object({
   items: z.array(ItemSchema).describe('An array of items found in the transcript.'),
 });
 
-export async function POST(req: Request) {
+export const POST = withAuth(async (request: Request) => {
   let sourceVideoAssetId: string;
   let transcriptData: TranscriptData;
 
   try {
-    const body = await req.json();
+    const body = await request.json();
     if (!body.videoAssetId || !body.transcript) {
       return corsErrorResponse('Missing videoAssetId or transcript in request body', 400);
     }
@@ -43,9 +46,10 @@ export async function POST(req: Request) {
 
     console.log(`[Analyze API] Received request for asset: ${sourceVideoAssetId}, transcript length: ${transcriptText.length}`);
 
-    const supabase = createServiceSupabaseClient();
+    // Use the standard client for initial read/check - auth context here is 'system'
+    const userClient = await createClient();
 
-    const { data: sourceAsset, error: sourceAssetError } = await supabase
+    const { data: sourceAsset, error: sourceAssetError } = await userClient
       .from('assets')
       .select('id, user_id, mux_playback_id, mux_asset_id')
       .eq('id', sourceVideoAssetId)
@@ -115,9 +119,13 @@ Respond ONLY with the valid JSON object.`,
 
     const identifiedItems = analysisResult.items;
 
+    // Use the SERVICE ROLE CLIENT for database writes (insert/update)
+    const serviceClient = createServiceSupabaseClient();
+
     if (identifiedItems.length === 0) {
       console.log(`[Analyze API] No items identified in transcript for asset ${sourceVideoAssetId}.`);
-      await supabase
+      // Update using service client
+      await serviceClient 
         .from('assets')
         .update({ is_source_video: true })
         .eq('id', sourceVideoAssetId);
@@ -151,7 +159,8 @@ Respond ONLY with the valid JSON object.`,
       };
     });
 
-    const { data: insertedItems, error: insertError } = await supabase
+    // Insert using service client
+    const { data: insertedItems, error: insertError } = await serviceClient
       .from('assets')
       .insert(itemsToInsert)
       .select('id, name');
@@ -163,7 +172,8 @@ Respond ONLY with the valid JSON object.`,
 
     console.log(`[Analyze API] Successfully inserted ${insertedItems?.length ?? 0} items.`);
 
-    await supabase
+    // Update source video using service client
+    await serviceClient 
       .from('assets')
       .update({ is_source_video: true })
       .eq('id', sourceVideoAssetId);
@@ -179,7 +189,7 @@ Respond ONLY with the valid JSON object.`,
     const errorMessage = error instanceof Error ? error.message : 'Unknown server error';
     return corsErrorResponse(`Server error analyzing transcript: ${errorMessage}`, 500);
   }
-}
+});
 
 export async function OPTIONS() {
   const response = new Response(null, {

@@ -1,14 +1,20 @@
 import { NextResponse } from 'next/server';
-import { createServerSupabaseClient } from '@/lib/auth/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { deleteMuxAsset } from '@/lib/mux';
+import { withAuth } from '@/lib/api/auth';
+import { User } from '@supabase/supabase-js';
 
-export async function POST(request: Request) {
+export const DELETE = withAuth(async (request: Request) => {
   try {
     // Verify authentication
-    const supabase = await createServerSupabaseClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
+    const supabase = await createClient();
 
-    if (error || !user) {
+    // Fetch the user *after* withAuth has passed
+    const { data: { user }, error: userError } = await supabase.auth.getUser(); 
+
+    if (userError || !user) {
+      // This shouldn't happen if withAuth is working, but handle defensively
+      console.error('Auth error after withAuth passed:', userError);
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -55,4 +61,4 @@ export async function POST(request: Request) {
     console.error('Error deleting asset:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
-} 
+}); 

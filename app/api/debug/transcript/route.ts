@@ -1,7 +1,8 @@
-import { createServiceSupabaseClient } from '@/lib/auth/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { corsOptionsResponse, corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 import { withAuth } from '@/lib/api/auth';
 import { getStaticRenditionDownloadUrl } from '@/lib/mux';
+import { NextRequest, NextResponse } from 'next/server';
 
 // Add support for OPTIONS method (for CORS preflight requests)
 export async function OPTIONS() {
@@ -13,6 +14,9 @@ export async function OPTIONS() {
  */
 export const GET = withAuth(async (request: Request) => {
   try {
+    // Use the client that handles cookies/user sessions
+    const supabase = await createClient();
+
     // Get the assetId from the query parameters
     const url = new URL(request.url);
     const assetId = url.searchParams.get('assetId');
@@ -23,9 +27,6 @@ export const GET = withAuth(async (request: Request) => {
         message: 'Please provide an assetId as a query parameter'
       }, { status: 400 });
     }
-
-    // Get service client for database operations
-    const supabase = await createServiceSupabaseClient();
 
     // Find the asset
     const { data: asset, error } = await supabase
@@ -64,6 +65,9 @@ export const GET = withAuth(async (request: Request) => {
  */
 export const POST = withAuth(async (request: Request) => {
   try {
+    // Use the client that handles cookies/user sessions
+    const supabase = await createClient();
+
     // Get request body or query params
     let assetId: string | null = null;
     
@@ -80,9 +84,6 @@ export const POST = withAuth(async (request: Request) => {
     if (!assetId) {
       return corsErrorResponse('Missing assetId', 400);
     }
-
-    // Get service client for database operations
-    const supabase = await createServiceSupabaseClient();
 
     // Find the asset
     const { data: asset, error: fetchError } = await supabase

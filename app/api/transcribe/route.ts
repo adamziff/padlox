@@ -1,4 +1,4 @@
-import { createServiceSupabaseClient } from '@/lib/auth/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { corsOptionsResponse, corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 import { transcribeAudioUrl, extractParagraphText } from '@/lib/deepgram';
 import { withAuth } from '@/lib/api/auth';
@@ -26,8 +26,8 @@ export const POST = withAuth(async (request: Request) => {
       return corsErrorResponse('Missing assetId', 400);
     }
 
-    // Get service client for database operations
-    const supabase = await createServiceSupabaseClient();
+    // Use the client that handles cookies/user sessions
+    const supabase = await createClient();
 
     // Find the asset
     const { data: asset, error } = await supabase

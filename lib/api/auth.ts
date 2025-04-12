@@ -1,7 +1,7 @@
 /**
  * API authentication middleware
  */
-import { createServerSupabaseClient } from '@/lib/auth/supabase'
+import { createClient } from '@/utils/supabase/server'
 import { unauthorizedResponse } from './response'
 
 /**
@@ -37,8 +37,8 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
       
       // If not authenticated via API key, try cookie-based authentication
       if (!user) {
-        // Use the new createServerSupabaseClient with proper cookie handling
-        const supabase = await createServerSupabaseClient();
+        // Use the client that handles cookies/user sessions
+        const supabase = await createClient();
         
         // Get the authenticated user
         const { data: { user: cookieUser } } = await supabase.auth.getUser();
@@ -71,14 +71,32 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
  * Extract the user from the request headers
  * Uses cookie-based authentication
  */
-export async function getUserFromRequest() {
+export async function getUserFromRequest(req: Request): Promise<User | null> {
+  // Use the client that handles cookies/user sessions
+  const supabase = await createClient()
   try {
-    // Use the new createServerSupabaseClient with proper cookie handling
-    const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
     return user;
   } catch (error) {
     console.error('Error getting user from request:', error);
     return null;
   }
+}
+
+export async function requireUser(req: Request): Promise<User> {
+    // Use the client that handles cookies/user sessions
+    const supabase = await createClient()
+    try {
+        const { data: { user }, error } = await supabase.auth.getUser()
+        if (error) throw error // Rethrow Supabase client errors
+        if (!user) {
+            // Throw an error if the user is not found, fulfilling the Promise<User> contract
+            throw new Error('User not authenticated') 
+        }
+        return user // Now guaranteed to be non-null
+    } catch (error) {
+        console.error('Error requiring user:', error)
+        // Re-throw the error to be handled upstream, potentially resulting in a 401
+        throw error 
+    }
 }

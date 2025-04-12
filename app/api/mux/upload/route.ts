@@ -1,14 +1,23 @@
 import { createMuxUpload } from '@/lib/mux';
 import { corsJsonResponse, corsErrorResponse } from '@/lib/api/response';
 import { withAuth } from '@/lib/api/auth';
-import { createServerSupabaseClient } from '@/lib/auth/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { parseJsonBody, ValidationError } from '@/lib/api/validation';
 import { User } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server';
 
 export const POST = withAuth(async (request: Request) => {
   try {
-    // User is available from middleware extension
-    const user = (request as Request & { user: User }).user;
+    const supabase = await createClient();
+
+    // Fetch the user *after* withAuth has passed
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      // This shouldn't happen if withAuth is working, but handle defensively
+      console.error('Auth error after withAuth passed:', userError);
+      return corsErrorResponse('Unauthorized', 401);
+    }
 
     try {
       // Get metadata from the request
@@ -49,9 +58,6 @@ export const POST = withAuth(async (request: Request) => {
 
       // Generate a unique client-side reference ID to help track this asset
       const clientReferenceId = `ref_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Create a supabase client for the server context
-      const supabase = await createServerSupabaseClient();
 
       // Create a pending asset in Supabase with additional tracking fields
       const { data: asset, error: dbError } = await supabase
