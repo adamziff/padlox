@@ -257,7 +257,6 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                             localStorage.setItem('lastUploadTime', Date.now().toString());
                         } catch (e) { console.warn('Could not store upload reference in localStorage:', e); }
                     }
-                    setAssets(prev => [asset, ...prev]);
                     setActiveUploads(prev => ({
                         ...prev,
                         [uploadId]: { ...prev[uploadId], assetId: asset.id, status: 'processing', message: 'Video uploaded. Processing is happening in the background...' }
