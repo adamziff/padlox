@@ -8,10 +8,12 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import { createClient } from "@/utils/supabase/client"
 import { cn } from "@/lib/utils"
+import { MenuIcon, XIcon } from 'lucide-react'
 
 export function NavBar() {
     const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false)
     const [isScrolled, setIsScrolled] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const supabase = createClient()
 
     useEffect(() => {
@@ -38,24 +40,30 @@ export function NavBar() {
         }
     }, [supabase])
 
+    const toggleMobileMenu = () => {
+        setIsMobileMenuOpen(!isMobileMenuOpen);
+    };
+
+    const handleMobileLinkClick = () => {
+        setIsMobileMenuOpen(false);
+    };
+
     return (
         <header className={cn(
             "sticky top-0 z-50 w-full transition-all duration-300",
-            isScrolled ? "border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60" : "bg-transparent"
+            isScrolled || isMobileMenuOpen ? "border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60" : "bg-transparent"
         )}>
             <div className="container flex h-16 items-center mx-auto px-4 sm:px-6 lg:px-8">
-                <Link href="/" className="flex items-center gap-2 mr-6 hover:opacity-80 transition-opacity">
+                <Link href="/" className="flex items-center gap-2 mr-auto md:mr-6 hover:opacity-80 transition-opacity">
                     <Image src="/lock.svg" alt="Padlox logo" width={28} height={28} className="dark:invert" />
                     <span className="font-semibold text-lg">Padlox</span>
                 </Link>
-                <nav className="hidden md:flex items-center space-x-4 lg:space-x-6 flex-1">
-                    {/* Placeholder for future B2B navigation links if needed */}
+
+                <nav className="hidden md:flex items-center space-x-4 lg:space-x-6 md:mr-auto">
                     <Link href="/how-it-works" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">How It Works</Link>
-                    {/* <Link href="/features" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">Features</Link> */}
-                    {/* <Link href="/pricing" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">Pricing</Link> */}
-                    {/* <Link href="/integrations" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">Integrations</Link> */}
                 </nav>
-                <div className="ml-auto flex items-center space-x-3">
+
+                <div className="hidden md:flex items-center space-x-3">
                     <ThemeToggle />
                     {isLoggedIn ? (
                         <>
@@ -67,15 +75,55 @@ export function NavBar() {
                             </form>
                         </>
                     ) : (
-                        <Button
-                            size="sm"
-                            asChild
-                        >
+                        <Button size="sm" asChild>
                             <a href="mailto:adam@padlox.io">Request Demo</a>
                         </Button>
                     )}
                 </div>
+
+                <div className="ml-3 md:hidden flex items-center">
+                    <ThemeToggle />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={toggleMobileMenu}
+                        aria-label="Toggle mobile menu"
+                        className="ml-2"
+                    >
+                        {isMobileMenuOpen ? <XIcon className="h-6 w-6" /> : <MenuIcon className="h-6 w-6" />}
+                    </Button>
+                </div>
             </div>
+
+            {isMobileMenuOpen && (
+                <div className="md:hidden border-t border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                    <nav className="flex flex-col space-y-2 px-4 py-4">
+                        <Link href="/how-it-works"
+                            className="text-base font-medium text-foreground hover:text-primary transition-colors"
+                            onClick={handleMobileLinkClick}
+                        >
+                            How It Works
+                        </Link>
+                        {isLoggedIn ? (
+                            <>
+                                <Link href="/dashboard"
+                                    className="text-base font-medium text-foreground hover:text-primary transition-colors"
+                                    onClick={handleMobileLinkClick}
+                                >
+                                    Dashboard
+                                </Link>
+                                <form action={logout}>
+                                    <Button variant="ghost" size="sm" className="w-full justify-start px-0 text-base font-medium text-foreground hover:text-primary">Log out</Button>
+                                </form>
+                            </>
+                        ) : (
+                            <Button size="sm" asChild onClick={handleMobileLinkClick}>
+                                <a href="mailto:adam@padlox.io">Request Demo</a>
+                            </Button>
+                        )}
+                    </nav>
+                </div>
+            )}
         </header>
     )
 } 
