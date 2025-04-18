@@ -14,12 +14,12 @@ export default async function Home() {
       <NavBar />
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="w-full py-20 md:py-32 lg:py-40 xl:py-48 bg-gradient-to-b from-background to-secondary/30">
+        <section className="w-full py-20 md:py-32 lg:py-40 xl:py-48 bg-gradient-to-b from-background to-secondary">
           <div className="container mx-auto px-4 md:px-6">
             <div className="flex flex-col items-center gap-6 text-center lg:text-left lg:items-start lg:gap-12">
               <div className="flex flex-col justify-center space-y-4">
                 <div className="space-y-2">
-                  <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl xl:text-6xl/none bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
+                  <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl xl:text-6xl/none bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
                     Close the Coverage Gap
                   </h1>
                   <p className="max-w-[700px] text-muted-foreground md:text-xl">
