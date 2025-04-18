@@ -50,6 +50,7 @@ export function NavBar() {
                 </Link>
                 <nav className="hidden md:flex items-center space-x-4 lg:space-x-6 flex-1">
                     {/* Placeholder for future B2B navigation links if needed */}
+                    <Link href="/how-it-works" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">How It Works</Link>
                     {/* <Link href="/features" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">Features</Link> */}
                     {/* <Link href="/pricing" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">Pricing</Link> */}
                     {/* <Link href="/integrations" className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary">Integrations</Link> */}

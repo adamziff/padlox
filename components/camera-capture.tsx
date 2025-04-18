@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useMediaQuery } from '../hooks/use-media-query'
 import { Button } from './ui/button'
 import { CrossIcon, CameraIcon, VideoIcon, CameraFlipIcon, UploadIcon } from './icons'
+import { MicIcon } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 
@@ -197,7 +198,7 @@ export interface CameraCaptureProps {
 }
 
 export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
-    const [mode, setMode] = useState<'photo' | 'video'>('photo')
+    const [mode, setMode] = useState<'photo' | 'video'>('video')
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
     const [countdown, setCountdown] = useState<number | null>(null)
     const [hasFrontCamera, setHasFrontCamera] = useState(false)
@@ -806,18 +807,6 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                     </Button>
                     <div className="flex gap-2">
                         <Button
-                            variant={mode === 'photo' ? 'default' : 'outline'}
-                            onClick={() => handleModeChange('photo')}
-                            disabled={recorderStatus === 'recording'}
-                            className={cn(
-                                isMobile && isDarkMode && "bg-gray-800 text-white",
-                                isMobile && !isDarkMode && "bg-gray-200 text-black"
-                            )}
-                        >
-                            <CameraIcon className="mr-2" />
-                            Photo
-                        </Button>
-                        <Button
                             variant={mode === 'video' ? 'default' : 'outline'}
                             onClick={() => handleModeChange('video')}
                             disabled={recorderStatus === 'recording'}
@@ -828,6 +817,18 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                         >
                             <VideoIcon className="mr-2" />
                             Video
+                        </Button>
+                        <Button
+                            variant={mode === 'photo' ? 'default' : 'outline'}
+                            onClick={() => handleModeChange('photo')}
+                            disabled={recorderStatus === 'recording'}
+                            className={cn(
+                                isMobile && isDarkMode && "bg-gray-800 text-white",
+                                isMobile && !isDarkMode && "bg-gray-200 text-black"
+                            )}
+                        >
+                            <CameraIcon className="mr-2" />
+                            Photo
                         </Button>
                     </div>
                     {hasFrontCamera && (
@@ -868,6 +869,15 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                         )}
                         data-testid="camera-feed"
                     />
+
+                    {/* Narration reminder for video mode */}
+                    {mode === 'video' && recorderStatus === 'recording' && (
+                        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 px-4 py-2 bg-black/60 text-white rounded-md text-center shadow-lg">
+                            <p className="text-sm flex items-center gap-1.5">
+                                <MicIcon className="w-4 h-4 flex-shrink-0" /> Speak clearly! Describe items as you record.
+                            </p>
+                        </div>
+                    )}
 
                     <canvas
                         ref={canvasRef}

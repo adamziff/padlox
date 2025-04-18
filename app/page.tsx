@@ -2,7 +2,8 @@ import { NavBar } from "@/components/nav-bar";
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
-import { ArrowRight, CheckCircle, BarChart, Layers } from 'lucide-react'; // Example icons
+import { ArrowRight, CheckCircle, BarChart, Layers, FileText } from 'lucide-react'; // Example icons
+import { MicIcon } from 'lucide-react'; // Added MicIcon import
 
 export default async function Home() {
   const supabase = await createClient();
@@ -20,10 +21,10 @@ export default async function Home() {
               <div className="flex flex-col justify-center space-y-4">
                 <div className="space-y-2">
                   <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl xl:text-6xl/none bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                    Close the Coverage Gap
+                    Home Inventory, without the hassle.
                   </h1>
                   <p className="max-w-[700px] text-muted-foreground md:text-xl">
-                    Padlox offers the industry&apos;s best video capture experience for home inventories, identifying coverage gaps and helping accelerate legitimate claims through comprehensive documentation.
+                    Padlox helps identify coverage gaps and accelerates legitimate claims. Simply record a video showing and talking about your items.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2 min-[400px]:flex-row justify-center lg:justify-start">
@@ -53,7 +54,7 @@ export default async function Home() {
                   Inaccurate Valuations & Slow Claims Processes
                 </h2>
                 <p className="max-w-[900px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
-                  Manual inventories are tedious and often miss valuable items, leading to underinsurance for HNW clients. Incomplete documentation slows down the claims process for everyone.
+                  Manual inventories are tedious. Our <span className="font-semibold">guided video and narration</span> process helps capture valuable items often missed, reducing underinsurance and speeding up claims with better data.
                 </p>
               </div>
             </div>
@@ -62,9 +63,9 @@ export default async function Home() {
                 <ul className="grid gap-6 md:grid-cols-3">
                   <li>
                     <div className="grid gap-1 text-center md:text-left">
-                      <h3 className="text-xl font-bold flex items-center justify-center md:justify-start"><ArrowRight className="mr-2 h-5 w-5 text-primary" />Effortless AI Capture</h3>
+                      <h3 className="text-xl font-bold flex items-center justify-center md:justify-start"><ArrowRight className="mr-2 h-5 w-5 text-primary" />Effortless Video Capture</h3>
                       <p className="text-muted-foreground">
-                        Our AI-powered video analysis makes creating comprehensive home inventories fast and easy for policyholders, improving data quality.
+                        Our guided video process makes creating comprehensive home inventories fast and easy. Just hit record and describe your items as you go!
                       </p>
                     </div>
                   </li>
@@ -72,7 +73,7 @@ export default async function Home() {
                     <div className="grid gap-1 text-center md:text-left">
                       <h3 className="text-xl font-bold flex items-center justify-center md:justify-start"><Layers className="mr-2 h-5 w-5 text-primary" />Identify Value Gaps</h3>
                       <p className="text-muted-foreground">
-                        Automatically flag high-value, unscheduled items (collections, art, electronics) to ensure appropriate HNW coverage and unlock premium opportunities.
+                        Our analysis flags high-value, unscheduled items (collections, art, electronics) based on your video capture, helping ensure appropriate HNW coverage and unlock premium opportunities.
                       </p>
                     </div>
                   </li>
@@ -80,7 +81,7 @@ export default async function Home() {
                     <div className="grid gap-1 text-center md:text-left">
                       <h3 className="text-xl font-bold flex items-center justify-center md:justify-start"><CheckCircle className="mr-2 h-5 w-5 text-primary" />Expedite Claims</h3>
                       <p className="text-muted-foreground">
-                        Provide adjusters with comprehensive, AI-generated inventory reports, speeding up the validation of legitimate claims through better data.
+                        Provide adjusters with comprehensive inventory reports from your captured data, speeding up the validation of legitimate claims.
                       </p>
                     </div>
                   </li>
@@ -99,7 +100,7 @@ export default async function Home() {
                 Improve Policyholder Experience & Underwriting Precision
               </h2>
               <p className="max-w-[600px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
-                Padlox combines the best capture technology with verifiable data to increase premium accuracy, accelerate payouts, and reduce operational overhead.
+                Padlox combines easy video capture with powerful analysis to increase premium accuracy, accelerate payouts, and reduce operational overhead.
               </p>
             </div>
             <div className="flex space-x-4">
@@ -107,8 +108,8 @@ export default async function Home() {
                 <div className="flex items-start gap-3">
                   <ArrowRight className="mt-1 h-6 w-6 flex-shrink-0 text-primary" />
                   <div>
-                    <h3 className="font-semibold">Best-in-Class Capture</h3>
-                    <p className="text-sm text-muted-foreground">AI video analysis provides a fast, comprehensive, and user-friendly inventory experience.</p>
+                    <h3 className="font-semibold">Best-in-Class Capture & Narration</h3>
+                    <p className="text-sm text-muted-foreground">Guided video + clear narration provides a fast, comprehensive, and user-friendly inventory experience for accurate documentation.</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -129,7 +130,7 @@ export default async function Home() {
                   <Layers className="mt-1 h-6 w-6 flex-shrink-0 text-primary" />
                   <div>
                     <h3 className="font-semibold">White-Label Ready</h3>
-                    <p className="text-sm text-muted-foreground">Integrate Padlox features seamlessly into your existing insurer apps.</p>
+                    <p className="text-sm text-muted-foreground">Integrate Padlox features seamlessly into your existing claims and underwriting systems.</p>
                   </div>
                 </div>
               </div>
@@ -159,17 +160,17 @@ export default async function Home() {
               </div>
               <div className="flex flex-col items-center text-center p-4">
                 <div className="mb-4 rounded-full bg-primary p-3 text-primary-foreground">
-                  <BarChart className="h-6 w-6" />
+                  <MicIcon className="h-6 w-6" />
                 </div>
-                <h3 className="mb-1 font-semibold">2. Analyze & Store</h3>
-                <p className="text-sm text-muted-foreground">AI identifies items, estimates value, flags HNW assets, generates reports.</p>
+                <h3 className="mb-1 font-semibold">2. Narrate Details</h3>
+                <p className="text-sm text-muted-foreground">Speak clearly about each item (brand, value, etc.) while recording for the most accurate results.</p>
               </div>
               <div className="flex flex-col items-center text-center p-4">
                 <div className="mb-4 rounded-full bg-primary p-3 text-primary-foreground">
-                  <CheckCircle className="h-6 w-6" />
+                  <FileText className="h-6 w-6" />
                 </div>
-                <h3 className="mb-1 font-semibold">3. Integrate & Use</h3>
-                <p className="text-sm text-muted-foreground">Access comprehensive reports for underwriting and claims via API/integration.</p>
+                <h3 className="mb-1 font-semibold">3. Analyze & Use</h3>
+                <p className="text-sm text-muted-foreground">Access comprehensive reports generated from your video for underwriting and claims.</p>
               </div>
             </div>
           </div>
@@ -179,9 +180,9 @@ export default async function Home() {
         <section className="w-full py-12 md:py-24 lg:py-32 bg-secondary/30">
           <div className="container mx-auto grid items-center justify-center gap-4 px-4 text-center md:px-6">
             <div className="space-y-3">
-              <h2 className="text-3xl font-bold tracking-tighter md:text-4xl/tight">Close the High Net Worth Coverage Gap</h2>
+              <h2 className="text-3xl font-bold tracking-tighter md:text-4xl/tight">Close the Coverage Gap</h2>
               <p className="mx-auto max-w-[700px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
-                Effortlessly identify valuable collections, art, electronics, and unique property features often missed in standard assessments. Provide tailored, accurate coverage for HNW clients and increase appropriate premium capture.
+                Effortlessly identify valuable collections, art, electronics, and unique property features often missed, based on your <span className="font-semibold">video walkthrough and detailed narration</span>. Provide tailored, accurate coverage for clients and increase appropriate premium capture.
               </p>
             </div>
           </div>
@@ -193,7 +194,7 @@ export default async function Home() {
             <div className="space-y-3">
               <h2 className="text-3xl font-bold tracking-tighter md:text-4xl">Optimize Coverage & Streamline Claims Today</h2>
               <p className="mx-auto max-w-[600px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
-                Discover how Padlox&apos;s AI-powered capture can enhance your underwriting precision and claims efficiency through better data.
+                Discover how Padlox&apos;s AI-powered video documentation can enhance your underwriting precision and claims efficiency through better data.
               </p>
             </div>
             <div className="mx-auto w-full max-w-sm space-y-2">
