@@ -555,6 +555,7 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                                         title={asset.name}
                                         aspectRatio={asset.mux_aspect_ratio || '1/1'}
                                         startTime={asset.item_timestamp} // Start playback at the item timestamp
+                                        itemTimestamp={asset.item_timestamp} // Pass timestamp for initial thumbnail token
                                     />
                                 ) : isVideo && asset.mux_playback_id && isMuxReady ? (
                                     // Display Source Video using MuxPlayer

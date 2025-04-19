@@ -35,9 +35,10 @@ interface MuxPlayerProps {
     poster?: string;
     title?: string;
     startTime?: number;
+    itemTimestamp?: number;
 }
 
-export function MuxPlayer({ playbackId, aspectRatio = '16/9', title, startTime }: MuxPlayerProps) {
+export function MuxPlayer({ playbackId, aspectRatio = '16/9', title, startTime, itemTimestamp }: MuxPlayerProps) {
     const [tokens, setTokens] = useState<{
         playback: string | undefined;
         thumbnail: string | undefined;
@@ -66,11 +67,12 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title, startTime }
             setLoading(true);
             setError(null);
 
-            // Get signed JWTs for this playback ID
-            log(`Requesting tokens for playbackId: ${playbackId} (retry ${retryCount})`);
-
-            // Add a cache-busting parameter to prevent caching issues
-            const response = await fetch(`/api/mux/token?playbackId=${playbackId}&_=${Date.now()}`);
+            // Construct the URL, adding the itemTimestamp only if provided
+            let apiUrl = `/api/mux/token?playbackId=${playbackId}&_=${Date.now()}`;
+            if (itemTimestamp !== undefined && itemTimestamp !== null) {
+                apiUrl += `&time=${itemTimestamp}`;
+            }
+            const response = await fetch(apiUrl);
 
             if (!response.ok) {
                 let errorMessage = `${response.status} ${response.statusText}`;
@@ -120,7 +122,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title, startTime }
         } finally {
             setLoading(false);
         }
-    }, [playbackId, retryCount, lastTokenFetchTime]);
+    }, [playbackId, retryCount, lastTokenFetchTime, itemTimestamp]);
 
     // Initial fetch on mount and when retry is triggered
     useEffect(() => {
@@ -130,7 +132,7 @@ export function MuxPlayer({ playbackId, aspectRatio = '16/9', title, startTime }
             setError('No playback ID provided');
             setLoading(false);
         }
-    }, [playbackId, retryCount, fetchTokens]);
+    }, [playbackId, retryCount, fetchTokens, itemTimestamp]);
 
     // Function to retry loading
     const handleRetry = () => {
