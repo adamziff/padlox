@@ -8,7 +8,11 @@ import { User } from '@supabase/supabase-js';
 
 // Define the calculation function separately for clarity
 const calculateTotals = (assets: AssetWithMuxData[]) => {
-    const totalItems = assets.length;
+    // Filter assets to include only 'item' and 'image' types for the count
+    const countableAssets = assets.filter(asset => 
+        asset.media_type === 'item' || asset.media_type === 'image'
+    );
+    const totalItems = countableAssets.length;
     const totalValue = assets.reduce((sum: number, asset: AssetWithMuxData) => {
         const value = typeof asset.estimated_value === 'number' ? asset.estimated_value : 0;
         return sum + value;

@@ -53,7 +53,6 @@ export function DashboardClient({
         handleCancelMediaPreview,
         handleRetryMediaPreview,
         handleCloseAssetModal,
-        handleAssetDeletedFromModal,
         totalItems,
         totalValue
     } = useDashboardLogic({

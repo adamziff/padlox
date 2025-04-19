@@ -39,7 +39,8 @@ export default async function Dashboard() {
     }
 
     // Calculate metrics
-    const totalItems = assets.length
+    const filteredAssetsForCount = assets.filter(asset => asset.media_type === 'item' || asset.media_type === 'image');
+    const totalItems = filteredAssetsForCount.length; // Count only items and images
     const totalValue = assets.reduce((sum: number, asset: AssetWithMuxData) => {
         // Ensure estimated_value is treated as a number, default to 0 if null/invalid
         const value = typeof asset.estimated_value === 'number' ? asset.estimated_value : 0
