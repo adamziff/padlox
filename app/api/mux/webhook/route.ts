@@ -299,8 +299,8 @@ export async function POST(request: Request) {
                     } else {
                         console.log(`Set transcript status to 'pending' for asset ${internalAssetId} via static_rendition.ready.`);
 
-                        // Trigger the transcription API - DO NOT AWAIT
-                        fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/transcribe`, {
+                        // Trigger the transcription API - *** ADD AWAIT ***
+                        await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/transcribe`, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
