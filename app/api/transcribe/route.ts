@@ -181,7 +181,7 @@ export const POST = withAuth(async (request: Request) => {
         console.error('[Transcribe API] Missing API_SECRET_KEY, cannot call analysis endpoint.');
         // Potentially update asset status to indicate analysis pending/failed?
       } else {
-        fetch(analysisApiUrl, {
+        await fetch(analysisApiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
