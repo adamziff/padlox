@@ -70,6 +70,7 @@ export interface Database {
                     is_source_video: boolean // Added flag for source video vs item
                     source_video_id: string | null // Added link to source video asset
                     item_timestamp: number | null // Added timestamp for items
+                    is_processed: boolean // Added flag for overall processing status
                 }
                 Insert: {
                     id?: string
@@ -99,6 +100,7 @@ export interface Database {
                     is_source_video?: boolean // Default should be handled by DB or logic
                     source_video_id?: string | null
                     item_timestamp?: number | null
+                    is_processed?: boolean // Added flag for overall processing status
                 }
                 Update: {
                     id?: string
@@ -128,6 +130,7 @@ export interface Database {
                     is_source_video?: boolean
                     source_video_id?: string | null
                     item_timestamp?: number | null
+                    is_processed?: boolean // Added flag for overall processing status
                 }
             }
             webhook_events: {
