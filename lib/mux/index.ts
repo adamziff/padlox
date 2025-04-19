@@ -409,11 +409,9 @@ export function getMuxThumbnailUrl(
   // Append token ONLY if provided
   if (token) {
     const finalUrl = `${baseUrl}?token=${token}`;
-    log(`Generated Thumbnail URL: ${finalUrl} | Token: ${token}`);
     return finalUrl;
   }
   
   // Log URL even if no token (for public assets or debugging)
-  log(`Generated Thumbnail URL (no token): ${baseUrl}`);
   return baseUrl; // Or potentially throw an error if token is missing for signed playback?
 }

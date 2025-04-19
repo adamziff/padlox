@@ -41,22 +41,15 @@ export function AssetCard({
     let imageKey = asset.id; // Base key for React list
 
     if (isItem && asset.mux_playback_id && itemTimestamp != null) {
-        console.log(`[AssetCard] Generating Item Thumbnail URL for ${asset.id}. Has Token: ${!!thumbnailToken}`);
         imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
         imageKey = `${asset.id}-item-${thumbnailToken || 'no-token'}`;
     } else if (asset.media_type === 'video' && asset.mux_playback_id && asset.mux_processing_status === 'ready') {
-        console.log(`[AssetCard] Generating Video Thumbnail URL for ${asset.id}. Has Token: ${!!thumbnailToken}`);
         imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
         imageKey = `${asset.id}-video-${thumbnailToken || 'no-token'}`;
     } else if (asset.media_type === 'image') {
         imageUrl = asset.media_url;
         imageKey = `${asset.id}-image`;
     }
-
-    // Add logging for image URLs
-    // if (asset.media_type === 'image') {
-    //     console.log(`[AssetCard] Rendering image. Asset ID: ${asset.id}, media_url: ${asset.media_url}, calculated imageUrl: ${imageUrl}`);
-    // }
 
     const handleCardClick = (event: React.MouseEvent) => {
         if (isClickable) {

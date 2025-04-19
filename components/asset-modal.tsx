@@ -99,7 +99,7 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
         return () => {
             isMounted = false;
         };
-    }, [asset]); // Re-fetch if the asset changes
+    }, [asset, isItem]); // Re-fetch if the asset changes OR if it changes type (edge case)
 
     // Set up a real-time subscription to update this asset if it changes
     useEffect(() => {

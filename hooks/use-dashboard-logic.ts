@@ -50,13 +50,11 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
             if (data.tokens?.thumbnail) {
                 // Use composite key: playbackId for videos, playbackId-timestamp for items
                 const tokenKey = timestamp !== undefined && timestamp !== null ? `${playbackId}-${timestamp}` : playbackId;
-                console.log(`[fetchThumbnailToken] Received token for key: ${tokenKey}`);
                 setThumbnailTokens(prev => {
                     const newState = {
                         ...prev,
                         [tokenKey]: data.tokens.thumbnail
                     };
-                    console.log(`[fetchThumbnailToken] Updated thumbnailTokens state for key: ${tokenKey}`);
                     return newState;
                 });
                 return data.tokens.thumbnail;
@@ -474,7 +472,6 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                 
                 // Check if the specific token (using composite key) is missing
                 if (!thumbnailTokens[tokenKey]) {
-                    console.log(`[Token Fetch] Queueing fetch for key: ${tokenKey}`);
                     tokensToFetch.push({ 
                         playbackId: asset.mux_playback_id, 
                         timestamp // Now correctly number | undefined
@@ -483,12 +480,6 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
             }
         });
 
-        // Deduplicate fetches for the same playbackId/timestamp combo if needed (though unlikely with current logic)
-        // const uniqueFetches = Array.from(new Map(tokensToFetch.map(item => [`${item.playbackId}-${item.timestamp ?? 0}`, item])).values());
-
-        if (tokensToFetch.length > 0) {
-            console.log(`[Token Fetch] Starting ${tokensToFetch.length} fetches.`);
-        }
         tokensToFetch.forEach(({ playbackId, timestamp }) => {
             fetchThumbnailToken(playbackId, timestamp);
         });
