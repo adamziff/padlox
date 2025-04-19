@@ -51,8 +51,15 @@ export async function POST(request: Request) {
         upload_id?: string; 
         asset_id?: string;
         type?: string; 
-        static_renditions?: { name: string; status: string }[] 
-      } 
+        static_renditions?: { name: string; status: string }[];
+        metadata?: { correlation_id?: string; [key: string]: string | number | boolean | null | undefined };
+        name?: string;
+        status?: string;
+        playback_ids?: { id: string; policy: 'signed' | 'public' }[];
+        duration?: number;
+        aspect_ratio?: string;
+        max_stored_resolution?: string;
+      }
     };
     
     console.log(`Received webhook from Mux: ${event.type}`);
@@ -60,10 +67,10 @@ export async function POST(request: Request) {
     // We'll store all webhook events for processing, but we'll only act immediately on specific types
     const serviceClient = await createServiceSupabaseClient();
     
-    // Extract necessary IDs early
-    const muxAssetId = event.data?.id;
-    const muxUploadId = event.data?.upload_id || null;
-    const correlationId = ((event.data as any)?.metadata?.correlation_id) || null; // Type assertion needed as metadata varies
+    // Extract necessary IDs early (use optional chaining and nullish coalescing)
+    const muxAssetId = event.data?.id || event.data?.asset_id || null; // Use asset_id as fallback if top-level id is missing
+    const muxUploadId = event.data?.upload_id || (event.type === 'video.upload.asset_created' ? event.data?.id : null) || null; // Upload ID is in data.id for video.upload.asset_created
+    const correlationId = event.data?.metadata?.correlation_id || null;
     
     // Check if webhook_events table exists
     let webhookTableExists = false;
@@ -123,9 +130,6 @@ export async function POST(request: Request) {
       const uploadId = event.data?.id;
       const actualAssetId = event.data?.asset_id; // Correct: Get Asset ID from data.asset_id
       
-      // Add logging here to check extracted values *before* the condition
-      console.log(`[Debug video.upload.asset_created] Extracted uploadId (from data.id): ${uploadId}, actualAssetId (from data.asset_id): ${actualAssetId}`);
-
       // Check if both IDs were successfully extracted before proceeding
       if (uploadId && actualAssetId) { 
         console.log(`Processing video.upload.asset_created for Upload ID: ${uploadId}. Actual Asset ID: ${actualAssetId}`);
@@ -172,8 +176,7 @@ export async function POST(request: Request) {
           }
         }
       } else {
-        console.warn(`[Debug video.upload.asset_created] Missing upload_id (from data.id) or asset_id (from data.asset_id) in event data. Skipping update.`);
-        console.warn(`[Debug data]: ${JSON.stringify(event.data)}`);
+        console.warn(`[video.upload.asset_created] Missing upload_id or asset_id in event data. Skipping update.`);
       }
     }
     // --- End Upload Asset Created Event ---
@@ -364,7 +367,6 @@ export async function POST(request: Request) {
     
   } catch (error: unknown) {
     console.error('Webhook processing error:', error);
-    const message = error instanceof Error ? error.message : 'Unknown error';
     // Don't return detailed internal errors to the webhook sender
     return corsErrorResponse('Webhook handler failed', 500);
   }
