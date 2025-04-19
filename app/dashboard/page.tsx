@@ -67,8 +67,8 @@ export default async function Dashboard() {
         <Suspense fallback={<div>Loading...</div>}>
             <DashboardClient
                 initialAssets={transformedAssets}
-                totalItems={totalItems}
-                totalValue={totalValue}
+                initialTotalItems={totalItems}
+                initialTotalValue={totalValue}
                 user={user}
             />
         </Suspense>

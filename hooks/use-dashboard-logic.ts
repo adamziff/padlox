@@ -6,6 +6,16 @@ import { uploadToS3 } from '@/utils/s3';
 import { AssetWithMuxData } from '@/types/mux';
 import { User } from '@supabase/supabase-js';
 
+// Define the calculation function separately for clarity
+const calculateTotals = (assets: AssetWithMuxData[]) => {
+    const totalItems = assets.length;
+    const totalValue = assets.reduce((sum: number, asset: AssetWithMuxData) => {
+        const value = typeof asset.estimated_value === 'number' ? asset.estimated_value : 0;
+        return sum + value;
+    }, 0);
+    return { totalItems, totalValue };
+};
+
 // Re-declare the ActiveUpload type here or import if moved to a shared types file
 type ActiveUpload = {
     assetId: string;
@@ -17,12 +27,21 @@ type ActiveUpload = {
 type UseDashboardLogicProps = {
     initialAssets: AssetWithMuxData[];
     user: User;
+    initialTotalItems: number;
+    initialTotalValue: number;
 }
 
-export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProps) {
+export function useDashboardLogic({ 
+    initialAssets, 
+    user, 
+    initialTotalItems,
+    initialTotalValue 
+}: UseDashboardLogicProps) {
     const [showCamera, setShowCamera] = useState(false);
     const [capturedFile, setCapturedFile] = useState<File | null>(null);
     const [assets, setAssets] = useState<AssetWithMuxData[]>(initialAssets);
+    const [totalItems, setTotalItems] = useState<number>(initialTotalItems);
+    const [totalValue, setTotalValue] = useState<number>(initialTotalValue);
     const [selectedAsset, setSelectedAsset] = useState<AssetWithMuxData | null>(null);
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
     const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -79,41 +98,47 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                 },
                 (payload) => {
                     console.log('[REALTIME HANDLER] Received payload:', payload);
+                    
+                    // Function to update assets and recalculate totals
+                    const updateStateAndTotals = (updater: (prevAssets: AssetWithMuxData[]) => AssetWithMuxData[]) => {
+                        setAssets(prevAssets => {
+                            const updatedAssets = updater(prevAssets)
+                                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                            // Recalculate and set totals based on the final updated assets
+                            const { totalItems: newTotalItems, totalValue: newTotalValue } = calculateTotals(updatedAssets);
+                            setTotalItems(newTotalItems);
+                            setTotalValue(newTotalValue);
+                            console.log(`[REALTIME HANDLER] State updated. New count: ${updatedAssets.length}, New Total Value: ${newTotalValue}`);
+                            return updatedAssets;
+                        });
+                    };
+
                     if (payload.eventType === 'INSERT') {
                         const newAsset = payload.new as AssetWithMuxData;
-                        console.log(`[REALTIME HANDLER] INSERT detected: ${newAsset.id}, type: ${newAsset.media_type}, status: ${newAsset.mux_processing_status}`);
+                        console.log(`[REALTIME HANDLER] INSERT detected: ${newAsset.id}`);
 
-                        // Check if the asset already exists to prevent duplicates from rapid events
-                        if (assets.some(asset => asset.id === newAsset.id)) {
-                            console.warn(`[REALTIME HANDLER] Duplicate INSERT event ignored for asset ${newAsset.id}`);
-                            return;
-                        }
+                        updateStateAndTotals(prevAssets => {
+                             // Check if the asset already exists to prevent duplicates from rapid events
+                            if (prevAssets.some(asset => asset.id === newAsset.id)) {
+                                console.warn(`[REALTIME HANDLER] Duplicate INSERT event ignored for asset ${newAsset.id}`);
+                                return prevAssets; // Return previous state if duplicate
+                            }
 
-                        // Construct full media URL for S3 images if necessary
-                        let assetToAdd = newAsset;
-                        if (assetToAdd.media_type === 'image' && assetToAdd.media_url && !assetToAdd.media_url.startsWith('http')) {
-                            assetToAdd = {
-                                ...assetToAdd,
-                                media_url: `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${assetToAdd.media_url}`
-                            };
-                            console.log(`[REALTIME HANDLER] Transformed INSERT image media_url for ${assetToAdd.id} to: ${assetToAdd.media_url}`);
-                        }
-
-                        setAssets(prevAssets => {
-                            // Add the new asset and re-sort
-                            const updatedAssets = [assetToAdd, ...prevAssets]
-                                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-                            console.log(`[REALTIME HANDLER] State updated after INSERT. New count: ${updatedAssets.length}`);
-                            return updatedAssets;
+                            // Construct full media URL for S3 images if necessary
+                            let assetToAdd = newAsset;
+                            if (assetToAdd.media_type === 'image' && assetToAdd.media_url && !assetToAdd.media_url.startsWith('http')) {
+                                assetToAdd = {
+                                    ...assetToAdd,
+                                    media_url: `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${assetToAdd.media_url}`
+                                };
+                                console.log(`[REALTIME HANDLER] Transformed INSERT image media_url for ${assetToAdd.id} to: ${assetToAdd.media_url}`);
+                            }
+                            return [assetToAdd, ...prevAssets];
                         });
 
                         // Clear potential errors for this asset if it was previously errored
                         if (mediaErrors[newAsset.id]) {
-                            setMediaErrors(prev => {
-                                const next = { ...prev };
-                                delete next[newAsset.id];
-                                return next;
-                            });
+                            setMediaErrors(prev => { const next = { ...prev }; delete next[newAsset.id]; return next; });
                         }
                     }
                     else if (payload.eventType === 'UPDATE') {
@@ -172,16 +197,10 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                             }
                         }
 
-                        setAssets(prevAssets => {
-                            // Ensure uniqueness: Map existing assets by ID
+                        updateStateAndTotals(prevAssets => {
                             const assetMap = new Map(prevAssets.map(asset => [asset.id, asset]));
-                            // Set the updated asset in the map (replaces if exists)
                             assetMap.set(updatedAsset.id, updatedAsset);
-                            // Convert map back to array, maintaining a reasonable order (e.g., new/updated first)
-                            const updatedArray = Array.from(assetMap.values())
-                                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()); // Sort by creation date descending
-                            console.log(`[REALTIME HANDLER] State updated after UPDATE for ${updatedAsset.id}. New count: ${updatedArray.length}`);
-                            return updatedArray;
+                            return Array.from(assetMap.values());
                         });
 
                         // Update modal if the asset being viewed is the one updated
@@ -192,30 +211,19 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
 
                         // Clear media errors if the asset updates successfully
                         if (mediaErrors[updatedAsset.id]) {
-                            setMediaErrors(prev => {
-                                const next = { ...prev };
-                                delete next[updatedAsset.id];
-                                return next;
-                            });
+                            setMediaErrors(prev => { const next = { ...prev }; delete next[updatedAsset.id]; return next; });
                         }
                     }
                     else if (payload.eventType === 'DELETE') {
                         const deletedAssetId = payload.old.id;
                         console.log(`[REALTIME HANDLER] DELETE detected: ${deletedAssetId}`);
-                        setAssets(prevAssets => {
-                            const updated = prevAssets.filter(asset => asset.id !== deletedAssetId);
-                            console.log(`[REALTIME HANDLER] State updated after DELETE. New count: ${updated.length}`);
-                            return updated;
-                        });
+                        updateStateAndTotals(prevAssets => prevAssets.filter(asset => asset.id !== deletedAssetId));
+                        
                         if (selectedAsset && selectedAsset.id === deletedAssetId) {
                             setSelectedAsset(null);
                         }
                         if (selectedAssets.has(deletedAssetId)) {
-                            setSelectedAssets(prev => {
-                                const next = new Set(prev);
-                                next.delete(deletedAssetId);
-                                return next;
-                            });
+                            setSelectedAssets(prev => { const next = new Set(prev); next.delete(deletedAssetId); return next; });
                         }
                     }
                 }
@@ -573,6 +581,8 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
         showCamera,
         capturedFile,
         assets,
+        totalItems,
+        totalValue,
         selectedAsset,
         selectedAssets,
         isSelectionMode,

@@ -15,17 +15,17 @@ import { DollarSign, Package } from 'lucide-react';
 import { formatCurrency } from '@/utils/format';
 
 type DashboardClientProps = {
-    initialAssets: AssetWithMuxData[]
-    user: User
-    totalItems: number;
-    totalValue: number;
+    initialAssets: AssetWithMuxData[];
+    user: User;
+    initialTotalItems: number;
+    initialTotalValue: number;
 }
 
 export function DashboardClient({
     initialAssets,
     user,
-    totalItems,
-    totalValue
+    initialTotalItems,
+    initialTotalValue
 }: DashboardClientProps) {
     const {
         showCamera,
@@ -53,7 +53,15 @@ export function DashboardClient({
         handleCancelMediaPreview,
         handleRetryMediaPreview,
         handleCloseAssetModal,
-    } = useDashboardLogic({ initialAssets, user })
+        handleAssetDeletedFromModal,
+        totalItems,
+        totalValue
+    } = useDashboardLogic({
+        initialAssets,
+        user,
+        initialTotalItems,
+        initialTotalValue
+    });
 
     const [searchTerm, setSearchTerm] = useState('');
 
