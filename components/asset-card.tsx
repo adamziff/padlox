@@ -114,14 +114,20 @@ export function AssetCard({
                 </div>
             ) : imageUrl ? (
                 imageUrl.includes('image.mux.com') ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                        key={imageKey}
-                        src={imageUrl}
-                        alt={asset.name}
-                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        onError={() => onImageError(asset.id, imageUrl, new Error('Mux image failed to load'))}
-                    />
+                    thumbnailToken ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                            key={imageKey}
+                            src={imageUrl}
+                            alt={asset.name}
+                            className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform"
+                            onError={() => onImageError(asset.id, imageUrl, new Error('Mux image failed to load'))}
+                        />
+                    ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                            <span className="animate-spin"><SpinnerIcon /></span>
+                        </div>
+                    )
                 ) : (
                     <Image
                         key={imageKey}
