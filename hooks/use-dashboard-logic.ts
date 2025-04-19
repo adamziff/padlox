@@ -338,14 +338,13 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                 .from('assets').insert([{ user_id: user.id, name: metadata.name, description: metadata.description, estimated_value: metadata.estimated_value, media_url: key, media_type: capturedFile.type.startsWith('video/') ? 'video' : 'image' }]).select().single();
             if (error) throw error;
             const transformedAsset = { ...asset, media_url: `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${asset.media_url}` } as AssetWithMuxData;
-            setAssets(prev => [transformedAsset, ...prev]);
             setCapturedFile(null);
         } catch (error: unknown) {
             const err = error as Error & { details?: string; hint?: string; code?: string; name?: string };
             console.error('Error saving asset:', { message: err?.message, details: err?.details, stack: err?.stack, name: err?.name });
             alert('Failed to save asset. Please try again.');
         }
-    }, [capturedFile, setAssets, setCapturedFile, supabase, user.id]);
+    }, [capturedFile, setCapturedFile, supabase, user.id]);
 
     // Handle asset selection for multi-select mode
     const toggleAssetSelection = useCallback((assetId: string, event: React.MouseEvent | React.ChangeEvent<HTMLInputElement>) => {

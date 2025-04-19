@@ -5,6 +5,12 @@ import { createClient } from '@/utils/supabase/server'
 import { Suspense } from 'react'
 import { AssetWithMuxData } from '@/types/mux'
 import { SupabaseClient } from '@supabase/supabase-js'
+import { Metadata } from 'next'
+
+export const metadata: Metadata = {
+    title: 'Dashboard | Padlox',
+    description: 'Manage your home inventory.',
+}
 
 // Use async/await for server-side data fetching
 export default async function Dashboard() {
@@ -29,7 +35,16 @@ export default async function Dashboard() {
 
     if (error) {
         console.error('Error fetching assets:', error)
+        return <div>Error loading dashboard data: {error.message}</div>
     }
+
+    // Calculate metrics
+    const totalItems = assets.length
+    const totalValue = assets.reduce((sum: number, asset: AssetWithMuxData) => {
+        // Ensure estimated_value is treated as a number, default to 0 if null/invalid
+        const value = typeof asset.estimated_value === 'number' ? asset.estimated_value : 0
+        return sum + value
+    }, 0)
 
     // Transform assets to include absolute media_url if it's not a Mux video
     const transformedAssets = (assets || []).map((asset: AssetWithMuxData) => {
@@ -50,7 +65,12 @@ export default async function Dashboard() {
 
     return (
         <Suspense fallback={<div>Loading...</div>}>
-            <DashboardClient initialAssets={transformedAssets} user={user} />
+            <DashboardClient
+                initialAssets={transformedAssets}
+                totalItems={totalItems}
+                totalValue={totalValue}
+                user={user}
+            />
         </Suspense>
     )
 }

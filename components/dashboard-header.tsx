@@ -1,11 +1,12 @@
 'use client';
 
-import { Button } from './ui/button';
-import { TrashIcon } from './icons';
+import { Button } from '@/components/ui/button';
+import { Trash2, Plus, ListFilter, X } from 'lucide-react';
 import { HelpCircle } from 'lucide-react';
 import React from 'react';
+import { Input } from "@/components/ui/input"
 
-type DashboardHeaderProps = {
+interface DashboardHeaderProps {
     hasAssets: boolean;
     isSelectionMode: boolean;
     selectedCount: number;
@@ -13,7 +14,9 @@ type DashboardHeaderProps = {
     onToggleSelectionMode: () => void;
     onBulkDelete: () => void;
     onAddNewAsset: () => void;
-};
+    searchTerm: string;
+    onSearchChange: (value: string) => void;
+}
 
 export function DashboardHeader({
     hasAssets,
@@ -23,52 +26,65 @@ export function DashboardHeader({
     onToggleSelectionMode,
     onBulkDelete,
     onAddNewAsset,
+    searchTerm,
+    onSearchChange
 }: DashboardHeaderProps) {
 
-    const handleStartTutorial = () => {
-        console.log("Start Tutorial clicked - Implement tutorial logic here.");
-        alert("Tutorial feature coming soon!");
-    };
-
     return (
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-            <h1 className="text-2xl font-bold text-foreground">My Assets</h1>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-4 w-full sm:w-auto">
-                {hasAssets && (
-                    <Button
-                        variant="outline"
-                        onClick={onToggleSelectionMode}
-                        className="w-full sm:w-auto"
-                    >
-                        {isSelectionMode ? 'Cancel Selection' : 'Select Multiple'}
-                    </Button>
-                )}
-                {isSelectionMode && selectedCount > 0 && (
-                    <Button
-                        variant="destructive"
-                        onClick={onBulkDelete}
-                        disabled={isDeleting}
-                        className="w-full sm:w-auto"
-                    >
-                        <TrashIcon className="h-4 w-4 mr-2" />
-                        Delete Selected ({selectedCount})
-                    </Button>
-                )}
-                <Button
-                    onClick={onAddNewAsset}
-                    className="w-full sm:w-auto"
-                >
-                    Add New Asset
-                </Button>
-                <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={handleStartTutorial}
-                    className="flex-shrink-0"
-                    aria-label="Start Dashboard Tutorial"
-                >
-                    <HelpCircle className="h-5 w-5" />
-                </Button>
+        <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <h1 className="text-2xl font-semibold tracking-tight">Inventory Dashboard</h1>
+
+            <div className="flex flex-col md:flex-row items-center gap-2 w-full md:w-auto">
+                <Input
+                    type="search"
+                    placeholder="Search items..."
+                    className="w-full md:w-[200px] lg:w-[300px] order-1 md:order-none"
+                    value={searchTerm}
+                    onChange={(e) => onSearchChange(e.target.value)}
+                />
+
+                <div className="grid grid-cols-2 gap-2 w-full md:flex md:w-auto md:gap-2 order-2 md:order-none mt-2 md:mt-0">
+                    {isSelectionMode ? (
+                        <>
+                            <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={onBulkDelete}
+                                disabled={selectedCount === 0 || isDeleting}
+                                className="col-span-1"
+                            >
+                                {isDeleting ? "Deleting..." : `Delete (${selectedCount})`}
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={onToggleSelectionMode}
+                                className="col-span-1"
+                            >
+                                Cancel
+                            </Button>
+                        </>
+                    ) : (
+                        <>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={onToggleSelectionMode}
+                                disabled={!hasAssets}
+                                className="col-span-1"
+                            >
+                                <ListFilter className="mr-2 h-4 w-4" /> Select
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={onAddNewAsset}
+                                className="col-span-1"
+                            >
+                                <Plus className="mr-2 h-4 w-4" /> Add New
+                            </Button>
+                        </>
+                    )}
+                </div>
             </div>
         </div>
     );
