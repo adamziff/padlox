@@ -13,7 +13,8 @@ import { MuxAsset, MuxWebhookEvent } from '@/types/mux';
  * Only logs when MUX_LOG_LEVEL environment variable is set to 'debug'
  */
 function log(message: string, ...args: unknown[]) {
-  if (process.env.NODE_ENV === 'development' && process.env.MUX_LOG_LEVEL === 'debug') {
+  // Check for NEXT_PUBLIC_ prefix for browser environment access
+  if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_MUX_LOG_LEVEL === 'debug') {
     console.log(`[Mux] ${message}`, ...args);
   }
 }
@@ -28,7 +29,8 @@ function log(message: string, ...args: unknown[]) {
 export async function createMuxPlaybackJWT(
   playbackId: string, 
   userId: string, 
-  audience: 'v' | 't' | 's' = 'v'
+  audience: 'v' | 't' | 's' = 'v',
+  time?: number
 ): Promise<string> {
   // Check if we have the signing keys
   if (!process.env.MUX_SIGNING_KEY_ID || !process.env.MUX_SIGNING_PRIVATE_KEY) {
@@ -54,6 +56,7 @@ export async function createMuxPlaybackJWT(
       aud: audience,       // 'v' = video playback, 't' = thumbnails, 's' = storyboards
       exp: Math.floor(Date.now() / 1000) + 7200, // 2 hour expiry
       kid: process.env.MUX_SIGNING_KEY_ID,
+      time: time ?? 0,
       customer_id: userId  // Optional custom field
     };
 
@@ -235,12 +238,12 @@ export async function getMuxAssetDetails(assetId: string): Promise<MuxAsset> {
  * @param userId - The user ID for the tokens
  * @returns Object containing tokens for video, thumbnails, and storyboards
  */
-export async function createMuxTokens(playbackId: string, userId: string) {
+export async function createMuxTokens(playbackId: string, userId: string, time?: number) {
   // Create playback token (audience = 'v')
   const playbackToken = await createMuxPlaybackJWT(playbackId, userId, 'v');
   
   // Create thumbnail token (audience = 't')
-  const thumbnailToken = await createMuxPlaybackJWT(playbackId, userId, 't');
+  const thumbnailToken = await createMuxPlaybackJWT(playbackId, userId, 't', time);
   
   // Create storyboard token (audience = 's')
   const storyboardToken = await createMuxPlaybackJWT(playbackId, userId, 's');
@@ -396,7 +399,6 @@ export async function getStaticRenditionDownloadUrl(
  */
 export function getMuxThumbnailUrl(
   playbackId: string, 
-  timestamp: number, // Keep timestamp for potential token generation logic (server-side)
   token?: string | null // Add optional token parameter
 ): string {
   if (!playbackId) return ''; // Return empty if no playbackId
@@ -406,12 +408,12 @@ export function getMuxThumbnailUrl(
   
   // Append token ONLY if provided
   if (token) {
-    return `${baseUrl}?token=${token}`; 
+    const finalUrl = `${baseUrl}?token=${token}`;
+    log(`Generated Thumbnail URL: ${finalUrl} | Token: ${token}`);
+    return finalUrl;
   }
   
-  // Return base URL if no token (or for public assets, though parameters won't work here)
-  // For signed assets, a token is required for any access.
-  // We might need different logic here if public assets need time parameters.
-  // Assuming signed tokens are the primary use case based on the issue.
+  // Log URL even if no token (for public assets or debugging)
+  log(`Generated Thumbnail URL (no token): ${baseUrl}`);
   return baseUrl; // Or potentially throw an error if token is missing for signed playback?
 }

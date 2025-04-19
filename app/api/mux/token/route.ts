@@ -21,13 +21,24 @@ export const GET = withAuth(async (request: Request) => {
     // Get the playback ID from the request
     const { searchParams } = new URL(request.url);
     const playbackId = searchParams.get('playbackId');
+    const timeParam = searchParams.get('time'); // Get the time parameter
 
     if (!playbackId) {
       console.error('Missing playback ID in request');
       return errorResponse('Missing playback ID', 400);
     }
 
-    log(`Generating tokens for playback ID: ${playbackId}`);
+    // Parse the time parameter if it exists
+    let time: number | undefined = undefined;
+    if (timeParam !== null) {
+      time = parseFloat(timeParam);
+      if (isNaN(time)) {
+        log('Invalid time parameter received, ignoring.', timeParam);
+        time = undefined; // Reset to undefined if parsing failed
+      }
+    }
+
+    log(`Generating tokens for playback ID: ${playbackId}${time !== undefined ? ` at time ${time}` : ''}`);
 
     // Use the client that handles cookies/user sessions
     const supabase = await createClient();
@@ -54,7 +65,7 @@ export const GET = withAuth(async (request: Request) => {
 
     // Generate tokens for all required purposes
     try {
-      const tokens = await createMuxTokens(playbackId, user.id);
+      const tokens = await createMuxTokens(playbackId, user.id, time);
       log('Tokens generated successfully');
 
       // Return all tokens to the client
@@ -101,7 +112,21 @@ export const POST = withAuth(async (request: Request) => {
       return errorResponse('Missing playback ID', 400);
     }
 
-    log(`Generating tokens for playback ID: ${playbackId}`);
+    // Get the playback ID from the request
+    const { searchParams } = new URL(request.url);
+    const timeParam = searchParams.get('time'); // Get the time parameter
+
+    // Parse the time parameter if it exists
+    let time: number | undefined = undefined;
+    if (timeParam !== null) {
+      time = parseFloat(timeParam);
+      if (isNaN(time)) {
+        log('Invalid time parameter received, ignoring.', timeParam);
+        time = undefined; // Reset to undefined if parsing failed
+      }
+    }
+
+    log(`Generating tokens for playback ID: ${playbackId}${time !== undefined ? ` at time ${time}` : ''}`);
 
     // Try to access with user session first
     const { data: assets, error: queryError } = await supabase
@@ -125,7 +150,7 @@ export const POST = withAuth(async (request: Request) => {
 
     // Generate tokens for all required purposes
     try {
-      const tokens = await createMuxTokens(playbackId, user.id);
+      const tokens = await createMuxTokens(playbackId, user.id, time);
       log('Tokens generated successfully');
 
       // Return all tokens to the client

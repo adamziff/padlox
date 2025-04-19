@@ -13,6 +13,7 @@ type AssetCardProps = {
     isSelectionMode: boolean;
     thumbnailToken: string | null;
     hasError: boolean;
+    itemTimestamp?: number;
     onCardClick: (asset: AssetWithMuxData, event: React.MouseEvent) => void;
     onCheckboxChange: (assetId: string, event: React.ChangeEvent<HTMLInputElement>) => void;
     onRetryMedia: (assetId: string, event: React.MouseEvent) => void;
@@ -25,6 +26,7 @@ export function AssetCard({
     isSelectionMode,
     thumbnailToken,
     hasError,
+    itemTimestamp,
     onCardClick,
     onCheckboxChange,
     onRetryMedia,
@@ -38,11 +40,13 @@ export function AssetCard({
     let imageUrl = '';
     let imageKey = asset.id; // Base key for React list
 
-    if (isItem && asset.mux_playback_id && asset.item_timestamp != null) {
-        imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, asset.item_timestamp, thumbnailToken);
+    if (isItem && asset.mux_playback_id && itemTimestamp != null) {
+        console.log(`[AssetCard] Generating Item Thumbnail URL for ${asset.id}. Has Token: ${!!thumbnailToken}`);
+        imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
         imageKey = `${asset.id}-item-${thumbnailToken || 'no-token'}`;
     } else if (asset.media_type === 'video' && asset.mux_playback_id && asset.mux_processing_status === 'ready') {
-        imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, 0, thumbnailToken);
+        console.log(`[AssetCard] Generating Video Thumbnail URL for ${asset.id}. Has Token: ${!!thumbnailToken}`);
+        imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
         imageKey = `${asset.id}-video-${thumbnailToken || 'no-token'}`;
     } else if (asset.media_type === 'image') {
         imageUrl = asset.media_url;
@@ -109,16 +113,27 @@ export function AssetCard({
                     </div>
                 </div>
             ) : imageUrl ? (
-                <Image
-                    key={imageKey}
-                    src={imageUrl}
-                    alt={asset.name}
-                    fill
-                    className="object-cover group-hover:scale-105 transition-transform"
-                    onError={() => onImageError(asset.id, imageUrl, new Error('Image failed to load'))}
-                    sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                    priority={false} // Generally false for grid items, maybe true for first few?
-                />
+                imageUrl.includes('image.mux.com') ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                        key={imageKey}
+                        src={imageUrl}
+                        alt={asset.name}
+                        className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        onError={() => onImageError(asset.id, imageUrl, new Error('Mux image failed to load'))}
+                    />
+                ) : (
+                    <Image
+                        key={imageKey}
+                        src={imageUrl}
+                        alt={asset.name}
+                        fill
+                        className="object-cover group-hover:scale-105 transition-transform"
+                        onError={() => onImageError(asset.id, imageUrl, new Error('S3 image failed to load'))}
+                        sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                        priority={false}
+                    />
+                )
             ) : (
                 <div className="w-full h-full flex items-center justify-center text-muted-foreground">
                     <p>{asset.media_type === 'video' ? 'Video Unavailable' : 'Image Unavailable'}</p>

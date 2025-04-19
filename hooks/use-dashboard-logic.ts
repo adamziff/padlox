@@ -34,18 +34,31 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
     const supabase = createClient();
 
     // Fetch thumbnail token for Mux videos
-    const fetchThumbnailToken = useCallback(async (playbackId: string) => {
+    const fetchThumbnailToken = useCallback(async (playbackId: string, timestamp?: number) => {
         try {
-            const response = await fetch(`/api/mux/token?playbackId=${playbackId}&_=${Date.now()}`);
+            // Construct the URL, adding the timestamp only if provided
+            let apiUrl = `/api/mux/token?playbackId=${playbackId}&_=${Date.now()}`;
+            if (timestamp !== undefined && timestamp !== null) {
+                apiUrl += `&time=${timestamp}`;
+            }
+
+            const response = await fetch(apiUrl);
             if (!response.ok) {
                 throw new Error(`Failed to get token: ${response.status}`);
             }
             const data = await response.json();
             if (data.tokens?.thumbnail) {
-                setThumbnailTokens(prev => ({
-                    ...prev,
-                    [playbackId]: data.tokens.thumbnail
-                }));
+                // Use composite key: playbackId for videos, playbackId-timestamp for items
+                const tokenKey = timestamp !== undefined && timestamp !== null ? `${playbackId}-${timestamp}` : playbackId;
+                console.log(`[fetchThumbnailToken] Received token for key: ${tokenKey}`);
+                setThumbnailTokens(prev => {
+                    const newState = {
+                        ...prev,
+                        [tokenKey]: data.tokens.thumbnail
+                    };
+                    console.log(`[fetchThumbnailToken] Updated thumbnailTokens state for key: ${tokenKey}`);
+                    return newState;
+                });
                 return data.tokens.thumbnail;
             }
             return null;
@@ -136,7 +149,9 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
                                 });
                                 // Fetch thumbnail if ready and token not already present
                                 if (updatedAsset.mux_playback_id && !thumbnailTokens[updatedAsset.mux_playback_id]) {
-                                    fetchThumbnailToken(updatedAsset.mux_playback_id);
+                                    // Pass timestamp if it's an item asset
+                                    const timestamp = updatedAsset.media_type === 'item' && updatedAsset.item_timestamp != null ? updatedAsset.item_timestamp : undefined;
+                                    fetchThumbnailToken(updatedAsset.mux_playback_id, timestamp);
                                 }
                             }
                         }
@@ -433,22 +448,51 @@ export function useDashboardLogic({ initialAssets, user }: UseDashboardLogicProp
         // Optional: Force re-fetch thumbnail token if relevant
         const asset = assets.find(a => a.id === assetId);
         if (asset?.mux_playback_id) {
-            fetchThumbnailToken(asset.mux_playback_id);
+            // Pass timestamp if it's an item asset
+            const timestamp = asset.media_type === 'item' && asset.item_timestamp != null ? asset.item_timestamp : undefined;
+            // No need to check if token exists here, just refetch
+            fetchThumbnailToken(asset.mux_playback_id, timestamp);
         }
     }, [assets, fetchThumbnailToken]);
 
     // Fetch thumbnail tokens for ready Mux videos initially and when assets change
     useEffect(() => {
-        const muxAssetsNeedingTokens = assets.filter(
-            asset => asset.mux_playback_id &&
-                asset.mux_processing_status === 'ready' &&
-                !thumbnailTokens[asset.mux_playback_id]
-        );
-        muxAssetsNeedingTokens.forEach(asset => {
-            if (asset.mux_playback_id) {
-                fetchThumbnailToken(asset.mux_playback_id);
+        const tokensToFetch: { playbackId: string; timestamp?: number }[] = [];
+
+        assets.forEach(asset => {
+            // Fetch conditions:
+            // 1. Must have a playback ID.
+            // 2. If it's a VIDEO asset, it must be 'ready'.
+            // 3. If it's an ITEM asset, it must have an item_timestamp.
+            const isItemWithTimestamp = asset.media_type === 'item' && asset.item_timestamp != null;
+            const isReadyVideo = asset.media_type === 'video' && asset.mux_processing_status === 'ready';
+
+            if (asset.mux_playback_id && (isReadyVideo || isItemWithTimestamp)) {
+                // Ensure timestamp is number or undefined, converting null
+                const timestamp = isItemWithTimestamp && asset.item_timestamp != null ? asset.item_timestamp : undefined;
+                const tokenKey = timestamp !== undefined ? `${asset.mux_playback_id}-${timestamp}` : asset.mux_playback_id;
+                
+                // Check if the specific token (using composite key) is missing
+                if (!thumbnailTokens[tokenKey]) {
+                    console.log(`[Token Fetch] Queueing fetch for key: ${tokenKey}`);
+                    tokensToFetch.push({ 
+                        playbackId: asset.mux_playback_id, 
+                        timestamp // Now correctly number | undefined
+                    });
+                }
             }
         });
+
+        // Deduplicate fetches for the same playbackId/timestamp combo if needed (though unlikely with current logic)
+        // const uniqueFetches = Array.from(new Map(tokensToFetch.map(item => [`${item.playbackId}-${item.timestamp ?? 0}`, item])).values());
+
+        if (tokensToFetch.length > 0) {
+            console.log(`[Token Fetch] Starting ${tokensToFetch.length} fetches.`);
+        }
+        tokensToFetch.forEach(({ playbackId, timestamp }) => {
+            fetchThumbnailToken(playbackId, timestamp);
+        });
+
     }, [assets, thumbnailTokens, fetchThumbnailToken]);
 
     // Auto-dismiss processing notifications after 3 minutes

@@ -50,8 +50,17 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                 setIsLoadingToken(true);
                 setModalToken(null); // Clear previous token
                 try {
+                    // Determine the timestamp to use (if any)
+                    const timestamp = isItem && asset.item_timestamp != null ? asset.item_timestamp : undefined;
+
+                    // Construct the URL, adding the timestamp only if provided
+                    let apiUrl = `/api/mux/token?playbackId=${asset.mux_playback_id}&_=${Date.now()}`;
+                    if (timestamp !== undefined) {
+                        apiUrl += `&time=${timestamp}`;
+                    }
+
                     // Fetch token from the API endpoint
-                    const response = await fetch(`/api/mux/token?playbackId=${asset.mux_playback_id}&_=${Date.now()}`);
+                    const response = await fetch(apiUrl);
                     if (!response.ok) {
                         let errorMessage = `${response.status} ${response.statusText}`;
                         try {
@@ -482,12 +491,12 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
     let displayImageUrl = '';
     if (isItem && asset.mux_playback_id && asset.item_timestamp != null) {
         // Pass the fetched modalToken to the URL function
-        displayImageUrl = getMuxThumbnailUrl(asset.mux_playback_id, asset.item_timestamp, modalToken);
+        displayImageUrl = getMuxThumbnailUrl(asset.mux_playback_id, modalToken);
     } else if (asset.media_type === 'image') {
         displayImageUrl = asset.media_url;
     } else if (isVideo && asset.mux_playback_id && isMuxReady) {
         // Use token for the main video thumbnail too (timestamp 0)
-        displayImageUrl = getMuxThumbnailUrl(asset.mux_playback_id, 0, modalToken);
+        displayImageUrl = getMuxThumbnailUrl(asset.mux_playback_id, modalToken);
     }
 
     return (
