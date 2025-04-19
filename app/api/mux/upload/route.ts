@@ -74,7 +74,8 @@ export const POST = withAuth(async (request: Request) => {
           client_reference_id: clientReferenceId,
           mux_correlation_id: uploadData.correlationId,
           created_at: new Date().toISOString(),
-          last_updated: new Date().toISOString()
+          last_updated: new Date().toISOString(),
+          is_source_video: true // Mark this as the source video
         }])
         .select()
         .single();
