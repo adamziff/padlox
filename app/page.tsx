@@ -2,11 +2,10 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link'
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { PersonaToggle, Persona } from '@/components/persona-toggle';
 import { NavBar } from '@/components/nav-bar';
 import { ArrowRight, CheckCircle, BarChart, Layers, FileText, MicIcon } from 'lucide-react';
-import { cn } from "@/lib/utils";
 
 // Existing content (assumed for Insurers)
 const InsurerContent = () => (
@@ -257,7 +256,7 @@ const PolicyholderContent = () => (
           <div className="grid gap-1">
             <h3 className="text-xl font-bold flex items-center"><Layers className="mr-2 h-5 w-5 text-primary" />Ensure Fair Payouts</h3>
             <p className="text-muted-foreground">
-              Don't rely on memory. A detailed inventory ensures you claim the full value for all your belongings, preventing underpayment.
+              Don&apos;t rely on memory. A detailed inventory ensures you claim the full value for all your belongings, preventing underpayment.
             </p>
           </div>
           <div className="grid gap-1">

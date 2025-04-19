@@ -100,8 +100,22 @@ export default async function Dashboard() {
         };
     }) || []
 
-    // Pass the pre-fetched data to the client component
-    return <DashboardClient initialAssets={transformedAssets} user={user} />
+    // --- Calculate totalItems and totalValue --- 
+    const totalItems = transformedAssets.length;
+    const totalValue = transformedAssets.reduce((sum, asset) => {
+        // Ensure estimated_value is treated as a number, default to 0 if null/invalid
+        const value = typeof asset.estimated_value === 'number' ? asset.estimated_value : 0;
+        return sum + value;
+    }, 0);
+    // --- End Calculation ---
+
+    // Pass the pre-fetched data and calculated values to the client component
+    return <DashboardClient
+        initialAssets={transformedAssets}
+        user={user}
+        totalItems={totalItems}
+        totalValue={totalValue}
+    />
 }
 
 // Server-side function for user management

@@ -3,8 +3,6 @@
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils"; // Import cn from the utility file
-import { type ClassValue, clsx } from "clsx"; // Import clsx and ClassValue
-import { twMerge } from "tailwind-merge"; // Import twMerge
 
 export type Persona = 'insurer' | 'policyholder';
 

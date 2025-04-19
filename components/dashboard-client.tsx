@@ -13,7 +13,6 @@ import { AssetGrid } from './asset-grid'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, Package } from 'lucide-react';
 import { formatCurrency } from '@/utils/format';
-import { Input } from "@/components/ui/input"
 
 type DashboardClientProps = {
     initialAssets: AssetWithMuxData[]
@@ -54,13 +53,12 @@ export function DashboardClient({
         handleCancelMediaPreview,
         handleRetryMediaPreview,
         handleCloseAssetModal,
-        handleAssetDeletedFromModal,
     } = useDashboardLogic({ initialAssets, user })
 
     const [searchTerm, setSearchTerm] = useState('');
 
     const displayedAssets = useMemo(() => {
-        let filtered = assets.filter(asset => {
+        const filtered = assets.filter(asset => {
             if (asset.media_type === 'video' && asset.is_source_video === true && asset.is_processed === true) {
                 return false;
             }

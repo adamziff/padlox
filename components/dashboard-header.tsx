@@ -1,8 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Trash2, Plus, ListFilter, X } from 'lucide-react';
-import { HelpCircle } from 'lucide-react';
+import { Plus, ListFilter } from 'lucide-react';
 import React from 'react';
 import { Input } from "@/components/ui/input"
 
