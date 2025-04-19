@@ -38,16 +38,19 @@ export function AssetCard({
 
     // Determine the image source URL dynamically
     let imageUrl = '';
-    let imageKey = asset.id; // Base key for React list
+    let imageKey = asset.id; // Use a base key, modify for items with timestamps
 
     if (isItem && asset.mux_playback_id && itemTimestamp != null) {
         imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
-        imageKey = `${asset.id}-item-${thumbnailToken || 'no-token'}`;
+        // Stable key: Based on asset ID and timestamp (if applicable)
+        imageKey = `${asset.id}-item-${itemTimestamp}`;
     } else if (asset.media_type === 'video' && asset.mux_playback_id && asset.mux_processing_status === 'ready') {
         imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
-        imageKey = `${asset.id}-video-${thumbnailToken || 'no-token'}`;
+        // Stable key: Based on asset ID for videos
+        imageKey = `${asset.id}-video`;
     } else if (asset.media_type === 'image') {
         imageUrl = asset.media_url;
+        // Stable key: Based on asset ID for images
         imageKey = `${asset.id}-image`;
     }
 
