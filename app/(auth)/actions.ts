@@ -18,7 +18,7 @@ export async function loginOrRegister(formData: FormData) {
             email,
             options: {
                 shouldCreateUser: true,
-                emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback?next=/dashboard`,
+                emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm?next=/dashboard`,
             },
         })
 
