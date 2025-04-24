@@ -76,7 +76,7 @@ export function NavBar() {
                         </>
                     ) : (
                         <Button size="sm" asChild>
-                            <a href="mailto:adam@padlox.io">Request Demo</a>
+                            <Link href="/login">Get Started</Link>
                         </Button>
                     )}
                 </div>
@@ -118,7 +118,7 @@ export function NavBar() {
                             </>
                         ) : (
                             <Button size="sm" asChild onClick={handleMobileLinkClick}>
-                                <a href="mailto:adam@padlox.io">Request Demo</a>
+                                <Link href="/login">Get Started</Link>
                             </Button>
                         )}
                     </nav>

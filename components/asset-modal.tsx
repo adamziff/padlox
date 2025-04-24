@@ -502,7 +502,7 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
     return (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50">
             <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50" role="dialog" aria-label="Asset Details" aria-modal="true">
-                <div className="fixed inset-[50%] w-full max-w-3xl h-[90vh] translate-x-[-50%] translate-y-[-50%] bg-background rounded-lg shadow-lg flex flex-col">
+                <div className="fixed inset-0 w-full h-full sm:inset-[50%] sm:w-full sm:max-w-3xl sm:h-[90vh] sm:translate-x-[-50%] sm:translate-y-[-50%] bg-background rounded-none sm:rounded-lg shadow-lg flex flex-col">
                     <div className="flex justify-between items-center p-4 border-b">
                         <h2 className="text-xl font-semibold">{asset.name}</h2>
                         <div className="flex items-center gap-2">

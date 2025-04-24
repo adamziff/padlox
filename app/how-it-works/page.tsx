@@ -46,17 +46,17 @@ export default function HowItWorksPage() {
                         </CardContent>
                     </Card>
 
-                    {/* Step 3: Upload */}
+                    {/* Step 3: Automatic Processing */}
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <UploadCloud className="w-6 h-6 text-primary" />
-                                3. Upload Your Video
+                                3. Automatic Processing
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
                             <p className="text-muted-foreground">
-                                Once finished, stop the recording and upload the video file.
+                                Once finished, stop the recording. The video file will automatically begin processing.
                                 You can record multiple shorter videos if needed (e.g., per room).
                             </p>
                         </CardContent>
