@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 
 // Import the client component
 import { LoginForm } from './login-form'
+import { NavBar } from '@/components/nav-bar'
 
 // Server Component: Checks auth and renders client form if needed
 export default async function LoginPage() {
@@ -20,6 +21,11 @@ export default async function LoginPage() {
         redirect('/dashboard')
     }
 
-    // If not logged in, render the client component form
-    return <LoginForm />
+    // Render NavBar and the client component form
+    return (
+        <>
+            <NavBar />
+            <LoginForm />
+        </>
+    )
 }

@@ -25,7 +25,7 @@ export function PersonaToggle({
     // Define base classes for consistent styling
     const baseButtonClasses = "px-4 py-2 text-sm font-medium transition-colors duration-200 ease-in-out focus:z-10 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background";
     const activeClasses = "bg-primary text-primary-foreground hover:bg-primary/90";
-    const inactiveClasses = "bg-background text-foreground hover:bg-muted border border-border"; // Use border for inactive
+    const inactiveClasses = "bg-background text-foreground hover:bg-muted hover:text-foreground border border-border"; // Use border for inactive
 
     return (
         <div className="inline-flex rounded-md shadow-sm" role="group">

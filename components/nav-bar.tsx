@@ -72,7 +72,7 @@ export function NavBar() {
 
                 <div className="hidden md:flex items-center space-x-3">
                     <ThemeToggle />
-                    {isLoggedIn ? (
+                    {isLoggedIn && (
                         <>
                             <Button variant="secondary" size="sm" asChild>
                                 <Link href="/dashboard">Dashboard</Link>
@@ -81,10 +81,6 @@ export function NavBar() {
                                 <Button variant="ghost" size="sm">Log out</Button>
                             </form>
                         </>
-                    ) : (
-                        <Button size="sm" asChild>
-                            <Link href="/login">Get Started</Link>
-                        </Button>
                     )}
                 </div>
 
@@ -132,9 +128,6 @@ export function NavBar() {
                                 >
                                     How It Works
                                 </Link>
-                                <Button size="sm" asChild onClick={handleMobileLinkClick}>
-                                    <Link href="/login">Get Started</Link>
-                                </Button>
                             </>
                         )}
                     </nav>

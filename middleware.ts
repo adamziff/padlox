@@ -13,8 +13,9 @@ export const config = {
          * - _next/image (image optimization files)
          * - favicon.ico (favicon file)
          * - api/mux/webhook (Mux webhook endpoint)
+         * - how-it-works (How It Works page)
          * Feel free to modify this pattern to include more paths.
          */
-        '/((?!_next/static|_next/image|favicon.ico|api/mux/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+        '/((?!_next/static|_next/image|favicon.ico|api/mux/webhook|how-it-works|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
     ],
 }

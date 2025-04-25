@@ -12,9 +12,6 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card'
-import { ThemeToggle } from '@/components/theme-toggle'
-import Link from 'next/link'
-import Image from 'next/image'
 
 // Client Component for the Login Form
 export function LoginForm() {
@@ -47,14 +44,7 @@ export function LoginForm() {
 
     if (emailSent) {
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4 py-6">
-                <Link href="/" className="absolute top-4 left-4 flex items-center gap-2 hover:opacity-80 transition-opacity">
-                    <Image src="/lock.svg" alt="Padlox logo" width={24} height={24} className="dark:invert" />
-                    <span className="font-semibold">Padlox</span>
-                </Link>
-                <div className="absolute top-4 right-4">
-                    <ThemeToggle />
-                </div>
+            <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center bg-background px-4 py-6 pt-16 md:pt-20">
                 <Card className="w-full max-w-md">
                     <CardHeader className="space-y-1">
                         <CardTitle className="text-2xl font-bold text-center">Check your email</CardTitle>
@@ -97,14 +87,7 @@ export function LoginForm() {
 
     // Return the actual login form
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4 py-6">
-            <Link href="/" className="absolute top-4 left-4 flex items-center gap-2 hover:opacity-80 transition-opacity">
-                <Image src="/lock.svg" alt="Padlox logo" width={24} height={24} className="dark:invert" />
-                <span className="font-semibold">Padlox</span>
-            </Link>
-            <div className="absolute top-4 right-4">
-                <ThemeToggle />
-            </div>
+        <div className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center bg-background px-4 py-6 pt-16 md:pt-20">
             <Card className="w-full max-w-md">
                 <CardHeader className="space-y-1">
                     <CardTitle className="text-2xl font-bold text-center">Welcome to Padlox</CardTitle>

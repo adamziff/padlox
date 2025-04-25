@@ -22,9 +22,9 @@ export default function HowItWorksPage() {
                         </CardHeader>
                         <CardContent>
                             <p className="text-muted-foreground">
-                                Select <span className="font-semibold">Video</span> mode. Walk through your home, room by room.
+                                Walk through your home, room by room.
                                 Ensure good lighting and move slowly, keeping items in frame.
-                                The video is the primary source for your inventory.
+                                Videos are the primary source for your inventory.
                             </p>
                         </CardContent>
                     </Card>
@@ -72,7 +72,7 @@ export default function HowItWorksPage() {
                         </CardHeader>
                         <CardContent>
                             <p className="text-muted-foreground">
-                                Our system analyzes your <span className="font-semibold">narration transcript</span> to automatically identify items, estimate values, and flag potential coverage gaps based on your descriptions. (<span className="font-semibold">Video content analysis coming soon!</span>)
+                                Our system analyzes your narration transcript to automatically identify items, estimate values, and flag potential coverage gaps based on your descriptions. (<span className="font-semibold">Video content analysis coming soon.</span>)
                             </p>
                         </CardContent>
                     </Card>
@@ -87,7 +87,7 @@ export default function HowItWorksPage() {
                         </CardHeader>
                         <CardContent>
                             <p className="text-muted-foreground">
-                                Access your generated inventory list on the dashboard. Review the details captured from your video and <span className="font-semibold">transcript analysis</span>. Use this documented proof for insurance discussions or claims.
+                                Access your generated inventory list on the dashboard. Review the details captured from your video and transcript analysis. Use this documented proof for insurance discussions or claims.
                             </p>
                         </CardContent>
                     </Card>

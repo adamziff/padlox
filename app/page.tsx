@@ -24,6 +24,17 @@ const InsurerContent = () => (
                 Padlox helps identify coverage gaps and accelerates legitimate claims. Simply record a video showing and talking about your items.
               </p>
             </div>
+            <div className="flex flex-col gap-2 min-[400px]:flex-row justify-center pt-4">
+              <Button
+                size="lg"
+                className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-opacity"
+                asChild
+              >
+                <Link href="/login">
+                  Get Started <ArrowRight className="ml-2 h-5 w-5" />
+                </Link>
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -201,7 +212,7 @@ const InsurerContent = () => (
 const PolicyholderContent = ({ isLoggedIn }: { isLoggedIn: boolean }) => (
   <main className="flex-1">
     {/* Hero Section */}
-    <section className="w-full py-20 md:py-32 lg:py-40 xl:py-48 bg-gradient-to-b from-background to-primary/10"> {/* Subtle primary hint */}
+    <section className="w-full py-20 md:py-32 lg:py-40 xl:py-48 bg-gradient-to-b from-background to-primary/10">
       <div className="container mx-auto px-4 md:px-6">
         <div className="flex flex-col items-center gap-6 text-center">
           <div className="flex flex-col justify-center space-y-4">
@@ -213,8 +224,12 @@ const PolicyholderContent = ({ isLoggedIn }: { isLoggedIn: boolean }) => (
                 Disaster can strike anytime. A complete home inventory is your key to a faster, smoother insurance claim. Padlox makes it simple with video and AI.
               </p>
             </div>
-            <div className="flex flex-col gap-2 min-[400px]:flex-row justify-center">
-              <Button size="lg" asChild>
+            <div className="flex flex-col gap-2 min-[400px]:flex-row justify-center pt-4">
+              <Button
+                size="lg"
+                className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-opacity"
+                asChild
+              >
                 {isLoggedIn ? (
                   <Link href="/dashboard">My Dashboard</Link>
                 ) : (
