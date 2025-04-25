@@ -3,7 +3,6 @@
 // Keep only necessary server-side imports
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers' // Keep this for createClient if it needs it
 
 // Import the client component
 import { LoginForm } from './login-form'

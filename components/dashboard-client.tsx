@@ -139,7 +139,7 @@ export function DashboardClient({
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Total Items</CardTitle>
-                            <Package className="h-4 w-4 text-muted-foreground" />
+                            <Package className="h-4 w-4 text-primary" />
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">{totalItems}</div>
@@ -148,7 +148,7 @@ export function DashboardClient({
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                             <CardTitle className="text-sm font-medium">Total Est. Value</CardTitle>
-                            <DollarSign className="h-4 w-4 text-muted-foreground" />
+                            <DollarSign className="h-4 w-4 text-primary" />
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">{formatCurrency(totalValue)}</div>

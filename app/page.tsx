@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link'
 import { Button } from "@/components/ui/button"
 import { PersonaToggle, Persona } from '@/components/persona-toggle';
 import { NavBar } from '@/components/nav-bar';
 import { ArrowRight, CheckCircle, BarChart, Layers, FileText, MicIcon } from 'lucide-react';
+import { createClient } from "@/utils/supabase/client"
 
 // Existing content (assumed for Insurers)
 const InsurerContent = () => (
@@ -22,14 +23,6 @@ const InsurerContent = () => (
               <p className="max-w-[700px] mx-auto text-muted-foreground md:text-xl">
                 Padlox helps identify coverage gaps and accelerates legitimate claims. Simply record a video showing and talking about your items.
               </p>
-            </div>
-            <div className="flex flex-col gap-2 min-[400px]:flex-row justify-center">
-              <Button size="lg" asChild>
-                <a href="mailto:adam@padlox.io">
-                  Request a Demo <ArrowRight className="ml-2 h-5 w-5" />
-                </a>
-              </Button>
-              {/* Login button removed as we can't check auth here easily */}
             </div>
           </div>
         </div>
@@ -192,7 +185,7 @@ const InsurerContent = () => (
         <div className="mx-auto w-full max-w-sm space-y-2">
           <Button size="lg" className="w-full" asChild>
             <a href="mailto:adam@padlox.io">
-              Request a Personalized Demo
+              Get In Touch
             </a>
           </Button>
           <p className="text-xs text-muted-foreground">
@@ -205,7 +198,7 @@ const InsurerContent = () => (
 );
 
 // New content for Policyholders
-const PolicyholderContent = () => (
+const PolicyholderContent = ({ isLoggedIn }: { isLoggedIn: boolean }) => (
   <main className="flex-1">
     {/* Hero Section */}
     <section className="w-full py-20 md:py-32 lg:py-40 xl:py-48 bg-gradient-to-b from-background to-primary/10"> {/* Subtle primary hint */}
@@ -222,8 +215,11 @@ const PolicyholderContent = () => (
             </div>
             <div className="flex flex-col gap-2 min-[400px]:flex-row justify-center">
               <Button size="lg" asChild>
-                {/* Link to dashboard/signup */}
-                <Link href="/dashboard">Get Started Free</Link>
+                {isLoggedIn ? (
+                  <Link href="/dashboard">My Dashboard</Link>
+                ) : (
+                  <Link href="/login">Get Started Free</Link>
+                )}
               </Button>
               <Button variant="outline" size="lg" asChild>
                 <Link href="#why-inventory">Learn Why</Link>
@@ -291,21 +287,21 @@ const PolicyholderContent = () => (
               <ArrowRight className="mt-1 h-6 w-6 flex-shrink-0 text-primary" />
               <div>
                 <h3 className="font-semibold">Simple Video Walkthrough</h3>
-                <p className="text-sm text-muted-foreground">Just record a video of your rooms, describing items as you go. No typing required!</p>
+                <p className="text-sm text-muted-foreground">Just record a video of your rooms, describing items as you go; Padlox automatically builds a list of your items.</p>
               </div>
             </li>
             <li className="flex items-start gap-3">
               <MicIcon className="mt-1 h-6 w-6 flex-shrink-0 text-primary" />
               <div>
                 <h3 className="font-semibold">AI Item Recognition & Transcription</h3>
-                <p className="text-sm text-muted-foreground">Our AI automatically identifies items from your video and transcribes your spoken details (like brand, value, serial numbers).</p>
+                <p className="text-sm text-muted-foreground">Padlox automatically saves details from your narration (like brand, value, serial numbers), no typing required.</p>
               </div>
             </li>
             <li className="flex items-start gap-3">
               <FileText className="mt-1 h-6 w-6 flex-shrink-0 text-primary" />
               <div>
                 <h3 className="font-semibold">Detailed Reports</h3>
-                <p className="text-sm text-muted-foreground">Generate comprehensive reports with item lists, descriptions, and estimated values, ready for your insurance agent.</p>
+                <p className="text-sm text-muted-foreground">Generate comprehensive reports with item lists, descriptions, and estimated values, ready for your insurance agent. (Coming soon)</p>
               </div>
             </li>
           </ul>
@@ -324,9 +320,12 @@ const PolicyholderContent = () => (
         </div>
         <div className="mx-auto w-full max-w-sm space-y-2">
           <Button size="lg" className="w-full" asChild>
-            <Link href="/dashboard">
-              Create Your Free Inventory Now
+            <Link href={isLoggedIn ? "/dashboard" : "/login"}>
+              {isLoggedIn ? "Go to Dashboard" : "Create Your Free Inventory Now"}
             </Link>
+          </Button>
+          <Button variant="outline" size="sm" className="w-full" asChild>
+            <a href="mailto:adam@padlox.io">Get In Touch</a>
           </Button>
           <p className="text-xs text-muted-foreground">
             Simple setup. Powerful protection.
@@ -340,6 +339,26 @@ const PolicyholderContent = () => (
 
 export default function Home() {
   const [persona, setPersona] = useState<Persona>('insurer'); // Default to insurer view
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false); // Add state for login
+  const supabase = createClient(); // Initialize Supabase client
+
+  // Fetch login state
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setIsLoggedIn(!!session);
+    };
+    checkSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(!!session);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
+
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -349,8 +368,8 @@ export default function Home() {
         <PersonaToggle initialPersona={persona} onPersonaChange={setPersona} />
       </div>
 
-      {/* Conditionally render content based on persona */}
-      {persona === 'insurer' ? <InsurerContent /> : <PolicyholderContent />}
+      {/* Conditionally render content based on persona, pass isLoggedIn to PolicyholderContent */}
+      {persona === 'insurer' ? <InsurerContent /> : <PolicyholderContent isLoggedIn={isLoggedIn} />}
 
       {/* Shared Footer */}
       <footer className="flex flex-col gap-2 sm:flex-row py-6 w-full shrink-0 items-center px-4 md:px-6 border-t">

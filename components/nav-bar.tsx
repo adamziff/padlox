@@ -9,11 +9,14 @@ import { useEffect, useState } from "react"
 import { createClient } from "@/utils/supabase/client"
 import { cn } from "@/lib/utils"
 import { MenuIcon, XIcon } from 'lucide-react'
+import { useTheme } from "next-themes"
 
 export function NavBar() {
+    const { theme } = useTheme()
     const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false)
     const [isScrolled, setIsScrolled] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [logoSrc, setLogoSrc] = useState('/lock-dark.svg');
     const supabase = createClient()
 
     useEffect(() => {
@@ -40,6 +43,10 @@ export function NavBar() {
         }
     }, [supabase])
 
+    useEffect(() => {
+        setLogoSrc(theme === 'light' ? '/lock-light.svg' : '/lock-dark.svg');
+    }, [theme]);
+
     const toggleMobileMenu = () => {
         setIsMobileMenuOpen(!isMobileMenuOpen);
     };
@@ -55,7 +62,7 @@ export function NavBar() {
         )}>
             <div className="container flex h-16 items-center mx-auto px-4 sm:px-6 lg:px-8">
                 <Link href="/" className="flex items-center gap-2 mr-auto md:mr-6 hover:opacity-80 transition-opacity">
-                    <Image src="/lock.svg" alt="Padlox logo" width={28} height={28} className="dark:invert" />
+                    <Image src={logoSrc} alt="Padlox logo" width={32} height={32} />
                     <span className="font-semibold text-lg">Padlox</span>
                 </Link>
 
@@ -67,7 +74,7 @@ export function NavBar() {
                     <ThemeToggle />
                     {isLoggedIn ? (
                         <>
-                            <Button variant="outline" size="sm" asChild>
+                            <Button variant="secondary" size="sm" asChild>
                                 <Link href="/dashboard">Dashboard</Link>
                             </Button>
                             <form action={logout}>
@@ -98,13 +105,7 @@ export function NavBar() {
             {isMobileMenuOpen && (
                 <div className="md:hidden border-t border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                     <nav className="flex flex-col space-y-2 px-4 py-4">
-                        <Link href="/how-it-works"
-                            className="text-base font-medium text-foreground hover:text-primary transition-colors"
-                            onClick={handleMobileLinkClick}
-                        >
-                            How It Works
-                        </Link>
-                        {isLoggedIn ? (
+                        {isLoggedIn && (
                             <>
                                 <Link href="/dashboard"
                                     className="text-base font-medium text-foreground hover:text-primary transition-colors"
@@ -112,14 +113,29 @@ export function NavBar() {
                                 >
                                     Dashboard
                                 </Link>
+                                <Link href="/how-it-works"
+                                    className="text-base font-medium text-foreground hover:text-primary transition-colors"
+                                    onClick={handleMobileLinkClick}
+                                >
+                                    How It Works
+                                </Link>
                                 <form action={logout}>
-                                    <Button variant="ghost" size="sm" className="w-full justify-start px-0 text-base font-medium text-foreground hover:text-primary">Log out</Button>
+                                    <Button variant="ghost" size="sm" className="w-full justify-start px-0 text-base font-medium text-foreground hover:text-primary">Log Out</Button>
                                 </form>
                             </>
-                        ) : (
-                            <Button size="sm" asChild onClick={handleMobileLinkClick}>
-                                <Link href="/login">Get Started</Link>
-                            </Button>
+                        )}
+                        {!isLoggedIn && (
+                            <>
+                                <Link href="/how-it-works"
+                                    className="text-base font-medium text-foreground hover:text-primary transition-colors"
+                                    onClick={handleMobileLinkClick}
+                                >
+                                    How It Works
+                                </Link>
+                                <Button size="sm" asChild onClick={handleMobileLinkClick}>
+                                    <Link href="/login">Get Started</Link>
+                                </Button>
+                            </>
                         )}
                     </nav>
                 </div>

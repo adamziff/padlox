@@ -1,7 +1,6 @@
 'use client'
 
 import { FormEvent, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { loginOrRegister } from '../actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -22,7 +21,6 @@ export function LoginForm() {
     const [emailSent, setEmailSent] = useState(false)
     const [sentTo, setSentTo] = useState<string>('')
     const [error, setError] = useState<string | null>(null)
-    const router = useRouter() // Keep useRouter here if needed for client-side actions later
 
     async function handleSubmit(e: FormEvent<HTMLFormElement>) {
         e.preventDefault()

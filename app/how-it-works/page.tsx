@@ -17,7 +17,7 @@ export default function HowItWorksPage() {
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <Video className="w-6 h-6 text-primary" />
-                                1. Record a Clear Video
+                                1. Record a Video
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -34,7 +34,7 @@ export default function HowItWorksPage() {
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <Mic className="w-6 h-6 text-primary" />
-                                2. Narrate While Recording (Crucial!)
+                                2. Narrate While Recording
                             </CardTitle>
                         </CardHeader>
                         <CardContent>

@@ -893,7 +893,10 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                         <>
                             <Button
                                 size="lg"
-                                className="rounded-full w-16 h-16 p-0 relative hover:bg-primary/90 transition-colors"
+                                className={cn(
+                                    "rounded-full w-16 h-16 p-0 relative transition-colors",
+                                    recorderStatus !== 'recording' && "bg-transparent hover:bg-neutral-500/20"
+                                )}
                                 onClick={() => capturePhoto(false)}
                                 data-testid="capture-button"
                                 disabled={isInitializing || (recorderStatus === 'error' && !!errorMessage)}
@@ -914,9 +917,12 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
                         <>
                             <Button
                                 size="lg"
-                                className="rounded-full w-16 h-16 p-0 relative hover:bg-primary/90 transition-colors"
+                                className={cn(
+                                    "rounded-full w-16 h-16 p-0 relative transition-colors",
+                                    recorderStatus !== 'recording' && "bg-transparent hover:bg-neutral-500/20"
+                                )}
                                 onClick={recorderStatus === 'recording' ? stopRecording : startRecording}
-                                variant={recorderStatus === 'recording' ? 'destructive' : 'default'}
+                                variant={recorderStatus === 'recording' ? 'destructive' : 'ghost'}
                                 data-testid="capture-button"
                                 disabled={
                                     isInitializing ||
