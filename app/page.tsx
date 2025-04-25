@@ -228,7 +228,7 @@ const PolicyholderContent = ({ isLoggedIn }: { isLoggedIn: boolean }) => (
           <div className="flex flex-col justify-center space-y-4">
             <div className="space-y-2">
               <h1 className="text-4xl font-bold tracking-tighter sm:text-5xl xl:text-6xl/none bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                Be Prepared. Inventory Your Home Effortlessly.
+                Be Prepared. Inventory Effortlessly.
               </h1>
               <p className="max-w-[700px] mx-auto text-muted-foreground md:text-xl">
                 Disaster can strike anytime. A complete home inventory is your key to a faster, smoother insurance claim. Padlox makes it simple with video and AI.
@@ -277,7 +277,7 @@ const PolicyholderContent = ({ isLoggedIn }: { isLoggedIn: boolean }) => (
           <div className="grid gap-1">
             <h3 className="text-xl font-bold flex items-center"><Layers className="mr-2 h-5 w-5 text-primary" />Ensure Fair Payouts</h3>
             <p className="text-muted-foreground">
-              Don&apos;t rely on memory. A detailed inventory ensures you claim the full value for all your belongings, preventing underpayment.
+              Don&apos;t rely on memory. A detailed inventory ensures you claim the full value for all your belongings, reducing the risk of underpayment.
             </p>
           </div>
           <div className="grid gap-1">
@@ -289,7 +289,7 @@ const PolicyholderContent = ({ isLoggedIn }: { isLoggedIn: boolean }) => (
           <div className="grid gap-1">
             <h3 className="text-xl font-bold flex items-center"><FileText className="mr-2 h-5 w-5 text-primary" />Simplify Estate Planning</h3>
             <p className="text-muted-foreground">
-              An up-to-date inventory makes settling estates and distributing assets much easier for your loved ones.
+              An up-to-date inventory makes settling estates and distributing assets easier for you and your loved ones.
             </p>
           </div>
         </div>
