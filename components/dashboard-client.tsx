@@ -90,7 +90,15 @@ export function DashboardClient({
             <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
                 {uploads.map((upload, index) => (
                     <div key={index} className="bg-background text-foreground border border-border rounded-lg p-3 shadow-md text-sm">
-                        <p className="font-semibold">{upload.status === 'uploading' ? 'Uploading...' : upload.status === 'processing' ? 'Processing...' : upload.status === 'transcribing' ? 'Transcribing...' : upload.status === 'error' ? 'Error' : 'Complete'}</p>
+                        <p className="font-semibold">{
+                            upload.status === 'uploading' ? 'Uploading...' :
+                                upload.status === 'processing' ? 'Processing video...' :
+                                    upload.status === 'preparing_transcription' ? 'Preparing transcription...' :
+                                        upload.status === 'transcribing' ? 'Transcribing...' :
+                                            upload.status === 'analyzing' ? 'Analyzing item...' :
+                                                upload.status === 'error' ? 'Error' :
+                                                    'Complete'
+                        }</p>
                         <p>{upload.message}</p>
                     </div>
                 ))}

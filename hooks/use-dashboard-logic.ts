@@ -23,7 +23,7 @@ const calculateTotals = (assets: AssetWithMuxData[]) => {
 // Re-declare the ActiveUpload type here or import if moved to a shared types file
 type ActiveUpload = {
     assetId: string;
-    status: 'uploading' | 'processing' | 'transcribing' | 'complete' | 'error';
+    status: 'uploading' | 'processing' | 'preparing_transcription' | 'transcribing' | 'analyzing' | 'complete' | 'error';
     message: string;
     startTime: number;
 }
@@ -121,6 +121,35 @@ export function useDashboardLogic({
                         const newAsset = payload.new as AssetWithMuxData;
                         console.log(`[REALTIME HANDLER] INSERT detected: ${newAsset.id}`);
 
+                        // Check if this INSERT corresponds to a completed analysis for an item asset
+                        // Find the original upload notification based on the source_video_id
+                        if (newAsset.media_type === 'item' && newAsset.source_video_id) {
+                            setActiveUploads(prev => {
+                                let uploadIdToRemove: string | null = null;
+                                console.log(`[REALTIME INSERT] Checking for removal. Item ${newAsset.id} source ${newAsset.source_video_id}. Current uploads:`, JSON.stringify(prev));
+                                // Iterate through existing uploads to find the one matching the source video ID.
+                                // Remove it if found, regardless of current status ('preparing', 'transcribing', 'analyzing') 
+                                // because the item insert signifies the end of the relevant pipeline.
+                                for (const [uploadId, upload] of Object.entries(prev)) {
+                                    if (upload.assetId === newAsset.source_video_id) {
+                                        uploadIdToRemove = uploadId;
+                                        console.log(`[REALTIME HANDLER] Analysis/Item generation complete for source video ${newAsset.source_video_id} (item ${newAsset.id} inserted). Removing notification ${uploadIdToRemove} (status was ${upload.status}).`);
+                                        break; // Found the one we need to remove
+                                    }
+                                }
+
+                                // If we found the matching upload notification, remove it
+                                if (uploadIdToRemove) {
+                                    const next = { ...prev };
+                                    delete next[uploadIdToRemove];
+                                    return next;
+                                }
+                                
+                                // If no matching 'analyzing' notification found, return previous state
+                                return prev;
+                            });
+                        }
+
                         updateStateAndTotals(prevAssets => {
                              // Check if the asset already exists to prevent duplicates from rapid events
                             if (prevAssets.some(asset => asset.id === newAsset.id)) {
@@ -160,19 +189,18 @@ export function useDashboardLogic({
                             if (updatedAsset.mux_processing_status === 'ready') {
                                 setActiveUploads(prev => {
                                     const newUploads = { ...prev };
+                                    let needsUpdate = false;
                                     Object.keys(newUploads).forEach(uploadId => {
-                                        if (newUploads[uploadId].assetId === updatedAsset.id) {
-                                            // Check transcript status *before* deciding to remove or update notification
-                                            if (updatedAsset.transcript_processing_status === 'pending' || updatedAsset.transcript_processing_status === 'processing') {
-                                                newUploads[uploadId].status = 'transcribing';
-                                                newUploads[uploadId].message = 'Video ready. Generating transcript...';
-                                            } else {
-                                                // Transcript already done or not applicable, remove notification
-                                                delete newUploads[uploadId];
-                                            }
+                                        // Find the notification linked to the updated asset ID and currently in 'processing' state
+                                        if (newUploads[uploadId].assetId === updatedAsset.id && newUploads[uploadId].status === 'processing') {
+                                            // Mux video is ready. Move to preparing transcription state.
+                                            console.log(`[REALTIME UPDATE] Mux ready for ${updatedAsset.id}. Moving to 'preparing_transcription'.`);
+                                            newUploads[uploadId].status = 'preparing_transcription';
+                                            newUploads[uploadId].message = 'Video ready. Preparing transcription...';
+                                            needsUpdate = true;
                                         }
                                     });
-                                    return newUploads;
+                                    return needsUpdate ? newUploads : prev;
                                 });
                                 // Fetch thumbnail if ready and token not already present
                                 if (updatedAsset.mux_playback_id && !thumbnailTokens[updatedAsset.mux_playback_id]) {
@@ -181,24 +209,69 @@ export function useDashboardLogic({
                                     fetchThumbnailToken(updatedAsset.mux_playback_id, timestamp);
                                 }
                             }
+                            // Handle if Mux status goes to 'error' (matching the defined type)
+                            else if (updatedAsset.mux_processing_status === 'error') { 
+                                setActiveUploads(prev => {
+                                    const newUploads = { ...prev };
+                                    let needsUpdate = false;
+                                    Object.keys(newUploads).forEach(uploadId => {
+                                         if (newUploads[uploadId].assetId === updatedAsset.id && 
+                                             (newUploads[uploadId].status === 'processing' || newUploads[uploadId].status === 'uploading' || newUploads[uploadId].status === 'preparing_transcription')) { // Also catch errors during preparing
+                                             console.error(`[REALTIME UPDATE] Mux processing failed for ${updatedAsset.id}. Setting notification to error.`);
+                                             newUploads[uploadId].status = 'error';
+                                             // Use a generic message as mux_error_message isn't typed
+                                             newUploads[uploadId].message = `Video processing failed: Mux reported an error.`; 
+                                             needsUpdate = true;
+                                         }
+                                    });
+                                    return needsUpdate ? newUploads : prev;
+                                });
+                            }
                         }
 
                         // Update transcript processing status display
                         if ('transcript_processing_status' in updatedAsset && 'transcript_processing_status' in oldAsset &&
                             updatedAsset.transcript_processing_status !== oldAsset.transcript_processing_status) {
                             console.log(`[REALTIME UPDATE] Transcript status changed for asset ${updatedAsset.id}: `, `${oldAsset.transcript_processing_status} → ${updatedAsset.transcript_processing_status}`);
-                            // Remove notification if transcript completes/errors *while* it was in 'transcribing' state
-                            if (updatedAsset.transcript_processing_status === 'completed' || updatedAsset.transcript_processing_status === 'error') {
-                                setActiveUploads(prev => {
-                                    const newUploads = { ...prev };
-                                    Object.keys(newUploads).forEach(uploadId => {
-                                        if (newUploads[uploadId].assetId === updatedAsset.id && newUploads[uploadId].status === 'transcribing') {
-                                            delete newUploads[uploadId];
+
+                            setActiveUploads(prev => {
+                                const newUploads = { ...prev };
+                                let needsUpdate = false;
+                                Object.keys(newUploads).forEach(uploadId => {
+                                    if (newUploads[uploadId].assetId === updatedAsset.id) {
+                                        const currentStatus = newUploads[uploadId].status;
+
+                                        // Transition from Preparing to Transcribing
+                                        if (currentStatus === 'preparing_transcription' && updatedAsset.transcript_processing_status === 'processing') {
+                                            console.log(`[REALTIME UPDATE] Asset ${updatedAsset.id} starting transcription.`);
+                                            newUploads[uploadId].status = 'transcribing';
+                                            newUploads[uploadId].message = 'Transcription in progress...';
+                                            needsUpdate = true;
                                         }
-                                    });
-                                    return newUploads;
+                                        // Transition from Transcribing to Analyzing
+                                        else if (currentStatus === 'transcribing' && updatedAsset.transcript_processing_status === 'completed') {
+                                            console.log(`[REALTIME UPDATE] Asset ${updatedAsset.id} transcription complete, moving to analyzing.`);
+                                            newUploads[uploadId].status = 'analyzing';
+                                            newUploads[uploadId].message = 'Transcription complete. Analyzing item...';
+                                            needsUpdate = true;
+                                        }
+                                        // Handle Transcription Error (from preparing or transcribing)
+                                        else if ((currentStatus === 'preparing_transcription' || currentStatus === 'transcribing') && updatedAsset.transcript_processing_status === 'error') {
+                                            console.error(`[REALTIME UPDATE] Asset ${updatedAsset.id} transcription failed. Setting notification to error.`);
+                                            newUploads[uploadId].status = 'error';
+                                            newUploads[uploadId].message = `Transcription failed: ${updatedAsset.transcript_error || 'Unknown error'}`;
+                                            needsUpdate = true;
+                                        }
+                                        // Handle Analysis completion (covered by INSERT handler, but keep the race condition check)
+                                        else if (currentStatus === 'analyzing' && updatedAsset.media_type === 'item' && updatedAsset.is_processed) {
+                                             console.log(`[REALTIME UPDATE] Analysis likely completed for ${updatedAsset.id} based on UPDATE, removing notification.`);
+                                             delete newUploads[uploadId]; // Remove directly here
+                                             needsUpdate = true;
+                                        }
+                                    }
                                 });
-                            }
+                                return needsUpdate ? newUploads : prev;
+                            });
                         }
 
                         updateStateAndTotals(prevAssets => {
@@ -284,7 +357,12 @@ export function useDashboardLogic({
                     }
                     setActiveUploads(prev => ({
                         ...prev,
-                        [uploadId]: { ...prev[uploadId], assetId: asset.id, status: 'processing', message: 'Video uploaded. Processing is happening in the background...' }
+                        [uploadId]: { 
+                            ...prev[uploadId], 
+                            assetId: asset.id, 
+                            status: 'processing', 
+                            message: 'Analyzing video and transcript (usually 10-30 seconds)'
+                        }
                     }));
                 }
                 const uploadResponse = await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
@@ -433,7 +511,14 @@ export function useDashboardLogic({
 
     // Handle clicking on an asset
     const handleAssetClick = useCallback((asset: AssetWithMuxData, event: React.MouseEvent) => {
-        if (asset.media_type === 'video' && asset.mux_processing_status === 'preparing') return;
+        // Ignore clicks on source video assets (only items/images should open modal)
+        if (asset.media_type === 'video') {
+            console.log(`Clicked on video asset ${asset.id}, ignoring click for modal.`);
+            return; 
+        }
+        // Ignore clicks if Mux video is still preparing (redundant check, but safe)
+        if (asset.mux_asset_id && asset.mux_processing_status === 'preparing') return;
+        
         if (isSelectionMode) {
             toggleAssetSelection(asset.id, event);
         } else {
@@ -512,32 +597,6 @@ export function useDashboardLogic({
             }
         });
     }, [activeUploads]);
-
-    // Check for and remove notifications for assets that become ready (Mux or transcript)
-    useEffect(() => {
-        const uploadsToRemove: string[] = [];
-        Object.entries(activeUploads).forEach(([uploadId, upload]) => {
-            if (!upload.assetId) return;
-            const matchingAsset = assets.find(asset => asset.id === upload.assetId);
-            if (matchingAsset) {
-                const isMuxReady = 'mux_processing_status' in matchingAsset && matchingAsset.mux_processing_status === 'ready';
-                const isTranscriptDone = 'transcript_processing_status' in matchingAsset && (matchingAsset.transcript_processing_status === 'completed' || matchingAsset.transcript_processing_status === 'error');
-
-                // Remove if Mux is ready AND (transcript is done OR transcript wasn't processing)
-                if (isMuxReady && (isTranscriptDone || upload.status !== 'transcribing')) {
-                    uploadsToRemove.push(uploadId);
-                }
-            }
-        });
-
-        if (uploadsToRemove.length > 0) {
-            setActiveUploads(prev => {
-                const newUploads = { ...prev };
-                uploadsToRemove.forEach(id => { delete newUploads[id]; });
-                return newUploads;
-            });
-        }
-    }, [assets, activeUploads]);
 
     // Handler to toggle selection mode
     const handleToggleSelectionMode = useCallback(() => {

@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils"; // Import cn from the utility file
 
-export type Persona = 'insurer' | 'policyholder';
+export type Persona = 'insurer' | 'homeowner';
 
 interface PersonaToggleProps {
     initialPersona?: Persona;
@@ -12,7 +12,7 @@ interface PersonaToggleProps {
 }
 
 export function PersonaToggle({
-    initialPersona = 'policyholder',
+    initialPersona = 'homeowner',
     onPersonaChange
 }: PersonaToggleProps) {
     const [activePersona, setActivePersona] = useState<Persona>(initialPersona);
@@ -32,14 +32,14 @@ export function PersonaToggle({
             <Button
                 variant="ghost" // Use ghost to allow full background control via className
                 size="sm"
-                onClick={() => handleToggle('policyholder')}
+                onClick={() => handleToggle('homeowner')}
                 className={cn(
                     baseButtonClasses,
                     "rounded-r-none border-r-0", // Adjust borders for adjacency
-                    activePersona === 'policyholder' ? activeClasses : inactiveClasses
+                    activePersona === 'homeowner' ? activeClasses : inactiveClasses
                 )}
             >
-                For Policyholders
+                For Homeowners
             </Button>
             <Button
                 variant="ghost"
