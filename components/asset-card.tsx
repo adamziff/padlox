@@ -94,7 +94,7 @@ export function AssetCard({
                                 <SpinnerIcon />
                             </span>
                         </div>
-                        <p className="text-sm text-muted-foreground">Video analysis in progress...</p>
+                        <p className="text-sm text-muted-foreground">Analyzing video (usually 10-30 seconds)...</p>
                     </div>
                 </div>
             ) : hasError ? (
