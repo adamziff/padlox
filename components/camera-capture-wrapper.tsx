@@ -27,70 +27,66 @@ interface CameraCaptureWrapperProps {
 export function CameraCaptureWrapper(props: CameraCaptureWrapperProps) {
     const [isMounted, setIsMounted] = useState(false)
 
-    // Clear any lingering permissions in case browser is caching them
+    // Effect to handle mounting and attempt cleanup on unmount
     useEffect(() => {
-        // Function to clear camera permissions by requesting and immediately stopping
-        const clearCameraPermissions = async () => {
-            try {
-                // Request and immediately stop camera access to clear any previous permissions
-                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                    // Immediately stop all tracks
-                    stream.getTracks().forEach(track => track.stop());
-                }
-            } catch (err) {
-                // Ignore errors - this is just a proactive cleanup
-                console.log('Ignored cleanup error:', err);
-            }
-        };
-
-        // Mount cleanup - only run once when component mounts
+        // On mount, set state to true
         setIsMounted(true);
+        console.log("CameraCaptureWrapper Mounted");
 
         // Cleanup function for when component unmounts
         return () => {
             setIsMounted(false);
+            console.log("CameraCaptureWrapper Unmounting");
 
-            // Try to force clear any lingering camera usage
+            // Attempt to force clear any lingering camera usage proactively.
+            // This is a best-effort approach as direct stream access isn't available here.
             const attemptForceCameraStop = async () => {
                 try {
-                    if (navigator.mediaDevices) {
-                        // Try to access the device list to reset permissions
-                        await navigator.mediaDevices.enumerateDevices();
-                        // If on Chrome, you can use a technique to reset the permissions state
-                        if (navigator.userAgent.includes('Chrome')) {
-                            clearCameraPermissions();
-                        }
+                    // Check if mediaDevices and getUserMedia are available
+                    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                        console.log("Wrapper Unmount: Attempting proactive cleanup");
+                        // Briefly request video access to potentially release holds from other contexts
+                        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                        // Immediately stop all tracks from this temporary stream
+                        stream.getTracks().forEach(track => track.stop());
+                        console.log("Wrapper Unmount: Proactive cleanup stream stopped.");
                     }
                 } catch (e) {
-                    // Ignore errors during cleanup
-                    console.log('Ignored force cleanup error:', e);
+                    // Ignore errors during this proactive cleanup attempt
+                    console.warn('Wrapper Unmount: Ignored error during proactive cleanup:', e);
                 }
             };
 
             // Run the cleanup attempt
             attemptForceCameraStop();
         };
-    }, []);
+    }, []); // Empty dependency array ensures this runs only once on mount and unmount
+
+    // Handlers now simply forward the calls after ensuring the component unmounts
+    // (CameraCapture's internal cleanup handles the stream/recorder)
 
     const handleCapture = (file: File) => {
-        // Unmount the camera component immediately after capture
+        console.log("Wrapper: handleCapture called");
+        // Immediately trigger unmount logic for the wrapper/dynamic import
         setIsMounted(false);
-        // Then call the onCapture handler with a small delay to ensure cleanup happens first
-        setTimeout(() => props.onCapture(file), 10);
+        // Call the parent's onCapture handler
+        props.onCapture(file);
     };
 
     const handleClose = () => {
-        // Unmount the camera component immediately
+        console.log("Wrapper: handleClose called");
+        // Immediately trigger unmount logic for the wrapper/dynamic import
         setIsMounted(false);
-        // Then call the onClose handler with a small delay to ensure cleanup happens first
-        setTimeout(props.onClose, 10);
+        // Call the parent's onClose handler
+        props.onClose();
     };
 
+    // Only render CameraCapture if the component is mounted client-side
     if (!isMounted) {
         return null;
     }
 
+    // Render the dynamically imported CameraCapture component
     return (
         <CameraCapture
             onCapture={handleCapture}
