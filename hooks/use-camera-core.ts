@@ -10,7 +10,9 @@ interface UseCameraCoreProps {
     facingMode: 'user' | 'environment';
     videoRef: React.RefObject<HTMLVideoElement | null>;
     canvasRef: React.RefObject<HTMLCanvasElement | null>;
-    onCaptureSuccess: (file: File) => void; // Callback when capture (photo/video) is successful and cleanup starts
+    onCaptureSuccess: (file: File) => void; // Callback when photo capture completes
+    streamingUpload?: boolean;          // true to stream chunks to Mux instead of one-shot file
+    onStreamComplete?: () => void;     // Callback when streaming upload completes
 }
 
 export function useCameraCore({
@@ -18,6 +20,8 @@ export function useCameraCore({
     videoRef,
     canvasRef,
     onCaptureSuccess,
+    streamingUpload = false,
+    onStreamComplete,
 }: UseCameraCoreProps) {
     const [recorderStatus, setRecorderStatus] = useState<'idle' | 'recording' | 'stopping' | 'error'>('idle');
     const [isInitializing, setIsInitializing] = useState(true);
@@ -29,9 +33,67 @@ export function useCameraCore({
     // Internal Refs for core logic
     const streamRef = useRef<MediaStream | null>(null);
     const mediaRecorderRef = useRef<MediaRecorderHelper>(new MediaRecorderHelper());
+    const nativeRecorderRef = useRef<MediaRecorder | null>(null);
     const chunks = useRef<BlobPart[]>([]);
     const isInitializingRef = useRef(false); // Prevent race conditions during init
     const isMountedRef = useRef(true); // Track mount status for async operations
+
+    // --- Streaming upload state ---
+    const uploadUrlRef = useRef<string | null>(null);
+    const nextByteStartRef = useRef<number>(0);
+    const activeUploadsRef = useRef<number>(0);
+    const bufferRef = useRef<Blob>(new Blob());
+    const CHUNK_SIZE = 8 * 1024 * 1024;
+    const maxRetries = 3;
+    const lockName = 'mux-upload-lock';
+
+    const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+    async function requestUploadUrl() {
+        const metadata = { name: `Video - ${new Date().toISOString()}` };
+        const correlationId = `stream_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const res = await fetch('/api/mux/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ metadata, correlationId })
+        });
+        if (!res.ok) throw new Error(`Mux upload init failed: ${res.status}`);
+        const data = await res.json();
+        uploadUrlRef.current = data.uploadUrl;
+    }
+
+    async function uploadChunk(chunk: Blob, isFinal: boolean) {
+        // wait final in-flight uploads if final chunk
+        if (isFinal) {
+            while (activeUploadsRef.current > 0) await delay(100);
+        }
+        const start = nextByteStartRef.current;
+        const end = start + chunk.size - 1;
+        const total = isFinal ? end + 1 : '*';
+        const headers = {
+            'Content-Length': String(chunk.size),
+            'Content-Range': `bytes ${start}-${end}/${total}`
+        };
+        let attempt = 0;
+        let done = false;
+        activeUploadsRef.current++;
+        // sequential lock
+        await navigator.locks.request(lockName, async () => {
+            while (attempt < maxRetries && !done) {
+                try {
+                    const res = await fetch(uploadUrlRef.current!, { method: 'PUT', headers, body: chunk });
+                    if (res.ok || res.status === 308) done = true;
+                    else throw new Error(`Status ${res.status}`);
+                } catch (e) {
+                    attempt++;
+                    if (attempt < maxRetries) await delay(attempt * 1000);
+                    else throw e;
+                }
+            }
+        });
+        activeUploadsRef.current--;
+        nextByteStartRef.current = end + 1;
+    }
 
     // === Core Cleanup Logic ===
     const performFullCleanup = useCallback(async (source?: string) => {
@@ -253,21 +315,58 @@ export function useCameraCore({
         }
     }, [facingMode, videoRef, canvasRef, performFullCleanup, onCaptureSuccess]); // Dependencies
 
-    const startRecording = useCallback(() => {
+    const startRecording = useCallback(async () => {
         if (recorderStatus !== 'idle' || isInitializing || !streamRef.current || !isMountedRef.current || actualMimeType === "unsupported") {
             console.error(`useCameraCore: Cannot start recording. Status: ${recorderStatus}, Init: ${isInitializing}, Stream: ${!!streamRef.current}, Mime: ${actualMimeType}`);
             return;
         }
         console.log("useCameraCore: Starting recording...");
         setRecorderStatus('recording');
-        chunks.current = []; // Clear previous chunks
-
+        if (streamingUpload) {
+            // 1) Initialize direct upload URL and DB record
+            await requestUploadUrl();
+            // 2) Reset buffer/tracking
+            bufferRef.current = new Blob([], { type: actualMimeType });
+            nextByteStartRef.current = 0;
+            activeUploadsRef.current = 0;
+            // 3) Create and store native MediaRecorder
+            const recorder = new MediaRecorder(streamRef.current!, {
+                mimeType: actualMimeType,
+                videoBitsPerSecond: 5_000_000,
+                audioBitsPerSecond: 128_000
+            });
+            nativeRecorderRef.current = recorder;
+            // 4) Handle incoming chunks
+            recorder.ondataavailable = async (e: BlobEvent) => {
+                if (e.data.size > 0) {
+                    bufferRef.current = new Blob([bufferRef.current, e.data], { type: actualMimeType });
+                    while (bufferRef.current.size >= CHUNK_SIZE) {
+                        const chunk = bufferRef.current.slice(0, CHUNK_SIZE);
+                        bufferRef.current = bufferRef.current.slice(CHUNK_SIZE);
+                        await uploadChunk(chunk, false);
+                    }
+                }
+            };
+            // 5) On stop, flush final chunk and signal complete
+            recorder.onstop = async () => {
+                console.log('useCameraCore: Streaming stop event');
+                if (bufferRef.current.size > 0) {
+                    await uploadChunk(bufferRef.current, true);
+                }
+                streamRef.current?.getTracks().forEach(t => t.stop());
+                setRecorderStatus('idle');
+                console.log('useCameraCore: Streaming upload complete');
+                onStreamComplete?.();
+            };
+            // 6) Begin recording with 500ms timeslice
+            recorder.start(500);
+            return;
+        }
         const onDataAvailable = (e: BlobEvent) => {
             if (e.data.size > 0) {
                 chunks.current.push(e.data);
             }
         };
-
         const success = mediaRecorderRef.current.startRecording(onDataAvailable, actualMimeType);
 
         if (!success) {
@@ -279,11 +378,17 @@ export function useCameraCore({
         } else {
              console.log("useCameraCore: Recording started successfully.");
         }
-    }, [recorderStatus, isInitializing, actualMimeType]); // Dependencies
+    }, [recorderStatus, isInitializing, actualMimeType, streamingUpload]); // Dependencies
 
     const stopRecording = useCallback(async () => {
         if (recorderStatus !== 'recording' || !isMountedRef.current) {
             console.warn(`useCameraCore: Stop recording called in invalid state (${recorderStatus}) or unmounted.`);
+            return;
+        }
+        if (streamingUpload) {
+            console.log('useCameraCore: Stopping streaming recorder');
+            nativeRecorderRef.current?.stop();
+            nativeRecorderRef.current = null;
             return;
         }
         console.log("useCameraCore: Stopping recording...");
@@ -306,14 +411,14 @@ export function useCameraCore({
 
             console.log("useCameraCore: Video recorded, starting cleanup...");
             await performFullCleanup('stopRecording_success'); // Clean up before calling callback
-            onCaptureSuccess(file); // Notify parent component
+            onCaptureSuccess(file); // Notify parent component for photo mode
         } else {
             console.error("useCameraCore: Failed to create recorded blob after stopping.");
             setErrorMessage("Failed to save recording.");
             setRecorderStatus('error');
             await performFullCleanup('stopRecording_blobError'); // Cleanup on blob failure
         }
-    }, [recorderStatus, performFullCleanup, onCaptureSuccess]); // Dependencies
+    }, [recorderStatus, performFullCleanup, onCaptureSuccess, streamingUpload]); // Dependencies
 
     // === Effects ===
 

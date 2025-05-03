@@ -39,24 +39,29 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
 
     // --- Core Camera Logic Hook --- 
     const {
-        recorderStatus,     // 'idle' | 'recording' | 'stopping' | 'error'
-        isInitializing,     // boolean
-        isCleaning,         // boolean
-        errorMessage,       // string | null
-        hasFrontCamera,     // boolean
-        takePhoto,          // function
-        startRecording,     // function
-        stopRecording,      // function
-        initializeCamera,   // function (for retry)
+        recorderStatus,
+        isInitializing,
+        isCleaning,
+        errorMessage,
+        hasFrontCamera,
+        takePhoto,
+        startRecording,
+        stopRecording,
+        initializeCamera,
     } = useCameraCore({
         facingMode,
-        videoRef, // Pass the RefObject<HTMLVideoElement | null>
-        canvasRef, // Pass the RefObject<HTMLCanvasElement | null>
+        videoRef,
+        canvasRef,
         onCaptureSuccess: (file) => {
-            console.log("CameraCapture: onCaptureSuccess triggered");
-            // Cleanup is handled within the hook *before* this is called
+            // Photo capture: forward file to parent
+            console.log("CameraCapture: photo captured, invoking onCapture");
             onCapture(file);
-            // No need to set state here, the hook manages recorderStatus/isCleaning
+        },
+        streamingUpload: mode === 'video',
+        onStreamComplete: () => {
+            // Video streaming complete: simply close
+            console.log("CameraCapture: video stream complete, closing capture UI");
+            onClose();
         }
     });
 
