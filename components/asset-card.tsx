@@ -32,7 +32,8 @@ export function AssetCard({
     onRetryMedia,
     onImageError,
 }: AssetCardProps) {
-    const isProcessingVideo = asset.media_type === 'video' && asset.mux_processing_status === 'preparing';
+    // Always show loading spinner for video assets until transcription finishes and items appear
+    const isProcessingVideo = asset.media_type === 'video';
     const isItem = asset.media_type === 'item';
     const isClickable = !isProcessingVideo;
 
@@ -45,9 +46,9 @@ export function AssetCard({
         // Stable key: Based on asset ID and timestamp (if applicable)
         imageKey = `${asset.id}-item-${itemTimestamp}`;
     } else if (asset.media_type === 'video' && asset.mux_playback_id && asset.mux_processing_status === 'ready') {
-        imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
-        // Stable key: Based on asset ID for videos
-        imageKey = `${asset.id}-video`;
+        // We do not load thumbnails for video assets; isProcessingVideo covers all videos
+        // imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
+        // imageKey = `${asset.id}-video`;
     } else if (asset.media_type === 'image') {
         imageUrl = asset.media_url;
         // Stable key: Based on asset ID for images
