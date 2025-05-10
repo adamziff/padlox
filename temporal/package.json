@@ -7,12 +7,16 @@
         "worker": "node lib/worker.js",
         "run-workflow": "node lib/run-workflow.js",
         "start": "npm run build && npm run worker",
-        "dev": "tsc --build --watch"
+        "dev": "tsc --build --watch",
+        "worker:env": "node start-worker.js",
+        "analyze-frame": "node analyze-frame.js"
     },
     "dependencies": {
+        "@supabase/supabase-js": "^2.41.0",
         "@temporalio/activity": "^1.11.7",
         "@temporalio/client": "^1.11.7",
         "@temporalio/worker": "^1.11.7",
-        "@temporalio/workflow": "^1.11.7"
+        "@temporalio/workflow": "^1.11.7",
+        "dotenv": "^16.4.5"
     }
 }

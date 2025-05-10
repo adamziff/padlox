@@ -37,8 +37,17 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const worker_1 = require("@temporalio/worker");
-const activities = __importStar(require("./activities/hello-activity"));
+const helloActivities = __importStar(require("./activities/hello-activity"));
+const frameAnalysisActivities = __importStar(require("./activities/analyze-frame-activity"));
 const path = __importStar(require("path"));
+const dotenv = __importStar(require("dotenv"));
+// Load environment variables from the parent Next.js project
+// This needs to happen before any activities are executed
+const envPath = path.resolve(process.cwd(), '../.env.local');
+dotenv.config({ path: envPath });
+console.log(`Loading environment variables from: ${envPath}`);
+console.log('Supabase URL configured:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'Yes' : 'No');
+console.log('Supabase service key configured:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'Yes' : 'No');
 // Register the namespace and worker
 async function run() {
     console.log('Starting Padlox Temporal worker...');
@@ -47,7 +56,10 @@ async function run() {
         const worker = await worker_1.Worker.create({
             // Use a more reliable path resolution
             workflowsPath: path.resolve(__dirname, 'workflows'),
-            activities,
+            activities: {
+                ...helloActivities,
+                ...frameAnalysisActivities
+            },
             taskQueue: 'padlox-task-queue',
         });
         // Start listening to the task queue
