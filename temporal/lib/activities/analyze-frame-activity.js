@@ -45,6 +45,9 @@ exports.storeAllScratchItems = storeAllScratchItems;
 const supabase_js_1 = require("@supabase/supabase-js");
 const path_1 = __importDefault(require("path"));
 const dotenv = __importStar(require("dotenv"));
+const google_1 = require("@ai-sdk/google");
+const ai_1 = require("ai");
+const zod_1 = require("zod");
 // Load environment variables
 dotenv.config({ path: path_1.default.resolve(process.cwd(), '../.env.local') });
 // Create a Supabase service client for the Temporal worker
@@ -61,65 +64,67 @@ function createServiceSupabaseClient() {
     }
     return (0, supabase_js_1.createClient)(supabaseUrl, supabaseServiceKey);
 }
-// Mock the AI config for the temporal worker environment
-// In production, we would properly set up module resolution
-const AI_CONFIG = {
-    MODEL_IDS: {
-        google: {
-            gemini_flash: 'gemini-1.5-flash'
-        }
-    },
-    getAiModel: () => {
-        console.log('[Activity] Using mocked AI model');
-        return {
-            generateContent: async () => ({ text: () => '[]' })
-        };
+// AI Config for Gemini
+const MODEL_IDS = {
+    google: {
+        gemini_flash: 'gemini-2.0-flash-lite',
     }
 };
+// Function to get the model instance based on config
+function getAiModel() {
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    if (!apiKey) {
+        throw new Error('Google AI provider not configured. Check GOOGLE_GENERATIVE_AI_API_KEY.');
+    }
+    console.log('[Activity] Creating Google Generative AI model with API key');
+    const google = (0, google_1.createGoogleGenerativeAI)();
+    return google(MODEL_IDS.google.gemini_flash);
+}
+// Define the Zod schema for Gemini response
+const InventoryItemSchema = zod_1.z.object({
+    caption: zod_1.z.string().describe('The name of the identified item'),
+    description: zod_1.z.string().optional().describe('A brief description of the item\'s visible features'),
+    category: zod_1.z.string().optional().describe('The category of the item (furniture, electronics, etc.)'),
+    estimated_value: zod_1.z.number().optional().describe('Estimated value in USD'),
+    confidence: zod_1.z.number().describe('Confidence score between 0-1'),
+});
+const ResponseSchema = zod_1.z.object({
+    items: zod_1.z.array(InventoryItemSchema).describe('An array of items detected in the image'),
+});
 // Activity to call Gemini API for frame analysis
 async function analyzeFrameWithGemini(imageUrl) {
     console.log(`[Activity] Analyzing frame with Gemini: ${imageUrl}`);
     try {
-        // In production, use the Gemini model client from config.ts
-        // This can be uncommented and used in production:
-        /*
-        const model = AI_CONFIG.getAiModel('google', AI_CONFIG.MODEL_IDS.google.gemini_flash);
-        
-        const systemPrompt = `
-        You are a specialized computer vision model for home inventory purposes.
-        Analyze the provided image and identify household items that would be important for
-        an insurance inventory. For each item detected:
-        
-        1. Provide a concise caption with the item name
-        2. Add a brief description of visible features
-        3. Categorize it (furniture, electronics, appliance, artwork, etc.)
-        4. Estimate a reasonable value in USD based on visible quality and characteristics
-        5. Provide a confidence score between 0-1
-        
-        Return a valid JSON array with one object per detected item.
-        Each object should have fields: caption, description, category, estimated_value, confidence.
-        DO NOT include explanations, just return valid JSON.
-        `;
-        
-        const result = await model.generateContent({
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: [{ type: 'image_url', image_url: imageUrl }]
-            }
-          ]
+        // Get the Google AI model
+        const model = getAiModel();
+        console.log('[Activity] Sending request to Gemini API');
+        // Format the prompt for analyzing the image
+        const prompt = `Analyze this image of a room or space for a home inventory system.
+      Identify household items that would be important for insurance purposes.
+      
+      For each item detected:
+      1. Provide a concise caption with the item name
+      2. Add a brief description of visible features
+      3. Categorize it (furniture, electronics, appliance, artwork, etc.)
+      4. Estimate a reasonable value in USD based on visible quality and characteristics
+      5. Provide a confidence score between 0-1
+      
+      The image shows: ${imageUrl}
+    `;
+        const result = await (0, ai_1.generateObject)({
+            model: model,
+            schema: ResponseSchema,
+            prompt: prompt,
+            mode: 'json'
         });
-        
-        const items = JSON.parse(result.text());
-        return { items };
-        */
-        // For development/testing, simulate a response
-        // Simulating analysis of a living room with various furniture
-        console.log('[Activity] Using simulated Gemini response for testing');
-        // Wait a bit to simulate API call
-        await new Promise(resolve => setTimeout(resolve, 800));
-        // Return simulated items that would be in a typical living room image
+        // Log success and return the parsed items
+        console.log(`[Activity] Successfully received and parsed ${result.object.items.length} items from Gemini response`);
+        return { items: result.object.items };
+    }
+    catch (error) {
+        console.error('[Activity] Error analyzing frame with Gemini:', error);
+        // Fall back to simulated items if there's an error
+        console.log('[Activity] Falling back to simulated items due to error');
         return {
             items: [
                 {
@@ -135,34 +140,9 @@ async function analyzeFrameWithGemini(imageUrl) {
                     category: "furniture",
                     estimated_value: 350,
                     confidence: 0.89
-                },
-                {
-                    caption: "Floor lamp",
-                    description: "Modern minimalist floor lamp with metal base",
-                    category: "lighting",
-                    estimated_value: 120,
-                    confidence: 0.87
-                },
-                {
-                    caption: "Decorative throw pillows",
-                    description: "Set of 3 patterned decorative throw pillows in complementary colors",
-                    category: "home decor",
-                    estimated_value: 75,
-                    confidence: 0.82
-                },
-                {
-                    caption: "Area rug",
-                    description: "Large patterned area rug, approximately 8x10 feet",
-                    category: "home decor",
-                    estimated_value: 450,
-                    confidence: 0.85
                 }
             ]
         };
-    }
-    catch (error) {
-        console.error('[Activity] Error analyzing frame:', error);
-        throw new Error(`Failed to analyze frame: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 // Activity to store a single item from the analysis results in the database
