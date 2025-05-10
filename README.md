@@ -159,7 +159,10 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ## Temporal Workflow Integration
 
-The application integrates with Temporal for workflow management. A simple "Hello" workflow has been implemented as a proof of concept.
+The application integrates with Temporal for workflow management. Two workflows have been implemented:
+
+1. A simple "Hello" workflow for testing basic Temporal infrastructure
+2. A frame analysis workflow that uses Gemini 1.5 Flash for image analysis
 
 ### Running the Temporal Worker
 
@@ -177,7 +180,7 @@ To run the Temporal worker:
 
    This will build the TypeScript files and start the worker in a single command.
 
-### Testing the Workflow
+### Testing the Hello Workflow
 
 1. Start the Next.js development server:
    ```bash
@@ -192,5 +195,35 @@ To run the Temporal worker:
    - The workflow starting: `[Workflow] Starting helloVideoWorkflow for User`
    - The activity executing: `[Activity] Hello, User!`
    - The workflow completing: `[Workflow] Workflow completed with result: Hello, User!`
+
+### Testing the Frame Analysis Workflow
+
+1. Make sure the worker is running:
+   ```bash
+   npm run temporal:dev
+   ```
+
+2. Run the test script with sample parameters:
+   ```bash
+   npm run temporal:analyze-frame
+   ```
+
+   You can provide optional parameters (assetId and imageUrl):
+   ```bash
+   npm run temporal:analyze-frame -- 123e4567-e89b-12d3-a456-426614174000 https://example.com/your-image.jpg
+   ```
+
+3. Check the terminal running the worker - you should see logs indicating:
+   - The workflow starting: `[Workflow] Starting analyzeFrame workflow for asset: ...`
+   - The activity executing: `[Activity] Analyzing frame with Gemini: ...`
+   - The database activity executing: `[Activity] Storing scratch item for asset: ...`
+   - The workflow completing with the scratch item ID
+
+4. You can also call the API endpoint directly:
+   ```bash
+   curl -X POST http://localhost:3000/api/temporal/analyze-frame \
+     -H "Content-Type: application/json" \
+     -d '{"assetId": "123e4567-e89b-12d3-a456-426614174000", "imageUrl": "https://example.com/your-image.jpg"}'
+   ```
 
 5. You can view all workflows in the Temporal Web UI at http://localhost:8080

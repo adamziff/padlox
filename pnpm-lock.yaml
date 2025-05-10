@@ -89,9 +89,6 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
-      dotenv:
-        specifier: ^16.4.7
-        version: 16.4.7
       drizzle-orm:
         specifier: ^0.38.4
         version: 0.38.4(@opentelemetry/api@1.9.0)(@types/react@19.0.10)(postgres@3.4.5)(react@19.0.0)
@@ -3008,10 +3005,6 @@ packages:
 
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
-
-  dotenv@16.4.7:
-    resolution: {integrity: sha512-47qPchRCykZC03FhkYAhrvwU4xDBFIj1QPqaarj6mdM/hgUzfPHcpkHJOn3mJAufFeeAxAzeGsr5X0M4k6fLZQ==}
-    engines: {node: '>=12'}
 
   drizzle-orm@0.38.4:
     resolution: {integrity: sha512-s7/5BpLKO+WJRHspvpqTydxFob8i1vo2rEx4pY6TGY7QSMuUfWUuzaY0DIpXCkgHOo37BaFC+SJQb99dDUXT3Q==}
@@ -9575,8 +9568,6 @@ snapshots:
       dom-serializer: 2.0.0
       domelementtype: 2.3.0
       domhandler: 5.0.3
-
-  dotenv@16.4.7: {}
 
   drizzle-orm@0.38.4(@opentelemetry/api@1.9.0)(@types/react@19.0.10)(postgres@3.4.5)(react@19.0.0):
     optionalDependencies:

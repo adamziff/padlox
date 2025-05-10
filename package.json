@@ -17,7 +17,10 @@
     "temporal:build": "cd temporal && npm run build",
     "temporal:worker": "cd temporal && node lib/worker.js",
     "temporal:run": "cd temporal && node lib/run-workflow.js",
-    "temporal:dev": "npm run temporal:build && npm run temporal:worker"
+    "temporal:analyze-frame": "cd temporal && node lib/run-frame-analysis.js",
+    "temporal:dev": "npm run temporal:build && npm run temporal:worker",
+    "temporal:worker:env": "cd temporal && npm run worker:env",
+    "temporal:analyze": "cd temporal && npm run analyze-frame"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.6",
