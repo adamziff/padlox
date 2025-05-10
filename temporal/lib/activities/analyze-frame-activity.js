@@ -1,22 +1,22 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function (o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
     if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
+        desc = { enumerable: true, get: function () { return m[k]; } };
     }
     Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
+}) : (function (o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     o[k2] = m[k];
 }));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function (o, v) {
     Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
+}) : function (o, v) {
     o["default"] = v;
 });
 var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
+    var ownKeys = function (o) {
         ownKeys = Object.getOwnPropertyNames || function (o) {
             var ar = [];
             for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
@@ -123,25 +123,8 @@ async function analyzeFrameWithGemini(imageUrl) {
     }
     catch (error) {
         console.error('[Activity] Error analyzing frame with Gemini:', error);
-        // Fall back to simulated items if there's an error
-        console.log('[Activity] Falling back to simulated items due to error');
         return {
-            items: [
-                {
-                    caption: "Brown leather sofa",
-                    description: "Three-seater brown leather sofa with tufted back cushions",
-                    category: "furniture",
-                    estimated_value: 1200,
-                    confidence: 0.92
-                },
-                {
-                    caption: "Wooden coffee table",
-                    description: "Rectangular wooden coffee table with storage shelf",
-                    category: "furniture",
-                    estimated_value: 350,
-                    confidence: 0.89
-                }
-            ]
+            items: []
         };
     }
 }
@@ -154,15 +137,15 @@ async function storeScratchItem(item) {
         const { data, error } = await supabase
             .from('scratch_items')
             .insert({
-            image_url: item.image_url,
-            caption: item.caption,
-            description: item.description,
-            category: item.category,
-            estimated_value: item.estimated_value,
-            confidence: item.confidence,
-            bounding_box: item.bounding_box,
-            sequence_order: item.sequence_order
-        })
+                image_url: item.image_url,
+                caption: item.caption,
+                description: item.description,
+                category: item.category,
+                estimated_value: item.estimated_value,
+                confidence: item.confidence,
+                bounding_box: item.bounding_box,
+                sequence_order: item.sequence_order
+            })
             .select('id')
             .single();
         if (error) {

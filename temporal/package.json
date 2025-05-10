@@ -6,7 +6,7 @@
         "build": "tsc --build",
         "worker": "node lib/worker.js",
         "run-workflow": "node lib/run-workflow.js",
-        "start": "npm run build && npm run worker",
+        "start": "pnpm build && pnpm worker",
         "dev": "tsc --build --watch",
         "worker:env": "node start-worker.js",
         "analyze-frame": "node analyze-frame.js"

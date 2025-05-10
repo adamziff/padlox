@@ -31,7 +31,7 @@ if (fs.existsSync(envPath)) {
 // Build the TypeScript files
 console.log('Building TypeScript...');
 try {
-    execSync('npm run build', { stdio: 'inherit' });
+    execSync('pnpm build', { stdio: 'inherit' });
     console.log('TypeScript build successful');
 } catch (error) {
     console.error('Failed to build TypeScript:', error);
