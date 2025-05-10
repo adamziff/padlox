@@ -1,0 +1,251 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Padlox Real-time Frame Analysis
+
+This Cursor rule provides guidance for implementing the real-time frame analysis feature in Padlox.
+
+<rule>
+name: padlox_realtime_analysis
+description: Guidelines for implementing real-time frame analysis in Padlox
+filters:
+  - type: file_extension
+    pattern: "\\.tsx?$|\\.jsx?$"
+  - type: path
+    pattern: "(utils/frame|hooks/use-camera|components/camera)"
+actions:
+  - type: suggest
+    message: |
+      ## Real-time Frame Analysis Architecture
+      
+      The system captures video frames at regular intervals during recording, sends them to a backend
+      API for analysis, and later merges the visual analysis with the audio transcript.
+      
+      ### Key Components:
+      
+      1. **Frame Grabber**: Extracts frames from video at specified intervals (default: 2 seconds)
+      2. **Frame Sender**: Manages WebSocket connections and frame transmission
+      3. **Backend API**: Processes frames, uploads to S3, and queues for analysis
+      4. **Database**: Stores frame metadata and analysis results in `scratch_items` table
+      5. **Consolidation**: Merges visual analysis with audio transcript after recording
+      
+      ### Implementation Flow:
+      
+      ```
+      START RECORDING
+          ↓
+      INITIALIZE FRAME SENDER (if realTimeAnalysis=true)
+          ↓
+      EVERY N SECONDS → CAPTURE FRAME → SEND TO API
+          ↓
+      API → UPLOAD TO S3 → ENQUEUE FOR PROCESSING
+          ↓
+      WORKER → VISION MODEL → STORE RESULTS
+          ↓
+      END RECORDING → MARK scratch_done=true
+          ↓
+      AFTER TRANSCRIPT READY → MERGE ANALYSIS
+      ```
+      
+      ### Config Options:
+      
+      - `NEXT_PUBLIC_FRAME_RATE_SEC`: Interval between frames (default: 2 seconds)
+      - `NEXT_PUBLIC_FRAME_WS_URL`: API endpoint for frames (default: '/api/frame')
+</rule>
+
+## Implementation Guidelines
+
+### 1. Client-Side Components
+
+#### Frame Grabber (`utils/frame-grabber.ts`)
+```typescript
+/**
+ * Captures a frame from a video element or stream
+ * @param videoSource - Video element or MediaStream
+ * @param size - Target width for the captured frame (height keeps aspect ratio)
+ * @param quality - JPEG quality (0-1)
+ * @returns Promise<Blob> - JPEG blob of the captured frame
+ */
+export async function grabPreviewFrame(
+  videoSource: HTMLVideoElement | MediaStream,
+  size: number = 512,
+  quality: number = 0.85
+): Promise<Blob> {
+  // Create canvas, draw current frame, and return as JPEG blob
+}
+```
+
+#### Frame Sender (`utils/frame-sender.ts`)
+```typescript
+/**
+ * Manages sending frames to the backend at regular intervals
+ */
+export class FrameSender {
+  /**
+   * Create a new FrameSender
+   * @param videoSource - Video element or MediaStream
+   * @param options - Configuration options
+   */
+  constructor(videoSource: HTMLVideoElement | MediaStream, options: {
+    wsUrl: string;          // WebSocket URL
+    sessionId: string;      // Session ID
+    frameRateSec?: number;  // Seconds between frames
+    frameSize?: number;     // Target frame width
+    quality?: number;       // JPEG quality
+    onFrameCaptured?: (frame: Blob) => void;  // Optional callback
+    onError?: (error: Error) => void;         // Error handler
+  }) { }
+  
+  /**
+   * Start sending frames
+   */
+  public start(): void { }
+  
+  /**
+   * Stop sending frames and cleanup
+   */
+  public stop(): void { }
+}
+```
+
+#### Camera Hook (`hooks/use-camera-core.ts`)
+Extend the existing hook with:
+```typescript
+interface UseCameraCoreProps {
+  // Existing props...
+  realTimeAnalysis?: boolean;  // Enable frame analysis
+}
+
+// In startRecording:
+if (realTimeAnalysis && sessionId) {
+  // Create and start FrameSender
+  frameSenderRef.current = new FrameSender(videoRef.current!, {
+    wsUrl: process.env.NEXT_PUBLIC_FRAME_WS_URL || '/api/frame',
+    sessionId,
+    frameRateSec: parseInt(process.env.NEXT_PUBLIC_FRAME_RATE_SEC || '2', 10)
+  });
+  frameSenderRef.current.start();
+}
+
+// In stopRecording:
+if (frameSenderRef.current) {
+  frameSenderRef.current.stop();
+  frameSenderRef.current = null;
+}
+```
+
+#### Camera UI (`components/camera-capture.tsx`)
+```typescript
+interface CameraCaptureProps {
+  // Existing props...
+  realTimeAnalysis?: boolean;  // Enable frame analysis
+}
+
+// Pass to useCameraCore:
+realTimeAnalysis: mode === 'video' && realTimeAnalysis
+```
+
+### 2. Server-Side Components
+
+#### Frame API (`app/api/frame/route.ts`)
+```typescript
+// HTTP-based API (fallback for WebSockets)
+export async function POST(req: NextRequest) {
+  // Get session ID from query params
+  // Get frame data from request
+  // Upload to S3
+  // Enqueue for processing
+}
+```
+
+#### Database Schema
+
+```sql
+-- Add scratch_done flag to sessions
+ALTER TABLE sessions 
+ADD COLUMN scratch_done BOOLEAN DEFAULT FALSE;
+
+-- Create scratch_items table
+CREATE TABLE scratch_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES sessions(id),
+  captured_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  caption TEXT,
+  image_url TEXT NOT NULL,
+  confidence REAL
+);
+
+-- Create index
+CREATE INDEX idx_scratch_items_session ON scratch_items(session_id);
+
+-- Add realtime notifications
+CREATE FUNCTION notify_scratch_item_inserted()...
+CREATE TRIGGER scratch_item_inserted_trigger...
+```
+
+### 3. Worker Processor (`temporal/activities/caption-frame.ts`)
+
+```typescript
+export const captionFrame = defineActivity<{
+  session_id: string;
+  frame_url: string;
+}, void>(async ({ session_id, frame_url }) => {
+  // 1. Call Vision API for frame caption
+  const { caption, confidence } = await callVisionModel(frame_url);
+  
+  // 2. Insert result to database
+  await supabase
+    .from('scratch_items')
+    .insert({
+      session_id,
+      caption,
+      image_url: frame_url,
+      confidence
+    });
+});
+```
+
+### 4. Consolidation (`temporal/workflows/consolidate-session.ts`)
+
+```typescript
+// After transcript is ready:
+export async function ConsolidateSessionWorkflow({ sessionId }: Props) {
+  // 1. Get transcript
+  const transcript = await executeActivity(getTranscript, { sessionId });
+  
+  // 2. Wait for scratch items
+  await executeActivity(waitForScratchDone, { sessionId });
+  
+  // 3. Get all scratch items
+  const scratchItems = await executeActivity(getScratchItems, { sessionId });
+  
+  // 4. Merge transcript and scratch items with LLM
+  const mergedItems = await executeActivity(mergeItems, { 
+    transcript, 
+    scratchItems
+  });
+  
+  // 5. Store final items
+  await executeActivity(storeFinalItems, { 
+    sessionId,
+    items: mergedItems 
+  });
+}
+```
+
+## Environment Configuration
+
+```bash
+# Frame Analysis Config
+NEXT_PUBLIC_FRAME_RATE_SEC=2
+NEXT_PUBLIC_FRAME_WS_URL=/api/frame
+
+# AWS Configuration
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=your-access-key-id
+AWS_SECRET_ACCESS_KEY=your-secret-access-key
+S3_BUCKET_NAME=padlox-frames
+SQS_FRAME_QUEUE_URL=https://sqs.us-east-1.amazonaws.com/your-account-id/padlox-frame-queue
+``` 

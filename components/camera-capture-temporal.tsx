@@ -5,8 +5,8 @@ import { useMediaQuery } from '@/hooks/use-media-query'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 
-// Import the hook
-import { useCameraCore } from '@/hooks/use-camera-core';
+// Import the Temporal-integrated hook
+import { useCameraTemporal } from '@/hooks/use-camera-temporal';
 
 // Import sub-components
 import { CameraHeader } from './camera/camera-header';
@@ -15,17 +15,17 @@ import { CameraControls } from './camera/camera-controls';
 import { CameraOverlays } from './camera/camera-overlays';
 
 // Keep the component props interface
-export interface CameraCaptureProps {
+export interface CameraCaptureTemporal {
     onCapture: (file: File) => void
     onClose: () => void
     realTimeAnalysis?: boolean // Flag to enable real-time frame analysis (default: true)
 }
 
-export function CameraCapture({
+export function CameraCaptureTemporal({
     onCapture,
     onClose,
     realTimeAnalysis = true // Enable by default
-}: CameraCaptureProps) {
+}: CameraCaptureTemporal) {
     // --- State managed by the UI component --- 
     const [mode, setMode] = useState<'photo' | 'video'>('video')
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
@@ -42,7 +42,7 @@ export function CameraCapture({
     const isDarkMode = resolvedTheme === 'dark'
     const isMobile = useMediaQuery('(max-width: 768px)')
 
-    // --- Core Camera Logic Hook --- 
+    // --- Core Camera Logic Hook with Temporal Integration --- 
     const {
         recorderStatus,
         isInitializing,
@@ -50,10 +50,10 @@ export function CameraCapture({
         errorMessage,
         hasFrontCamera,
         takePhoto,
-        startRecording,
+        startRecording, // This will now also start the Temporal workflow
         stopRecording,
         initializeCamera,
-    } = useCameraCore({
+    } = useCameraTemporal({
         facingMode,
         videoRef,
         canvasRef,
@@ -113,9 +113,9 @@ export function CameraCapture({
         if (recorderStatus === 'recording') {
             stopRecording();
         } else if (recorderStatus === 'idle') {
-            startRecording();
+            startRecording(); // This will also start the Temporal workflow
         }
-    }, [recorderStatus, startRecording, stopRecording]); // Dependencies on hook state/functions
+    }, [recorderStatus, startRecording, stopRecording]);
 
     // Handle file upload initiated by the user
     const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -182,7 +182,7 @@ export function CameraCapture({
             )}
             role="dialog"
             aria-modal="true"
-            aria-label="Camera Capture"
+            aria-label="Camera Capture (with Temporal)"
         >
             {/* Hidden file input for video uploads */}
             <input
@@ -248,4 +248,4 @@ export function CameraCapture({
             </div>
         </div>
     )
-}
+} 

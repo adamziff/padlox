@@ -1,9 +1,11 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Plus, ListFilter } from 'lucide-react';
-import React from 'react';
+import { Plus, ListFilter, Zap } from 'lucide-react';
+import React, { useState } from 'react';
 import { Input } from "@/components/ui/input"
+import { triggerHelloWorkflow } from '@/utils/temporal-client';
+import { toast } from 'sonner';
 
 interface DashboardHeaderProps {
     hasAssets: boolean;
@@ -28,10 +30,38 @@ export function DashboardHeader({
     searchTerm,
     onSearchChange
 }: DashboardHeaderProps) {
+    const [isRunningWorkflow, setIsRunningWorkflow] = useState(false);
+
+    const handleRunWorkflow = async () => {
+        setIsRunningWorkflow(true);
+        try {
+            await triggerHelloWorkflow();
+            toast.success('Temporal workflow triggered successfully!', {
+                description: 'Check server logs for workflow results'
+            });
+        } catch (error) {
+            console.error('Error triggering workflow:', error);
+            toast.error('Failed to trigger workflow');
+        } finally {
+            setIsRunningWorkflow(false);
+        }
+    };
 
     return (
         <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-            <h1 className="text-2xl font-semibold tracking-tight">Inventory Dashboard</h1>
+            <div className="flex items-center gap-4">
+                <h1 className="text-2xl font-semibold tracking-tight">Inventory Dashboard</h1>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRunWorkflow}
+                    disabled={isRunningWorkflow}
+                    className="hidden md:flex" // Hide on mobile
+                >
+                    <Zap className="mr-2 h-4 w-4 text-yellow-500" />
+                    {isRunningWorkflow ? 'Running...' : 'Run Hello Workflow'}
+                </Button>
+            </div>
 
             <div className="flex flex-col md:flex-row items-center gap-2 w-full md:w-auto">
                 <Input
@@ -65,6 +95,16 @@ export function DashboardHeader({
                         </>
                     ) : (
                         <>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handleRunWorkflow}
+                                disabled={isRunningWorkflow}
+                                className="col-span-1 md:hidden" // Only show on mobile
+                            >
+                                <Zap className="mr-2 h-4 w-4 text-yellow-500" />
+                                {isRunningWorkflow ? 'Running...' : 'Run Hello Workflow'}
+                            </Button>
                             <Button
                                 variant="outline"
                                 size="sm"

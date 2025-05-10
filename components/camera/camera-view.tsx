@@ -1,6 +1,6 @@
 import React, { LegacyRef } from 'react';
 import { cn } from '@/lib/utils';
-import { MicIcon } from 'lucide-react'; // Keep MicIcon here if narration hint stays
+import { MicIcon, SparklesIcon } from 'lucide-react';
 
 interface CameraViewProps {
     videoRef: LegacyRef<HTMLVideoElement | null>; // Allow null in LegacyRef type if needed, though useRef usually handles this
@@ -10,9 +10,10 @@ interface CameraViewProps {
     recorderStatus: 'idle' | 'recording' | 'stopping' | 'error';
     countdown: number | null;
     errorMessage: string | null; // Needed to hide video on error
+    realTimeAnalysis?: boolean; // Flag indicating real-time analysis is active
 }
 
-export function CameraView({ // Renamed to CameraView
+export function CameraView({
     videoRef,
     canvasRef,
     facingMode,
@@ -20,6 +21,7 @@ export function CameraView({ // Renamed to CameraView
     recorderStatus,
     countdown,
     errorMessage,
+    realTimeAnalysis = false,
 }: CameraViewProps) {
     return (
         <div className="relative bg-black flex-1 flex items-center justify-center overflow-hidden">
@@ -39,6 +41,15 @@ export function CameraView({ // Renamed to CameraView
 
             {/* Hidden Canvas for Photo Capture */}
             <canvas ref={canvasRef} className="hidden" />
+
+            {/* Real-time Analysis Indicator */}
+            {mode === 'video' && recorderStatus === 'recording' && realTimeAnalysis && (
+                <div className="absolute top-4 right-4 z-20 px-3 py-1.5 bg-black/70 text-white rounded-md text-center shadow-lg text-xs sm:text-sm animate-pulse">
+                    <p className="flex items-center gap-1">
+                        <SparklesIcon className="w-3.5 h-3.5 flex-shrink-0" /> Real-time analysis active
+                    </p>
+                </div>
+            )}
 
             {/* Narration Reminder Overlay */}
             {mode === 'video' && recorderStatus === 'recording' && (

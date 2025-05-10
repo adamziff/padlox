@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MediaRecorderHelper } from '@/utils/media-recorder-helper'; // Adjust path as needed
+import { FrameSender } from '@/utils/frame-sender';
 
 // Define preferred and fallback MIME types (can be constants)
 const PREFERRED_MIME_TYPE = 'video/mp4; codecs="avc1.42E01E, mp4a.40.2"';
@@ -12,6 +13,7 @@ interface UseCameraCoreProps {
     canvasRef: React.RefObject<HTMLCanvasElement | null>;
     onCaptureSuccess: (file: File) => void; // Callback when photo capture completes
     streamingUpload?: boolean;          // true to stream chunks to Mux instead of one-shot file
+    realTimeAnalysis?: boolean;        // true to enable real-time frame capturing for analysis
     onStreamComplete?: () => void;     // Callback when streaming upload completes
 }
 
@@ -21,6 +23,7 @@ export function useCameraCore({
     canvasRef,
     onCaptureSuccess,
     streamingUpload = false,
+    realTimeAnalysis = false,
     onStreamComplete,
 }: UseCameraCoreProps) {
     const [recorderStatus, setRecorderStatus] = useState<'idle' | 'recording' | 'stopping' | 'error'>('idle');
@@ -37,6 +40,7 @@ export function useCameraCore({
     const chunks = useRef<BlobPart[]>([]);
     const isInitializingRef = useRef(false); // Prevent race conditions during init
     const isMountedRef = useRef(true); // Track mount status for async operations
+    const frameSenderRef = useRef<FrameSender | null>(null);
 
     // --- Streaming upload state ---
     const uploadUrlRef = useRef<string | null>(null);
@@ -47,7 +51,56 @@ export function useCameraCore({
     const maxRetries = 3;
     const lockName = 'mux-upload-lock';
 
+    // --- Session state ---
+    const sessionIdRef = useRef<string | null>(null);
+
     const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+    // === Core Cleanup Logic ===
+    // Cleanup function to stop streams and release camera resources
+    const performFullCleanup = useCallback(async (source = 'unspecified') => {
+        if (!isMountedRef.current) return; // Skip cleanup if unmounted
+        console.log(`useCameraCore: Starting cleanup (source: ${source})`);
+        setIsCleaning(true);
+        
+        // Stop frame sender if active
+        if (frameSenderRef.current) {
+            frameSenderRef.current.stop();
+            frameSenderRef.current = null;
+        }
+
+        try {
+            // Continue with original cleanup
+            if (nativeRecorderRef.current) {
+                console.log("useCameraCore: Stopping native recorder");
+                if (nativeRecorderRef.current.state !== 'inactive') {
+                    try {
+                        nativeRecorderRef.current.stop();
+                    } catch (e) {
+                        console.warn("useCameraCore: Error stopping native recorder:", e);
+                    }
+                }
+                nativeRecorderRef.current = null;
+            }
+
+            await mediaRecorderRef.current.cleanup();
+            streamRef.current = null;
+            chunks.current = [];
+
+            if (videoRef.current) {
+                videoRef.current.srcObject = null;
+            }
+
+            console.log("useCameraCore: Cleanup complete");
+        } catch (e) {
+            console.error("useCameraCore: Error during cleanup:", e);
+            // Continue despite errors - best effort
+        } finally {
+            if (isMountedRef.current) {
+                setIsCleaning(false);
+            }
+        }
+    }, [videoRef]);
 
     async function requestUploadUrl() {
         const metadata = { name: `Video - ${new Date().toISOString()}` };
@@ -60,6 +113,8 @@ export function useCameraCore({
         if (!res.ok) throw new Error(`Mux upload init failed: ${res.status}`);
         const data = await res.json();
         uploadUrlRef.current = data.uploadUrl;
+        sessionIdRef.current = data.sessionId || null;
+        return data;
     }
 
     async function uploadChunk(chunk: Blob, isFinal: boolean) {
@@ -94,39 +149,6 @@ export function useCameraCore({
         activeUploadsRef.current--;
         nextByteStartRef.current = end + 1;
     }
-
-    // === Core Cleanup Logic ===
-    const performFullCleanup = useCallback(async (source?: string) => {
-        console.log(`useCameraCore: performFullCleanup called from: ${source || 'unknown'}`);
-        if (!isMountedRef.current) {
-            console.log("useCameraCore: Cleanup skipped, component unmounted.");
-            return;
-        }
-        setIsCleaning(true);
-        setRecorderStatus('idle'); // Reset status during cleanup
-
-        // Immediate stop for quick resource release
-        mediaRecorderRef.current.immediateCleanup();
-
-        // Stop video playback and clear srcObject
-        if (videoRef.current) {
-            videoRef.current.pause();
-            videoRef.current.srcObject = null;
-            console.log("useCameraCore: Video source cleared.");
-        }
-        streamRef.current = null; // Clear internal stream reference
-
-        // Perform thorough async cleanup
-        await mediaRecorderRef.current.cleanup();
-        console.log("useCameraCore: MediaRecorderHelper cleanup finished.");
-
-        if (isMountedRef.current) {
-            setIsCleaning(false);
-            console.log("useCameraCore: Cleanup state reset.");
-        } else {
-            console.log("useCameraCore: Cleanup finished after unmount.");
-        }
-    }, [videoRef]); // Dependency on videoRef
 
     // === Core Initialization Logic ===
     const initializeCamera = useCallback(async () => {
@@ -179,7 +201,8 @@ export function useCameraCore({
                 console.error("useCameraCore: Setup failed:", result.error);
                 setErrorMessage(result.error);
                 setRecorderStatus('error');
-            } else if (result.previewStream && videoRef.current) {
+            }
+            else if (result.previewStream && videoRef.current) {
                 console.log("useCameraCore: Setup successful, assigning stream to video element.");
                 streamRef.current = result.previewStream;
                 videoRef.current.srcObject = result.previewStream;
@@ -214,29 +237,23 @@ export function useCameraCore({
                         };
                     });
 
-                     // Check mount status again after play attempt
-                     if (!isMountedRef.current) {
-                        console.warn("useCameraCore: Component unmounted after video play attempt.");
-                        isInitializingRef.current = false;
-                        return;
-                    }
-
-                    console.log("useCameraCore: Play promise resolved. Setting MIME type...");
-                    setErrorMessage(null); // Clear previous errors
-                    // Determine best supported MIME type
+                    console.log("useCameraCore: Camera initialized successfully.");
+                    
+                    // Check for MIME type support
                     if (MediaRecorder.isTypeSupported(PREFERRED_MIME_TYPE)) {
                         setActualMimeType(PREFERRED_MIME_TYPE);
+                        console.log(`useCameraCore: Using preferred MIME type: ${PREFERRED_MIME_TYPE}`);
                     } else if (MediaRecorder.isTypeSupported(SIMPLER_MP4_MIME_TYPE)) {
                         setActualMimeType(SIMPLER_MP4_MIME_TYPE);
+                        console.log(`useCameraCore: Using simpler MP4 MIME type: ${SIMPLER_MP4_MIME_TYPE}`);
                     } else if (MediaRecorder.isTypeSupported(FALLBACK_MIME_TYPE)) {
                         setActualMimeType(FALLBACK_MIME_TYPE);
+                        console.log(`useCameraCore: Using fallback MIME type: ${FALLBACK_MIME_TYPE}`);
                     } else {
-                        console.error("useCameraCore: No supported MIME types for recording.");
-                        setErrorMessage("Video recording format not supported.");
-                        setActualMimeType(FALLBACK_MIME_TYPE); // Keep a fallback default
-                        setRecorderStatus('error'); // Indicate recording won't work
+                        console.warn("useCameraCore: No supported MIME types found.");
+                        setActualMimeType("unsupported");
                     }
-
+                    
                 } catch (playError) {
                      if (!isMountedRef.current) { // Check before setting state
                         console.warn("useCameraCore: Component unmounted during play error handling.");
@@ -268,7 +285,7 @@ export function useCameraCore({
              isInitializingRef.current = false; // Release lock
             console.log("useCameraCore: initializeCamera END");
         }
-    }, [facingMode, videoRef, performFullCleanup]); // Dependencies
+    }, [facingMode, videoRef, performFullCleanup]); // Dependency on videoRef
 
     // === Core Capture Logic ===
     const takePhoto = useCallback(async () => {
@@ -305,7 +322,7 @@ export function useCameraCore({
             } else {
                 throw new Error("Canvas toBlob returned null");
             }
-        } catch (error) { // Catch errors during photo capture
+        } catch (error) {
              console.error('useCameraCore: Error taking photo:', error);
             if (isMountedRef.current) {
                 setErrorMessage("Failed to capture photo.");
@@ -322,9 +339,11 @@ export function useCameraCore({
         }
         console.log("useCameraCore: Starting recording...");
         setRecorderStatus('recording');
+
+        // Setup streaming upload if requested
         if (streamingUpload) {
             // 1) Initialize direct upload URL and DB record
-            await requestUploadUrl();
+            const uploadData = await requestUploadUrl();
             // 2) Reset buffer/tracking
             bufferRef.current = new Blob([], { type: actualMimeType });
             nextByteStartRef.current = 0;
@@ -358,10 +377,32 @@ export function useCameraCore({
                 console.log('useCameraCore: Streaming upload complete');
                 onStreamComplete?.();
             };
+            
             // 6) Begin recording with 500ms timeslice
             recorder.start(500);
+            
+            // 7) If real-time analysis is enabled, start frame sender
+            if (realTimeAnalysis && sessionIdRef.current) {
+                console.log('useCameraCore: Starting real-time frame analysis');
+                
+                // Create and start frame sender
+                const wsUrl = process.env.NEXT_PUBLIC_FRAME_WS_URL || '/api/frame';
+                frameSenderRef.current = new FrameSender(videoRef.current!, {
+                    wsUrl,
+                    sessionId: sessionIdRef.current,
+                    frameRateSec: parseInt(process.env.NEXT_PUBLIC_FRAME_RATE_SEC || '2', 10),
+                    onError: (error) => {
+                        console.warn('Frame sender error:', error);
+                        // We don't stop recording on frame sender error, just log it
+                    }
+                });
+                
+                frameSenderRef.current.start();
+            }
+            
             return;
         }
+
         const onDataAvailable = (e: BlobEvent) => {
             if (e.data.size > 0) {
                 chunks.current.push(e.data);
@@ -378,13 +419,21 @@ export function useCameraCore({
         } else {
              console.log("useCameraCore: Recording started successfully.");
         }
-    }, [recorderStatus, isInitializing, actualMimeType, streamingUpload]); // Dependencies
+    }, [recorderStatus, isInitializing, actualMimeType, streamingUpload, realTimeAnalysis]); // Dependencies
 
     const stopRecording = useCallback(async () => {
         if (recorderStatus !== 'recording' || !isMountedRef.current) {
             console.warn(`useCameraCore: Stop recording called in invalid state (${recorderStatus}) or unmounted.`);
             return;
         }
+        
+        // Stop frame sender if it's running
+        if (frameSenderRef.current) {
+            frameSenderRef.current.stop();
+            frameSenderRef.current = null;
+            console.log('useCameraCore: Frame sender stopped');
+        }
+        
         if (streamingUpload) {
             console.log('useCameraCore: Stopping streaming recorder');
             nativeRecorderRef.current?.stop();
@@ -431,29 +480,21 @@ export function useCameraCore({
             console.log("useCameraCore: Unmounting, performing immediate cleanup...");
             // Use immediate cleanup on unmount to release resources quickly
             mediaRecorderRef.current.immediateCleanup();
+            // Also stop frame sender if it's running
+            if (frameSenderRef.current) {
+                frameSenderRef.current.stop();
+                frameSenderRef.current = null;
+            }
         };
     }, []);
 
     // Initialize camera on mount and when facingMode changes
     useEffect(() => {
-        // Only initialize if mounted and videoRef.current exists
-        if (isMountedRef.current && videoRef.current) {
-            console.log(`useCameraCore: Effect triggered for initialization/facingMode change (${facingMode}).`);
+        if (videoRef.current && !isInitializingRef.current) {
+            console.log("useCameraCore: Auto initialization triggered.");
             initializeCamera();
-        } else {
-             console.log(`useCameraCore: Skipping initial camera init (mount status: ${isMountedRef.current}, videoRef: ${!!videoRef.current})`);
         }
-
-        // Cleanup function for this effect (runs when facingMode changes or unmounts)
-        return () => {
-             console.log(`useCameraCore: Cleanup function for facingMode effect (${facingMode}) running.`);
-             // Perform full cleanup when facingMode changes to ensure old stream is released
-             // The cleanup within initializeCamera handles the pre-setup cleanup.
-             // This ensures cleanup even if initializeCamera fails or exits early.
-             performFullCleanup('facingMode_effect_cleanup');
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [facingMode, videoRef]); // Rerun on facingMode change or if videoRef becomes available
+    }, [facingMode, initializeCamera]); // Rerun on facingMode change or if videoRef becomes available
         // NOTE: initializeCamera and performFullCleanup are stable due to useCallback with correct deps
 
     // Check for available camera devices
