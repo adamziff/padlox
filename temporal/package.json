@@ -9,7 +9,12 @@
         "start": "pnpm build && pnpm worker",
         "dev": "tsc --build --watch",
         "worker:env": "node start-worker.js",
-        "analyze-frame": "node analyze-frame.js"
+        "analyze-frame": "node analyze-frame.js",
+        "lambda:build": "node lambda-build.js",
+        "lambda:deploy": "pnpm lambda:build && aws lambda update-function-code --function-name padlox-frame-analysis --zip-file fileb://lambda-deploy.zip",
+        "lambda:test": "node lambda/test-local.js analyze",
+        "lambda:test:worker": "node lambda/test-local.js worker",
+        "lambda:test:all": "node lambda/test-local.js all"
     },
     "dependencies": {
         "@ai-sdk/google": "^1.2.7",
@@ -21,5 +26,10 @@
         "ai": "^4.3.1",
         "dotenv": "^16.4.5",
         "zod": "^3.24.2"
+    },
+    "devDependencies": {
+        "@types/aws-lambda": "^8.10.133",
+        "aws-lambda": "^1.0.7",
+        "typescript": "^5.8.3"
     }
 }

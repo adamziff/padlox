@@ -14,13 +14,13 @@
     "test:coverage": "vitest run --coverage",
     "test:ci": "vitest run && playwright test",
     "test:e2e:install": "playwright install",
-    "temporal:build": "cd temporal && npm run build",
+    "temporal:build": "cd temporal && pnpm build",
     "temporal:worker": "cd temporal && node lib/worker.js",
     "temporal:run": "cd temporal && node lib/run-workflow.js",
     "temporal:analyze-frame": "cd temporal && node lib/run-frame-analysis.js",
-    "temporal:dev": "npm run temporal:build && npm run temporal:worker",
-    "temporal:worker:env": "cd temporal && npm run worker:env",
-    "temporal:analyze": "cd temporal && npm run analyze-frame"
+    "temporal:dev": "pnpm temporal:build && pnpm temporal:worker",
+    "temporal:worker:env": "cd temporal && pnpm worker:env",
+    "temporal:analyze": "cd temporal && pnpm analyze-frame"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.6",

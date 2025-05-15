@@ -1,58 +1,47 @@
-import { NextResponse } from 'next/server';
+/**
+ * API route to trigger a Temporal frame analysis workflow
+ */
+
+import { NextRequest, NextResponse } from 'next/server';
 import { startFrameAnalysisWorkflow } from '@/temporal/src/client';
 
-interface AnalyzeFrameRequest {
-  assetId: string;
-  imageUrl: string;
-}
-
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const body = await request.json() as AnalyzeFrameRequest;
+    // Parse request body
+    const body = await req.json();
     const { assetId, imageUrl } = body;
     
     // Validate required parameters
-    if (!assetId) {
-      return NextResponse.json(
-        { success: false, message: 'Missing required parameter: assetId' },
-        { status: 400 }
-      );
-    }
-    
     if (!imageUrl) {
       return NextResponse.json(
-        { success: false, message: 'Missing required parameter: imageUrl' },
+        { error: 'Missing required parameter: imageUrl' },
         { status: 400 }
       );
     }
     
-    // Generate a unique workflowId
-    const workflowId = `analyze-frame-${assetId}-${Date.now()}`;
-    console.log(`Starting Temporal frame analysis workflow for asset: ${assetId}, ID: ${workflowId}`);
+    // Start the workflow
+    const workflowId = `analyze-frame-${Date.now()}`;
+    console.log(`Starting Temporal frame analysis workflow: ${workflowId}`);
     
-    // Start the workflow and handle its completion asynchronously
-    startFrameAnalysisWorkflow(assetId, imageUrl)
+    // Start the workflow and return immediately to match the Lambda behavior
+    startFrameAnalysisWorkflow(imageUrl)
       .then(itemIds => {
-        console.log(`Frame analysis workflow ${workflowId} completed successfully with ${itemIds.length} items identified`);
+        console.log(`Workflow ${workflowId} completed with ${itemIds.length} items identified`);
       })
       .catch(error => {
-        console.error(`Frame analysis workflow ${workflowId} failed:`, error);
+        console.error(`Workflow ${workflowId} failed:`, error);
       });
     
-    // Return immediately with acknowledgment
-    return NextResponse.json({ 
-      success: true, 
+    // Return success response
+    return NextResponse.json({
+      success: true,
       message: 'Frame analysis workflow started',
       workflowId
-    });
+    }, { status: 202 });
   } catch (error) {
-    console.error('Error triggering frame analysis workflow:', error);
+    console.error('Error starting workflow:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        message: 'Failed to trigger frame analysis workflow',
-        error: (error as Error).message 
-      }, 
+      { error: (error as Error).message || 'Unknown error' },
       { status: 500 }
     );
   }
