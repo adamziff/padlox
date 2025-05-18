@@ -22,6 +22,7 @@ const CameraCapture = dynamic(
 interface CameraCaptureWrapperProps {
     onCapture: (file: File) => void
     onClose: () => void
+    realTimeAnalysis?: boolean
 }
 
 export function CameraCaptureWrapper(props: CameraCaptureWrapperProps) {
@@ -31,7 +32,9 @@ export function CameraCaptureWrapper(props: CameraCaptureWrapperProps) {
     useEffect(() => {
         // On mount, set state to true
         setIsMounted(true);
-        console.log("CameraCaptureWrapper Mounted");
+        console.log("CameraCaptureWrapper Mounted", {
+            realTimeAnalysis: props.realTimeAnalysis
+        });
 
         // Cleanup function for when component unmounts
         return () => {
@@ -91,6 +94,7 @@ export function CameraCaptureWrapper(props: CameraCaptureWrapperProps) {
         <CameraCapture
             onCapture={handleCapture}
             onClose={handleClose}
+            realTimeAnalysis={props.realTimeAnalysis}
         />
     );
 }

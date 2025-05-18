@@ -6,6 +6,51 @@ export type Json =
     | { [key: string]: Json | undefined }
     | Json[]
 
+/**
+ * scratch_items: Table for storing frame-by-frame analysis data
+ */
+export interface ScratchItemsTable {
+    Row: {
+        id: string
+        session_id: string
+        captured_at: string
+        caption: string | null
+        description: string | null
+        category: string | null
+        estimated_value: number | null
+        image_url: string
+        confidence: number | null
+        bounding_box: Json | null
+        sequence_order: number | null
+    }
+    Insert: {
+        id?: string
+        session_id: string
+        captured_at?: string
+        caption?: string | null
+        description?: string | null
+        category?: string | null
+        estimated_value?: number | null
+        image_url: string
+        confidence?: number | null
+        bounding_box?: Json | null
+        sequence_order?: number | null
+    }
+    Update: {
+        id?: string
+        session_id?: string
+        captured_at?: string
+        caption?: string | null
+        description?: string | null
+        category?: string | null
+        estimated_value?: number | null
+        image_url?: string
+        confidence?: number | null
+        bounding_box?: Json | null
+        sequence_order?: number | null
+    }
+}
+
 export interface Database {
     public: {
         Tables: {
@@ -197,6 +242,7 @@ export interface Database {
                     payload?: Json
                 }
             }
+            scratch_items: ScratchItemsTable
         }
         Functions: {
             notify_transcript_ready: {

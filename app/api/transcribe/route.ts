@@ -17,10 +17,15 @@ export async function OPTIONS() {
  * 3. A manual request to transcribe a specific asset
  */
 export const POST = withAuth(async (request: Request) => {
+  console.log(`[Transcribe API] POST handler started at ${new Date().toISOString()}`);
+  console.log(`[Transcribe API] Request URL: ${request.url}`);
+  
   try {
     // Get request body
     const body = await request.json();
     const { assetId } = body;
+
+    console.log(`[Transcribe API] Processing request for assetId: ${assetId}`);
 
     if (!assetId) {
       return corsErrorResponse('Missing assetId', 400);
@@ -112,14 +117,14 @@ export const POST = withAuth(async (request: Request) => {
       const transcriptData = await transcribeAudioUrl(asset.mux_audio_url);
       
       // Extract plain text for easier searching/display
-      const plainText = extractParagraphText(transcriptData);
+      const transcriptText = extractParagraphText(transcriptData);
 
       // Update the asset with the transcription data
       const { error: updateError } = await supabase
         .from('assets')
         .update({
           transcript: transcriptData,
-          transcript_text: plainText,
+          transcript_text: transcriptText,
           transcript_processing_status: 'completed',
           transcript_error: null
         })
@@ -172,49 +177,71 @@ export const POST = withAuth(async (request: Request) => {
         console.error(`[Transcribe API] Error marking asset ${assetId} as source:`, markSourceError);
       }
 
-      // Send to AI for analysis AFTER saving transcript and marking as source
-      console.log(`[Transcribe API] Sending transcript for asset ${assetId} to analysis API...`);
-      const analysisApiUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/api/analyze-transcript`;
-      const analysisApiKey = process.env.API_SECRET_KEY;
+      // Adjust the URL to the new merge endpoint
+      const analyzeUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/api/analyze-transcript/merge-with-scratch`;
 
-      if (!analysisApiKey) {
-        console.error('[Transcribe API] Missing API_SECRET_KEY, cannot call analysis endpoint.');
-        // Potentially update asset status to indicate analysis pending/failed?
-      } else {
-        await fetch(analysisApiUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            // Use API Key for server-to-server authentication
-            'Authorization': `Bearer ${analysisApiKey}`
-          },
-          body: JSON.stringify({
-            transcript: transcriptData, // Pass the full transcript data
-            videoAssetId: assetId
-          })
-        })
-        .then(async (analysisResponse) => {
-          if (!analysisResponse.ok) {
-            const errorBody = await analysisResponse.text();
-            console.error(`[Transcribe API] Failed to trigger transcript analysis for asset ${assetId}: ${analysisResponse.status} ${analysisResponse.statusText}`, errorBody);
-            // Update asset status to reflect analysis trigger failure?
-            await supabase
-              .from('assets')
-              .update({ transcript_error: `Failed to start analysis: ${analysisResponse.status}` })
-              .eq('id', assetId);
-          } else {
-            const successBody = await analysisResponse.json();
-            console.log(`[Transcribe API] Successfully triggered transcript analysis for asset ${assetId}. Response:`, successBody);
+      // After successfully updating the transcript, trigger the analysis to extract items from the transcript
+      try {
+        console.log(`[Transcribe] Triggering merged transcript and scratch item analysis for asset ${assetId} with user_id ${asset.user_id} and mux_asset_id ${asset.mux_asset_id}`);
+        console.log(`[Transcribe] Using analyze URL: ${analyzeUrl}`);
+
+        const requestBody = {
+          user_id: asset.user_id,
+          asset_id: assetId,
+          mux_asset_id: asset.mux_asset_id,
+          transcript: transcriptText
+        };
+        
+        console.log(`[Transcribe] Sending request with body: ${JSON.stringify({
+          user_id: asset.user_id,
+          asset_id: assetId, 
+          mux_asset_id: asset.mux_asset_id,
+          transcript_length: transcriptText.length
+        })}`);
+
+        // Try up to 3 times with exponential backoff
+        let retryCount = 0;
+        const maxRetries = 3;
+        let success = false;
+        
+        while (retryCount < maxRetries && !success) {
+          try {
+            if (retryCount > 0) {
+              console.log(`[Transcribe] Retry attempt ${retryCount} for merge-with-scratch API call`);
+              // Exponential backoff: 1s, 2s, 4s, etc.
+              await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount - 1) * 1000));
+            }
+            
+            const analyzeResponse = await fetch(analyzeUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(requestBody)
+            });
+
+            if (!analyzeResponse.ok) {
+              const errorText = await analyzeResponse.text();
+              console.error(`[Transcribe] Error analyzing transcript and scratch items for asset ${assetId}: ${errorText}`);
+              console.error(`[Transcribe] Failed to analyze with status: ${analyzeResponse.status}`);
+              retryCount++;
+            } else {
+              const analysisResult = await analyzeResponse.json();
+              console.log(`[Transcribe] Successfully merged and analyzed transcript and scratch items for asset ${assetId}. Found ${analysisResult.items?.length || 0} items.`);
+              console.log(`[Transcribe] Analysis result: ${JSON.stringify(analysisResult)}`);
+              success = true;
+            }
+          } catch (error) {
+            console.error(`[Transcribe] Exception during attempt ${retryCount + 1} to trigger transcript and scratch item analysis for asset ${assetId}:`, error);
+            retryCount++;
           }
-        })
-        .catch((analysisError) => {
-          console.error(`[Transcribe API] Error calling analysis API for asset ${assetId}:`, analysisError);
-          // Update asset status to reflect analysis trigger failure?
-          supabase
-            .from('assets')
-            .update({ transcript_error: `Error calling analysis API: ${analysisError instanceof Error ? analysisError.message : 'Unknown fetch error'}` })
-            .eq('id', assetId);
-        });
+        }
+        
+        if (!success) {
+          console.error(`[Transcribe] Failed to merge transcript with scratch items after ${maxRetries} attempts. Will rely on webhook fallback mechanism.`);
+          // We don't fail the overall request if analysis fails - just log the error
+        }
+      } catch (error) {
+        console.error(`[Transcribe] Exception triggering transcript and scratch item analysis for asset ${assetId}:`, error);
+        // We don't fail the overall request if analysis fails - just log the error
       }
 
       return corsJsonResponse({

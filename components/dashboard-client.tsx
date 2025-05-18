@@ -100,6 +100,11 @@ export function DashboardClient({
                                                     'Complete'
                         }</p>
                         <p>{upload.message}</p>
+                        {upload.status === 'uploading' && (
+                            <p className="text-xs text-green-500 mt-1">
+                                Real-time frame analysis active
+                            </p>
+                        )}
                     </div>
                 ))}
             </div>
@@ -168,6 +173,7 @@ export function DashboardClient({
                     <CameraCaptureWrapper
                         onCapture={handleCapture}
                         onClose={handleCloseCamera}
+                        realTimeAnalysis={true}
                     />
                 )}
 

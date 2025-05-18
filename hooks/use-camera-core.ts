@@ -342,62 +342,107 @@ export function useCameraCore({
 
         // Setup streaming upload if requested
         if (streamingUpload) {
-            // 1) Initialize direct upload URL and DB record
-            const uploadData = await requestUploadUrl();
-            // 2) Reset buffer/tracking
-            bufferRef.current = new Blob([], { type: actualMimeType });
-            nextByteStartRef.current = 0;
-            activeUploadsRef.current = 0;
-            // 3) Create and store native MediaRecorder
-            const recorder = new MediaRecorder(streamRef.current!, {
-                mimeType: actualMimeType,
-                videoBitsPerSecond: 5_000_000,
-                audioBitsPerSecond: 128_000
-            });
-            nativeRecorderRef.current = recorder;
-            // 4) Handle incoming chunks
-            recorder.ondataavailable = async (e: BlobEvent) => {
-                if (e.data.size > 0) {
-                    bufferRef.current = new Blob([bufferRef.current, e.data], { type: actualMimeType });
-                    while (bufferRef.current.size >= CHUNK_SIZE) {
-                        const chunk = bufferRef.current.slice(0, CHUNK_SIZE);
-                        bufferRef.current = bufferRef.current.slice(CHUNK_SIZE);
-                        await uploadChunk(chunk, false);
-                    }
-                }
-            };
-            // 5) On stop, flush final chunk and signal complete
-            recorder.onstop = async () => {
-                console.log('useCameraCore: Streaming stop event');
-                if (bufferRef.current.size > 0) {
-                    await uploadChunk(bufferRef.current, true);
-                }
-                streamRef.current?.getTracks().forEach(t => t.stop());
-                setRecorderStatus('idle');
-                console.log('useCameraCore: Streaming upload complete');
-                onStreamComplete?.();
-            };
-            
-            // 6) Begin recording with 500ms timeslice
-            recorder.start(500);
-            
-            // 7) If real-time analysis is enabled, start frame sender
-            if (realTimeAnalysis && sessionIdRef.current) {
-                console.log('useCameraCore: Starting real-time frame analysis');
-                
-                // Create and start frame sender
-                const wsUrl = process.env.NEXT_PUBLIC_FRAME_WS_URL || '/api/frame';
-                frameSenderRef.current = new FrameSender(videoRef.current!, {
-                    wsUrl,
-                    sessionId: sessionIdRef.current,
-                    frameRateSec: parseInt(process.env.NEXT_PUBLIC_FRAME_RATE_SEC || '2', 10),
-                    onError: (error) => {
-                        console.warn('Frame sender error:', error);
-                        // We don't stop recording on frame sender error, just log it
-                    }
+            try {
+                // 1) Initialize direct upload URL and DB record
+                console.log('useCameraCore: Requesting upload URL for streaming...');
+                const uploadData = await requestUploadUrl();
+                console.log('useCameraCore: Received upload data:', { 
+                    uploadUrl: !!uploadData.uploadUrl, 
+                    sessionId: uploadData.sessionId
                 });
                 
-                frameSenderRef.current.start();
+                // 2) Reset buffer/tracking
+                bufferRef.current = new Blob([], { type: actualMimeType });
+                nextByteStartRef.current = 0;
+                activeUploadsRef.current = 0;
+                
+                // Store session ID for real-time analysis
+                sessionIdRef.current = uploadData.sessionId || null;
+                
+                // 3) Create and store native MediaRecorder
+                const recorder = new MediaRecorder(streamRef.current!, {
+                    mimeType: actualMimeType,
+                    videoBitsPerSecond: 5_000_000,
+                    audioBitsPerSecond: 128_000
+                });
+                nativeRecorderRef.current = recorder;
+                // 4) Handle incoming chunks
+                recorder.ondataavailable = async (e: BlobEvent) => {
+                    if (e.data.size > 0) {
+                        bufferRef.current = new Blob([bufferRef.current, e.data], { type: actualMimeType });
+                        while (bufferRef.current.size >= CHUNK_SIZE) {
+                            const chunk = bufferRef.current.slice(0, CHUNK_SIZE);
+                            bufferRef.current = bufferRef.current.slice(CHUNK_SIZE);
+                            await uploadChunk(chunk, false);
+                        }
+                    }
+                };
+                // 5) On stop, flush final chunk and signal complete
+                recorder.onstop = async () => {
+                    console.log('useCameraCore: Streaming stop event');
+                    if (bufferRef.current.size > 0) {
+                        await uploadChunk(bufferRef.current, true);
+                    }
+                    streamRef.current?.getTracks().forEach(t => t.stop());
+                    setRecorderStatus('idle');
+                    console.log('useCameraCore: Streaming upload complete');
+                    onStreamComplete?.();
+                };
+                
+                // 6) Begin recording with 500ms timeslice
+                recorder.start(500);
+                
+                // 7) If real-time analysis is enabled, start frame sender
+                if (realTimeAnalysis) {
+                    console.log('useCameraCore: Preparing real-time frame analysis', {
+                        realTimeAnalysis, 
+                        sessionId: sessionIdRef.current,
+                        apiUrl: process.env.NEXT_PUBLIC_FRAME_API_URL || '/api/frame'
+                    });
+                    
+                    if (!sessionIdRef.current) {
+                        console.warn('useCameraCore: Missing sessionId for real-time analysis. Using recording timestamp as fallback.');
+                        sessionIdRef.current = `manual_${Date.now()}`;
+                    }
+                    
+                    // Get MUX asset ID if available
+                    const muxAssetId = uploadData.muxAssetId || null;
+                    
+                    // Get user ID if available
+                    const userId = uploadData.userId || null;
+                    
+                    console.log('useCameraCore: Frame analysis data:', {
+                        sessionId: sessionIdRef.current,
+                        userId: userId || 'not available',
+                        muxAssetId: muxAssetId || 'not available'
+                    });
+                    
+                    // Create and start frame sender
+                    const apiUrl = process.env.NEXT_PUBLIC_FRAME_API_URL || '/api/frame';
+                    frameSenderRef.current = new FrameSender(videoRef.current!, {
+                        apiUrl,
+                        sessionId: sessionIdRef.current,
+                        userId: userId,
+                        muxAssetId: muxAssetId,
+                        frameRateSec: parseInt(process.env.NEXT_PUBLIC_FRAME_RATE_SEC || '2', 10),
+                        onError: (error) => {
+                            console.warn('Frame sender error:', error);
+                            // We don't stop recording on frame sender error, just log it
+                        }
+                    });
+                    
+                    console.log('useCameraCore: Frame sender created, starting capture');
+                    frameSenderRef.current.start();
+                } else {
+                    console.log('useCameraCore: Real-time frame analysis NOT enabled', { 
+                        realTimeAnalysis, 
+                        hasSessionId: !!sessionIdRef.current
+                    });
+                }
+            } catch (error) {
+                console.error('useCameraCore: Error setting up streaming recording:', error);
+                setRecorderStatus('error');
+                setErrorMessage('Failed to start streaming recording.');
             }
             
             return;
@@ -419,7 +464,7 @@ export function useCameraCore({
         } else {
              console.log("useCameraCore: Recording started successfully.");
         }
-    }, [recorderStatus, isInitializing, actualMimeType, streamingUpload, realTimeAnalysis]); // Dependencies
+    }, [recorderStatus, isInitializing, actualMimeType, streamingUpload, realTimeAnalysis, videoRef]); // Dependencies
 
     const stopRecording = useCallback(async () => {
         if (recorderStatus !== 'recording' || !isMountedRef.current) {

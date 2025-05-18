@@ -68,7 +68,15 @@ export async function POST(request: Request) {
     const serviceClient = await createServiceSupabaseClient();
     
     // Extract necessary IDs early (use optional chaining and nullish coalescing)
-    const muxAssetId = event.data?.id || event.data?.asset_id || null; // Use asset_id as fallback if top-level id is missing
+    // For static rendition events, use data.asset_id as that's the actual asset ID we need
+    let muxAssetId = null;
+    if (event.type === 'video.static_rendition.ready' || event.type === 'video.asset.static_rendition.ready') {
+      muxAssetId = event.data?.asset_id || null;
+      console.log(`Using data.asset_id (${muxAssetId}) for static rendition event`);
+    } else {
+      muxAssetId = event.data?.id || event.data?.asset_id || null; // Use asset_id as fallback if top-level id is missing
+    }
+    
     const muxUploadId = event.data?.upload_id || (event.type === 'video.upload.asset_created' ? event.data?.id : null) || null; // Upload ID is in data.id for video.upload.asset_created
     const correlationId = event.data?.metadata?.correlation_id || null;
     
@@ -213,6 +221,52 @@ export async function POST(request: Request) {
               console.error(`Error updating asset ${muxAssetId} with ready status and playback info:`, updateError);
           } else {
               console.log(`Successfully updated asset ${muxAssetId} with ready status and playback info.`);
+              
+              // Find the asset record to get its user ID
+              const { data: asset, error: assetFetchError } = await serviceClient
+                  .from('assets')
+                  .select('id, user_id')
+                  .eq('mux_asset_id', muxAssetId)
+                  .single();
+                  
+              if (assetFetchError || !asset) {
+                  console.error(`Error fetching asset details for Mux asset ${muxAssetId}:`, assetFetchError);
+              } else {
+                  const userId = asset.user_id;
+                  
+                  // Update any scratch items for this session with the correct mux_asset_id and user_id
+                  console.log(`Updating scratch items for user ${userId} with Mux asset ID ${muxAssetId}`);
+                  
+                  // Check if there are any scratch items with matching session ID but missing mux_asset_id
+                  const { data: scratchItemsToUpdate, error: scratchFetchError } = await serviceClient
+                      .from('scratch_items')
+                      .select('*')
+                      .is('mux_asset_id', null); // Find items without mux_asset_id
+                      
+                  if (scratchFetchError) {
+                      console.error(`Error fetching scratch items to update for Mux asset ${muxAssetId}:`, scratchFetchError);
+                  } else if (scratchItemsToUpdate && scratchItemsToUpdate.length > 0) {
+                      console.log(`Found ${scratchItemsToUpdate.length} scratch items to update with Mux asset ID ${muxAssetId}`);
+                      
+                      // Update the scratch items with the mux_asset_id and user_id
+                      const { error: scratchUpdateError } = await serviceClient
+                          .from('scratch_items')
+                          .update({
+                              mux_asset_id: muxAssetId,
+                              user_id: userId
+                          })
+                          .is('mux_asset_id', null); // Update only items without mux_asset_id
+                          
+                      if (scratchUpdateError) {
+                          console.error(`Error updating scratch items with Mux asset ID ${muxAssetId}:`, scratchUpdateError);
+                      } else {
+                          console.log(`Successfully updated scratch items with Mux asset ID ${muxAssetId} and user ID ${userId}`);
+                      }
+                  } else {
+                      console.log(`No scratch items found to update for Mux asset ${muxAssetId}`);
+                  }
+              }
+              
               // Mark this specific webhook as processed
               if (webhookTableExists) {
                   // Find internal ID just for marking the webhook
@@ -233,123 +287,179 @@ export async function POST(request: Request) {
     }
     // --- End Asset Ready Event --- 
 
-    // --- Handle Static Rendition Ready Event --- 
-    // *** UPDATED: Now triggers transcription for the audio rendition ***
-    else if (event.type === 'video.asset.static_rendition.ready') {
-        const renditionMuxAssetId = event.data?.asset_id; // Asset ID is in data.asset_id for this event
-        const renditionName = event.data?.name;
-        const renditionStatus = event.data?.status;
-
-        console.log(`Received video.asset.static_rendition.ready for Asset ${renditionMuxAssetId}, Rendition: ${renditionName}, Status: ${renditionStatus}`);
-
-        // Trigger transcription ONLY if it's the audio rendition and it's ready
-        if (renditionName === 'audio.m4a' && renditionStatus === 'ready' && renditionMuxAssetId) {
-            console.log(`Audio rendition 'audio.m4a' ready for asset ${renditionMuxAssetId}. Checking if transcription should be triggered.`);
-
-            // Find the corresponding asset record in our DB
-            const { data: asset, error: assetError } = await serviceClient
-                .from('assets')
-                .select('id, transcript_processing_status') // Select status to check if already processed
-                .eq('mux_asset_id', renditionMuxAssetId) // Use the asset ID from the rendition event
-                .limit(1)
-                .single();
-
-            if (assetError || !asset) {
-                console.error(`Error finding asset or asset not found with mux_asset_id ${renditionMuxAssetId} for 'static_rendition.ready' event processing:`, assetError);
-            } else {
-                const internalAssetId = asset.id;
-                const currentStatus = asset.transcript_processing_status;
-                console.log(`Found internal asset ID ${internalAssetId} for Mux asset ${renditionMuxAssetId}. Current transcript status: ${currentStatus}`);
-
-                // Check if transcription is already pending, processing, or completed
-                if (currentStatus === 'pending' || currentStatus === 'processing' || currentStatus === 'completed') {
-                    console.log(`Transcription for asset ${internalAssetId} (Mux: ${renditionMuxAssetId}) already started or completed. Skipping trigger from static_rendition.ready.`);
-                } else {
-                    console.log(`Asset ${internalAssetId} audio rendition ready. Updating status and triggering transcription.`);
-                    
-                    // Get rendition details needed for the pending URL
-                    const renditionId = event.data?.id; // ID of the rendition itself
-                    if (!renditionId) {
-                      console.error(`Missing rendition ID in static_rendition.ready event payload for asset ${internalAssetId}. Cannot proceed.`);
-                      // Mark as processed with error?
-                      if (webhookTableExists) {
-                         try {
-                            await serviceClient.from('webhook_events').update({ processed: true, processed_at: new Date().toISOString(), asset_id: internalAssetId }).eq('event_id', event.id);
-                            console.log(`Marked static_rendition.ready webhook event ${event.id} as processed (missing rendition ID).`);
-                         } catch (markError) { console.error(`Error marking static_rendition.ready webhook ${event.id} as processed after missing rendition ID:`, markError); }
+    // --- Handle Static Rendition Ready Event ---
+    if ((event.type === 'video.static_rendition.ready' || event.type === 'video.asset.static_rendition.ready') && muxAssetId) {
+      console.log(`Processing static rendition ready event for Mux Asset ID: ${muxAssetId}`);
+      
+      try {
+          // This is the event that triggers automatic transcription
+          // Get the current asset info
+          const { data: asset, error: assetError } = await serviceClient
+              .from('assets')
+              .select('id, user_id, mux_asset_id, transcript_processing_status')
+              .eq('mux_asset_id', muxAssetId)
+              .single();
+          
+          if (assetError || !asset) {
+              console.error(`Error fetching asset for static rendition event (Mux Asset ID: ${muxAssetId}):`, assetError);
+          } else {
+              console.log(`Found asset ${asset.id} for Mux Asset ID: ${muxAssetId}`);
+              
+              // Check if transcription is already pending/processing/completed
+              const transcriptionStatus = asset.transcript_processing_status || null;
+              console.log(`Current transcription status for asset ${asset.id}: ${transcriptionStatus || 'null'}`);
+              
+              if (transcriptionStatus === 'completed') {
+                  console.log(`Transcription already completed for asset ${asset.id}, checking if we need to merge with scratch items...`);
+                  
+                  // Check if there are scratch items to merge with the transcript
+                  const { data: scratchItems, error: scratchError } = await serviceClient
+                      .from('scratch_items')
+                      .select('*')
+                      .eq('mux_asset_id', muxAssetId);
+                      
+                  if (scratchError) {
+                      console.error(`Error checking for scratch items for asset ${asset.id}:`, scratchError);
+                  } else if (scratchItems && scratchItems.length > 0) {
+                      console.log(`Found ${scratchItems.length} scratch items for asset ${asset.id}, triggering merge...`);
+                      console.log(`Scratch items for merge: ${JSON.stringify(scratchItems.map(item => ({ id: item.id, name: item.name, timestamp: item.video_timestamp })))}`);
+                      
+                      // Get the transcript text
+                      const { data: assetWithTranscript, error: transcriptError } = await serviceClient
+                          .from('assets')
+                          .select('transcript_text')
+                          .eq('id', asset.id)
+                          .single();
+                          
+                      if (transcriptError || !assetWithTranscript?.transcript_text) {
+                          console.error(`Error fetching transcript text for asset ${asset.id}:`, transcriptError);
+                      } else {
+                          console.log(`Found transcript for asset ${asset.id}, length: ${assetWithTranscript.transcript_text.length} chars`);
+                          
+                          // Call the merge API
+                          const mergeUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/api/analyze-transcript/merge-with-scratch`;
+                          console.log(`Calling merge API at: ${mergeUrl}`);
+                          
+                          const requestBody = {
+                              user_id: asset.user_id,
+                              asset_id: asset.id,
+                              mux_asset_id: muxAssetId,
+                              transcript: assetWithTranscript.transcript_text
+                          };
+                          
+                          console.log(`Merge request payload: ${JSON.stringify({
+                              user_id: asset.user_id,
+                              asset_id: asset.id,
+                              mux_asset_id: muxAssetId,
+                              transcript_length: assetWithTranscript.transcript_text.length
+                          })}`);
+                          
+                          try {
+                              const mergeResponse = await fetch(mergeUrl, {
+                                  method: 'POST',
+                                  headers: { 
+                                      'Content-Type': 'application/json',
+                                      'Authorization': `Bearer ${process.env.API_SECRET_KEY || ''}`
+                                  },
+                                  body: JSON.stringify(requestBody)
+                              });
+                              
+                              if (!mergeResponse.ok) {
+                                  const errorText = await mergeResponse.text();
+                                  console.error(`Error merging transcript with scratch items for asset ${asset.id}: ${errorText}`);
+                                  console.error(`Merge failed with status: ${mergeResponse.status}`);
+                              } else {
+                                  const mergeResult = await mergeResponse.json();
+                                  console.log(`Successfully merged transcript with scratch items for asset ${asset.id}. Found ${mergeResult.items?.length || 0} items.`);
+                                  console.log(`Merge result: ${JSON.stringify(mergeResult)}`);
+                              }
+                          } catch (error) {
+                              console.error(`Exception triggering transcript merge for asset ${asset.id}:`, error);
+                          }
                       }
-                      return; // Stop processing this event
+                  } else {
+                      console.log(`No scratch items found for asset ${asset.id}, skipping merge. Query used: mux_asset_id=${muxAssetId}`);
+                  }
+              } else if (transcriptionStatus === 'pending' || transcriptionStatus === 'processing') {
+                  console.log(`Transcription already ${transcriptionStatus} for asset ${asset.id}, skipping duplicate trigger.`);
+              } else {
+                  // Original logic to trigger transcription
+                  console.log(`Asset ${asset.id} audio rendition ready. Updating status and triggering transcription.`);
+                  
+                  // Get rendition details needed for the pending URL
+                  const renditionId = event.data?.id; // ID of the rendition itself
+                  const renditionName = event.data?.name;
+                  
+                  if (!renditionId) {
+                    console.error(`Missing rendition ID in static_rendition.ready event payload for asset ${asset.id}. Cannot proceed.`);
+                    // Mark as processed with error
+                    if (webhookTableExists) {
+                       try {
+                          await serviceClient.from('webhook_events').update({ processed: true, processed_at: new Date().toISOString(), asset_id: asset.id }).eq('event_id', event.id);
+                          console.log(`Marked static_rendition.ready webhook event ${event.id} as processed (missing rendition ID).`);
+                       } catch (markError) { console.error(`Error marking static_rendition.ready webhook ${event.id} as processed after missing rendition ID:`, markError); }
                     }
-                    
-                    const pendingAudioUrl = `pending:${renditionMuxAssetId}/${renditionId}/${renditionName}`;
-                    console.log(`Constructed pending audio URL: ${pendingAudioUrl}`);
+                    return; // Stop processing this event
+                  }
+                  
+                  const pendingAudioUrl = `pending:${muxAssetId}/${renditionId}/${renditionName}`;
+                  console.log(`Constructed pending audio URL: ${pendingAudioUrl}`);
+                  
+                  // Update the asset's status and store the pending URL *before* triggering
+                  const { error: updateError } = await serviceClient
+                     .from('assets')
+                      .update({
+                         transcript_processing_status: 'pending',
+                         mux_audio_url: pendingAudioUrl, // Store the pending URL
+                         last_updated: new Date().toISOString()
+                      })
+                      .eq('id', asset.id);
 
-                    // Update the asset's status and store the pending URL *before* triggering
-                    const { error: updateError } = await serviceClient
-                        .from('assets')
-                        .update({
-                           transcript_processing_status: 'pending',
-                           mux_audio_url: pendingAudioUrl, // Store the pending URL
-                           last_updated: new Date().toISOString()
-                        })
-                        .eq('id', internalAssetId);
-
-                    if (updateError) {
-                        console.error(`Error setting transcript status to 'pending' for asset ${internalAssetId} via static_rendition.ready:`, updateError);
-                    } else {
-                        console.log(`Set transcript status to 'pending' for asset ${internalAssetId} via static_rendition.ready.`);
-
-                        // Trigger the transcription API - *** ADD AWAIT ***
-                        await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/transcribe`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${process.env.API_SECRET_KEY}`,
-                            },
-                            body: JSON.stringify({ assetId: internalAssetId }), // Pass internal DB asset ID
-                        }).then(async (res) => {
-                            if (!res.ok) {
-                                const errorBody = await res.text().catch(() => 'Failed to read error body');
-                                console.error(`Error triggering transcription for asset ${internalAssetId} from static_rendition.ready: ${res.status} ${res.statusText} - ${errorBody}`);
-                            } else {
-                                console.log(`Successfully triggered transcription for asset ${internalAssetId} from static_rendition.ready`);
-                            }
-                        }).catch(err => {
-                            console.error(`Fetch error triggering transcription for asset ${internalAssetId} from static_rendition.ready:`, err);
-                        });
-
-                        // Mark webhook as processed ONLY if we triggered transcription
-                        if (webhookTableExists) {
-                            try {
-                                await serviceClient
-                                    .from('webhook_events')
-                                    .update({ processed: true, processed_at: new Date().toISOString(), asset_id: internalAssetId })
-                                    .eq('event_id', event.id);
-                                console.log(`Marked static_rendition.ready webhook event ${event.id} as processed (triggered transcription).`);
-                            } catch (markError) {
-                                console.error(`Error marking static_rendition.ready webhook ${event.id} as processed:`, markError);
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-             console.log(`Static rendition event received for ${renditionName} (Asset: ${renditionMuxAssetId}, Status: ${renditionStatus}). Not triggering transcription.`);
-             // Optionally mark non-audio or non-ready events as processed immediately if desired
-             if (webhookTableExists) {
-                 try {
-                    // Find internal ID just for marking the webhook
-                    const { data: asset } = await serviceClient.from('assets').select('id').eq('mux_asset_id', renditionMuxAssetId).single();
-                    await serviceClient
-                        .from('webhook_events')
-                        .update({ processed: true, processed_at: new Date().toISOString(), asset_id: asset?.id || null })
-                        .eq('event_id', event.id);
-                    console.log(`Marked static_rendition.ready webhook event ${event.id} as processed (did not trigger transcription).`);
-                 } catch (markError) {
-                    console.error(`Error marking non-triggering static_rendition.ready webhook ${event.id} as processed:`, markError);
-                 }
-            }
-        }
+                  if (updateError) {
+                      console.error(`Error setting transcript status to 'pending' for asset ${asset.id} via static_rendition.ready:`, updateError);
+                  } else {
+                      console.log(`Set transcript status to 'pending' for asset ${asset.id} via static_rendition.ready.`);
+                      
+                      // Trigger the transcription API
+                      try {
+                          console.log(`Calling transcription API at: ${process.env.NEXT_PUBLIC_SITE_URL}/api/transcribe`);
+                          const transcribeResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL}/api/transcribe`, {
+                               method: 'POST',
+                               headers: {
+                                   'Content-Type': 'application/json',
+                                   'Authorization': `Bearer ${process.env.API_SECRET_KEY || ''}`,
+                               },
+                               body: JSON.stringify({ assetId: asset.id }), // Pass internal DB asset ID
+                          });
+                          
+                          if (!transcribeResponse.ok) {
+                              const errorBody = await transcribeResponse.text().catch(() => 'Failed to read error body');
+                              console.error(`Error triggering transcription for asset ${asset.id} from static_rendition.ready: ${transcribeResponse.status} ${transcribeResponse.statusText} - ${errorBody}`);
+                          } else {
+                              console.log(`Successfully triggered transcription for asset ${asset.id} from static_rendition.ready`);
+                          }
+                      } catch (err) {
+                          console.error(`Fetch error triggering transcription for asset ${asset.id} from static_rendition.ready:`, err);
+                      }
+                  }
+              }
+              
+              // Mark webhook as processed
+              if (webhookTableExists) {
+                  try {
+                      await serviceClient
+                          .from('webhook_events')
+                          .update({ processed: true, processed_at: new Date().toISOString(), asset_id: asset.id })
+                          .eq('event_id', event.id);
+                      console.log(`Marked static_rendition.ready webhook event ${event.id} as processed.`);
+                  } catch (markError) {
+                      console.error(`Error marking static_rendition.ready webhook ${event.id} as processed:`, markError);
+                  }
+              }
+          }
+      } catch (error) {
+          console.error(`Exception during static_rendition.ready processing for Mux Asset ID: ${muxAssetId}:`, error);
+      }
     }
     // --- End Static Rendition Ready Event ---
     

@@ -121,6 +121,7 @@ export const POST = withAuth(async (request: Request) => {
         playbackId: uploadData.playbackId,
         correlationId: uploadData.correlationId,
         clientReferenceId: clientReferenceId,
+        userId: user.id,
         asset: asset
       });
     } catch (innerError) {
