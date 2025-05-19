@@ -16,7 +16,7 @@ const ItemSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   timestamp: z.number().optional(),
-  estimated_value: z.number().nullable().optional(),
+  estimated_value: z.number(),
 });
 
 const OutputSchema = z.object({
@@ -143,12 +143,12 @@ You are an insurance inspection assistant analyzing a video and transcript from 
 
 ${transcript ? `I have a transcript from a home inspection video and a list of items that were detected in the video frames during recording.
 
-Here is the transcript:
----
+Here is the transcript. This is the PRIMARY SOURCE OF TRUTH. When the user mentions any item in the transcript, ALWAYS prioritize these details over the AI vision detections:
+--- TRANSCRIPT (PRIMARY SOURCE) ---
 ${transcript}
----` : `I have a list of items that were detected in the video frames during a home inspection recording. There is no audio transcript available.`}
+--- END OF TRANSCRIPT ---` : `I have a list of items that were detected in the video frames during a home inspection recording. There is no audio transcript available.`}
 
-Here are the items detected in the video frames (name, description, timestamp in seconds, estimated value):
+Here are the items detected in the video frames (name, description, timestamp in seconds, estimated value). These are SECONDARY references and should only be used when an item is NOT mentioned in the transcript:
 ${formattedScratchItems.length > 0 
   ? formattedScratchItems.map(item => 
       `- ${item.name}${item.description ? `: ${item.description}` : ''}${item.timestamp ? ` (at ${formatTimestamp(item.timestamp).toFixed(1)}s)` : ''}${item.estimated_value ? ` - Estimated Value: $${item.estimated_value}` : ''}`
@@ -156,22 +156,55 @@ ${formattedScratchItems.length > 0
   : 'No items were detected in the video frames.'
 }
 
-Please analyze ${transcript ? 'both the transcript and' : ''} the detected items to create a comprehensive list of all items mentioned in the inspection. 
-${transcript ? 'Merge similar items, remove duplicates, and enhance descriptions where possible by combining information from both sources.' : 'Provide a complete analysis of the items detected in the video frames.'}
+Please analyze ${transcript ? 'both the transcript and' : ''} the detected items to create a single, consolidated list of all unique items for a home inventory. 
 
-Pay special attention to match items that might be referred to differently in the transcript versus the visual detection. For example, if the transcript mentions a "throw pillow" and the visual detection found a "pillow" or "decorative pillow", these are likely the same item and should be merged.
+MERGING INSTRUCTIONS (CRITICAL):
+1. If an item is mentioned in BOTH the transcript and the detected video frames:
+   - Create ONLY ONE entry for that item (be smart about recognizing the same item even if named differently)
+   - ALWAYS use the NAME from the transcript but make it MORE DESCRIPTIVE (2-3 words minimum)
+   - ALWAYS use the DESCRIPTION from the transcript (enhanced with visual details if relevant)
+   - ALWAYS use the EARLIEST TIMESTAMP from when the user first mentions the item in the transcript
+   - For estimated value: if mentioned in transcript, use that value, otherwise use the value from similar scratch items
 
-For each item:
-1. Provide a clear name 
-2. Give a detailed description that includes information from ${transcript ? 'both the transcript and' : ''} visual detection
-3. Include the timestamp (in seconds) when the item first appears. For duplicate or merged items, use the EARLIEST timestamp from the source items.
-4. Include an estimated value in USD - this is REQUIRED. If available from the visual or audio detection, use that, otherwise provide your best estimate. Never omit this.
+2. If an item appears ONLY in the transcript:
+   - Use all details directly from the transcript
+   - Make the name MORE DESCRIPTIVE (2-3 words minimum)
+   - ALWAYS ASSIGN AN ESTIMATED VALUE - this should never be empty or null
+   - If no value is explicitly mentioned, use the most similar item from scratch items as a reference, or provide a reasonable estimate
 
-Return the result as a JSON array of objects with the following format:
+3. If an item appears ONLY in the visual detection (scratch_items):
+   - Use all details from the visual detection including its timestamp and estimated value
+   - Make the name MORE DESCRIPTIVE (2-3 words minimum) than the generic detection name
+
+NAMING REQUIREMENTS:
+- ALL item names must be 2-3 words minimum to be descriptive and distinct
+- Generic names like just "Artwork" are NOT acceptable - use "Abstract Wall Artwork" or "Framed Flower Painting" instead
+- For electronics, include the type, brand, or model if known (e.g., "Apple iPhone 14", "Dell Work Laptop")
+- For furniture, include color, material, or style (e.g., "Brown Leather Sofa", "Wooden Storage Cabinet")
+
+TIMESTAMP PRIORITY:
+- For ANY item mentioned in the transcript, the timestamp MUST be from when the user FIRST mentions it
+- NEVER use timestamps from visual detection for items that are mentioned in the transcript
+- Round all timestamps to ONE decimal place (e.g., 2.0, 3.5)
+
+DEDUPLICATION REQUIREMENTS:
+- Be smart about recognizing the same items described differently (e.g., "iPhone"/"smartphone", "work computer"/"laptop")
+- Don't create separate entries for the same item detected in multiple frames or mentioned multiple times
+- If a transcript item can be matched to ANY scratch item, make sure to use the scratch item's estimated value
+
+Pay special attention to match items that might be referred to differently. For example, if the transcript mentions a "work computer" and the visual detection found a "laptop" or "Dell laptop", these are likely the same item and should be merged using transcript details for name/description/timestamp but keeping the estimated value from the scratch item.
+
+For each UNIQUE item in your final consolidated list:
+1. Name: Clear, DESCRIPTIVE name (2-3 words minimum)
+2. Description: Detailed description (from transcript if mentioned there)
+3. Timestamp: When the item first appears or is first mentioned (MUST use transcript timing if mentioned there)
+4. Estimated value: Required numeric amount in USD (NEVER return null or 0 for estimated value)
+
+Return the result as a JSON array with this exact format:
 {
   "items": [
     {
-      "name": "Item name",
+      "name": "Descriptive Item Name (2-3 words)",
       "description": "Detailed description",
       "timestamp": 2.0,
       "estimated_value": 100.00
@@ -179,9 +212,12 @@ Return the result as a JSON array of objects with the following format:
   ]
 }
 
-IMPORTANT: Format timestamps as numbers with EXACTLY one decimal place (e.g., 2.0 or 2.1), not strings or numbers with excessive decimal precision. DO NOT return timestamps with more than one decimal place. For example, use 2.0 not 2.000 or 2.00000. If the timestamp or estimated value is unknown, you can omit it from the object.
-
-CRITICAL: Never return timestamps with many decimal places like 0.000000000 as this will break the system. Always round and limit to one decimal place.
+CRUCIAL FORMAT REQUIREMENTS:
+- Format all timestamps as numbers with EXACTLY one decimal place (e.g., 2.0 or 2.1)
+- Never use timestamps with multiple decimal places (e.g., avoid 2.0000000)
+- All timestamps must be between 0 and the video duration
+- Always include a positive numeric estimated_value for every item - this is MANDATORY
+- NEVER return estimated_value as null, undefined, or 0
 `;
 
     // Generate items using Gemini API
@@ -274,8 +310,8 @@ CRITICAL: Never return timestamps with many decimal places like 0.000000000 as t
                 
                 // Filter and sanitize items
                 const sanitizedItems = parsedJson.items
-                  .filter((item: any) => item && typeof item === 'object' && item.name)
-                  .map((item: any) => ({
+                  .filter((item: Record<string, unknown>) => item && typeof item === 'object' && item.name)
+                  .map((item: Record<string, unknown>) => ({
                     name: String(item.name || 'Unnamed Item'),
                     description: String(item.description || ''),
                     timestamp: typeof item.timestamp === 'number' 
@@ -302,18 +338,16 @@ CRITICAL: Never return timestamps with many decimal places like 0.000000000 as t
             // Last resort: Try to extract items using regex patterns
             logger.info('Attempting emergency item extraction using regex');
             try {
-              // @ts-expect-error - Emergency fallback code using any types for recovery
               const itemPattern = /"name"\s*:\s*"([^"]+)"[^}]*"description"\s*:\s*"([^"]+)"[^}]*("timestamp"\s*:\s*(\d+\.?\d*)|"estimated_value"\s*:\s*(\d+\.?\d*))/g;
               const matches = [...preprocessedText.matchAll(itemPattern)];
               
               if (matches.length > 0) {
                 logger.info(`Found ${matches.length} potential items using regex extraction`);
-                // @ts-expect-error - Emergency fallback code using any types for recovery
-                const extractedItems = matches.map((match, index) => ({
+                const extractedItems = matches.map((match: RegExpMatchArray, index: number) => ({
                   name: match[1] || `Item ${index+1}`,
                   description: match[2] || '',
                   timestamp: formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0,
-                  estimated_value: 0 // Default value
+                  estimated_value: 0 // Default value, since schema now requires it
                 }));
                 
                 result = { object: { items: extractedItems } };
@@ -322,26 +356,26 @@ CRITICAL: Never return timestamps with many decimal places like 0.000000000 as t
                 logger.info('All recovery methods failed, using scratch items directly');
                 result = { 
                   object: { 
-                    // @ts-expect-error - Emergency fallback code using any types for recovery
-                    items: formattedScratchItems.map(item => ({
+                    items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => ({
                       name: item.name,
                       description: item.description || '',
                       timestamp: item.timestamp,
-                      estimated_value: item.estimated_value
+                      estimated_value: item.estimated_value !== null ? item.estimated_value : 0 // Ensure a number
                     }))
                   } 
                 };
               }
-            } catch (regexError) {
-              logger.error('Emergency regex extraction failed', regexError);
-              // Ultimate fallback: Use scratch items directly
+            } catch (regexError: unknown) {
+              logger.error('Error during regex extraction:', regexError);
+              // Ultimate fallback: use scratch items if regex itself errors
+              logger.info('Regex extraction failed, using scratch items directly as ultimate fallback');
               result = { 
                 object: { 
-                  items: formattedScratchItems.map((item: { name: string; description: string | null; timestamp: number; estimated_value: number | null }) => ({
+                  items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => ({
                     name: item.name,
                     description: item.description || '',
                     timestamp: item.timestamp,
-                    estimated_value: item.estimated_value
+                    estimated_value: item.estimated_value !== null ? item.estimated_value : 0 // Ensure a number
                   }))
                 } 
               };
@@ -352,11 +386,11 @@ CRITICAL: Never return timestamps with many decimal places like 0.000000000 as t
           logger.warn('Could not extract error text, using scratch items as fallback');
           result = { 
             object: { 
-              items: formattedScratchItems.map((item: { name: string; description: string | null; timestamp: number; estimated_value: number | null }) => ({
+              items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => ({
                 name: item.name,
                 description: item.description || '',
                 timestamp: item.timestamp,
-                estimated_value: item.estimated_value
+                estimated_value: item.estimated_value !== null ? item.estimated_value : 0 // Ensure a number
               }))
             } 
           };
@@ -381,27 +415,69 @@ CRITICAL: Never return timestamps with many decimal places like 0.000000000 as t
         
         // Find matching scratch items to get estimated value
         const matchingScratchItems = formattedScratchItems.filter(
-          scratchItem => scratchItem.name.toLowerCase() === item.name.toLowerCase()
+          scratchItem => {
+            // More flexible matching - check if names are similar
+            const itemNameLower = item.name.toLowerCase();
+            const scratchNameLower = scratchItem.name.toLowerCase();
+            
+            // Direct match
+            if (itemNameLower === scratchNameLower) return true;
+            
+            // Contains match (iPhone contains phone, laptop contains computer, etc)
+            if (itemNameLower.includes(scratchNameLower) || scratchNameLower.includes(itemNameLower)) return true;
+            
+            // Special cases for common device types
+            if ((itemNameLower.includes('phone') && scratchNameLower.includes('smartphone')) ||
+                (itemNameLower.includes('iphone') && scratchNameLower.includes('smartphone')) ||
+                (itemNameLower.includes('computer') && scratchNameLower.includes('laptop')) ||
+                (itemNameLower.includes('laptop') && scratchNameLower.includes('computer'))) {
+              return true;
+            }
+            
+            return false;
+          }
         );
         
-        // Get the estimated value from matching scratch items
+        // Get estimated value with fallbacks to ensure it's never null
         let sanitizedValue = null;
-        if (matchingScratchItems.length > 0) {
+        
+        // First try: Use value from item (LLM assigned value)
+        if (item.estimated_value !== undefined && item.estimated_value !== null && item.estimated_value > 0) {
+          sanitizedValue = item.estimated_value;
+          logger.info(`Using LLM-provided estimated_value ${sanitizedValue} for "${item.name}"`);
+        } 
+        // Second try: Find matching scratch item value
+        else if (matchingScratchItems.length > 0 && matchingScratchItems[0].estimated_value !== null) {
           sanitizedValue = matchingScratchItems[0].estimated_value;
-          logger.info(`Using estimated_value ${sanitizedValue} from matching scratch item for "${item.name}"`);
-        } else {
-          logger.info(`No matching scratch item found for "${item.name}", using null for estimated_value`);
+          logger.info(`Using estimated_value ${sanitizedValue} from matching scratch item "${matchingScratchItems[0].name}" for "${item.name}"`);
+        } 
+        // Third try: Set fallback value based on item type
+        else {
+          // Assign reasonable default values based on item category
+          const itemNameLower = item.name.toLowerCase();
+          if (itemNameLower.includes('phone') || itemNameLower.includes('iphone') || itemNameLower.includes('smartphone')) {
+            sanitizedValue = 800;
+          } else if (itemNameLower.includes('laptop') || itemNameLower.includes('computer') || itemNameLower.includes('macbook')) {
+            sanitizedValue = 1200;
+          } else if (itemNameLower.includes('sofa') || itemNameLower.includes('couch')) {
+            sanitizedValue = 600;
+          } else if (itemNameLower.includes('tv') || itemNameLower.includes('television')) {
+            sanitizedValue = 500;
+          } else if (itemNameLower.includes('artwork') || itemNameLower.includes('painting') || itemNameLower.includes('frame')) {
+            sanitizedValue = 150;
+          } else {
+            // Last resort fallback
+            sanitizedValue = 100;
+          }
+          logger.info(`No value found for "${item.name}", using fallback value: ${sanitizedValue}`);
         }
 
         return {
           name: item.name,
           description: item.description || '',
-          asset_id: asset.id,
           user_id: user_id,
-          source_id: item.id || null, // if we have a source ID
           mux_asset_id: asset.mux_asset_id,
           item_timestamp: sanitizedTimestamp,
-          source_table: 'merged',
           estimated_value: sanitizedValue,
           media_type: 'item',
           media_url: '',
@@ -413,13 +489,13 @@ CRITICAL: Never return timestamps with many decimal places like 0.000000000 as t
 
       // Log the items being inserted
       logger.info('Inserting items into assets table with estimated values');
-      itemsToInsert.forEach((item, index) => {
+      itemsToInsert.forEach((item: AnalyzedItem & { estimated_value: number | null }, index: number) => {
         // The actual estimated_value property on the itemsToInsert object
         logger.info(`Item ${index + 1}: ${item.name}, value to be inserted: ${JSON.stringify(item.estimated_value)}`);
       });
 
       // Log the final payload after all transformations
-      logger.info(`Final insert payload after formatting: ${JSON.stringify(itemsToInsert.map((item) => ({
+      logger.info(`Final insert payload after formatting: ${JSON.stringify(itemsToInsert.map((item: AnalyzedItem & { estimated_value: number | null }) => ({
         name: item.name,
         estimated_value: item.estimated_value,
         type: typeof item.estimated_value
@@ -464,7 +540,7 @@ CRITICAL: Never return timestamps with many decimal places like 0.000000000 as t
 
       // Only delete scratch items if the environment variable allows it
       const shouldDeleteScratchItems = process.env.DELETE_SCRATCH_ITEMS_AFTER_MERGE === 'true';
-
+      
       if (shouldDeleteScratchItems && formattedScratchItems.length > 0) {
         logger.info(`DELETE_SCRATCH_ITEMS_AFTER_MERGE is set to true, deleting ${formattedScratchItems.length} scratch items`);
         const { error: deleteError } = await serviceClient
@@ -472,7 +548,7 @@ CRITICAL: Never return timestamps with many decimal places like 0.000000000 as t
           .delete()
           .eq('user_id', user_id)
           .eq('mux_asset_id', asset.mux_asset_id);
-
+  
         if (deleteError) {
           logger.error('Error deleting scratch items after merge:', deleteError);
           // Continue even if deletion fails
@@ -482,7 +558,7 @@ CRITICAL: Never return timestamps with many decimal places like 0.000000000 as t
       } else {
         logger.info(`Keeping scratch items after merge (DELETE_SCRATCH_ITEMS_AFTER_MERGE=${process.env.DELETE_SCRATCH_ITEMS_AFTER_MERGE})`);
       }
-
+  
       // Return success response
       return corsJsonResponse({
         success: true,
@@ -495,4 +571,4 @@ CRITICAL: Never return timestamps with many decimal places like 0.000000000 as t
   } catch (error: unknown) {
     return handleError(error);
   }
-} 
+}
