@@ -1,15 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { NextRequest } from 'next/server';
 import { createServiceSupabaseClient } from '@/lib/auth/supabase';
 import { z } from 'zod';
 import { generateObject } from 'ai';
-import { corsHeaders, corsJsonResponse, corsErrorResponse, corsOptionsResponse } from '@/lib/api/response';
+import { corsJsonResponse, corsErrorResponse, corsOptionsResponse } from '@/lib/api/response';
 import { getAiModel } from '@/lib/ai/config';
 
 const logger = {
-  info: (message: string, ...args: any[]) => console.log(`[Merge API] ${message}`, ...args),
-  error: (message: string, ...args: any[]) => console.error(`[Merge API] ${message}`, ...args),
-  warn: (message: string, ...args: any[]) => console.warn(`[Merge API] ${message}`, ...args)
+  info: (message: string, ...args: unknown[]) => console.log(`[Merge API] ${message}`, ...args),
+  error: (message: string, ...args: unknown[]) => console.error(`[Merge API] ${message}`, ...args),
+  warn: (message: string, ...args: unknown[]) => console.warn(`[Merge API] ${message}`, ...args)
 };
 
 // Define schema for expected output from Gemini
@@ -25,10 +24,10 @@ const OutputSchema = z.object({
 });
 
 // Helper to handle errors consistently
-const handleError = (error: any, status = 500) => {
+const handleError = (error: unknown, status = 500) => {
   logger.error('Error processing merge request:', error);
   return corsErrorResponse(
-    error.message || 'Failed to merge transcript with scratch items',
+    error instanceof Error ? error.message : 'Failed to merge transcript with scratch items',
     status
   );
 };
@@ -272,10 +271,10 @@ IMPORTANT: Format timestamps as numbers with a maximum of one decimal place (e.g
         items: analyzedItems,
         message: 'Successfully merged transcript with scratch items',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       return handleError(error);
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     return handleError(error);
   }
 } 

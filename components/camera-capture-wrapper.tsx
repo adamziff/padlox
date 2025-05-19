@@ -63,7 +63,7 @@ export function CameraCaptureWrapper(props: CameraCaptureWrapperProps) {
             // Run the cleanup attempt
             attemptForceCameraStop();
         };
-    }, []); // Empty dependency array ensures this runs only once on mount and unmount
+    }, [props.realTimeAnalysis]); // Empty dependency array ensures this runs only once on mount and unmount
 
     // Handlers now simply forward the calls after ensuring the component unmounts
     // (CameraCapture's internal cleanup handles the stream/recorder)

@@ -1,10 +1,9 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Plus, ListFilter, Zap } from 'lucide-react';
-import React, { useState } from 'react';
+import { Plus, ListFilter } from 'lucide-react';
+import React from 'react';
 import { Input } from "@/components/ui/input"
-import { toast } from 'sonner';
 
 interface DashboardHeaderProps {
     hasAssets: boolean;
@@ -29,8 +28,6 @@ export function DashboardHeader({
     searchTerm,
     onSearchChange
 }: DashboardHeaderProps) {
-    const [isRunningWorkflow, setIsRunningWorkflow] = useState(false);
-
     return (
         <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-center gap-4">
