@@ -1,7 +1,7 @@
 -- Migration: Add real-time frame analysis support
 -- 2024-05-23
 
-DROP TRIGGER IF EXISTS scratch_item_inserted_trigger ON public.scratch_items;
+-- DROP TRIGGER IF EXISTS scratch_item_inserted_trigger ON public.scratch_items;
 -- DROP POLICY "Users can access their own scratch items" ON public.scratch_items;
 -- DROP POLICY "Users can insert scratch items for their own assets" ON public.scratch_items;
 -- DROP POLICY "Users can delete their own scratch items" ON public.scratch_items;

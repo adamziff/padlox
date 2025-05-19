@@ -23,20 +23,6 @@ const OutputSchema = z.object({
   items: z.array(ItemSchema),
 });
 
-// Define interfaces for error handling
-interface LLMError extends Error {
-  text?: string;
-  message: string;
-}
-
-// Define interface for parsed items from LLM response
-interface ParsedItem {
-  name?: string;
-  description?: string;
-  timestamp?: number;
-  estimated_value?: number | null;
-}
-
 // Helper to handle errors consistently
 const handleError = (error: unknown, status = 500) => {
   logger.error('Error processing merge request:', error);
@@ -171,7 +157,7 @@ Return the result as a JSON array of objects with the following format:
   ]
 }
 
-IMPORTANT: Format timestamps as numbers with EXACTLY one decimal place (e.g., 2.0 or 2.1), never more. Do not use strings for timestamps, and never use timestamps with excessive decimal precision. If the exact timestamp is unknown, use 0.0. Never use scientific notation, and never use more than one decimal place.
+IMPORTANT: Format timestamps as numbers with a maximum of one decimal place (e.g., 2.0 or 2.1), not strings or numbers with excessive decimal precision. If the timestamp or estimated value is unknown, you can omit it from the object.
 `;
 
     // Generate items using Gemini API
@@ -179,70 +165,12 @@ IMPORTANT: Format timestamps as numbers with EXACTLY one decimal place (e.g., 2.
     const model = getAiModel();
     
     try {
-      // Add failsafe for invalid JSON timestamps - check and preprocess the response if needed
-      let result;
-      try {
-        result = await generateObject({
-          model: model,
-          schema: OutputSchema,
-          prompt,
-          mode: 'json'
-        });
-      } catch (genError: unknown) {
-        // If we failed to parse the response due to malformed JSON, try to fix it
-        if (genError instanceof Error && 
-            genError.message && 
-            (genError.message.includes('JSON parsing failed') || 
-             genError.message.includes('could not parse the response'))) {
-          
-          // Get the raw text from the error
-          const errorText = (genError as LLMError).text || '';
-          
-          if (errorText) {
-            logger.warn('Received malformed JSON. Attempting to fix timestamp formatting...');
-            
-            // Fix extremely long timestamps by replacing them with simple 0.0
-            // This regex looks for timestamp patterns with extremely long decimal values
-            const fixedText = errorText.replace(/"timestamp"\s*:\s*(\d+\.\d{10,})/g, '"timestamp": 0.0');
-            
-            logger.info('Parsing fixed JSON manually');
-            
-            try {
-              // Try to parse the fixed JSON
-              const parsedResult = JSON.parse(fixedText);
-              
-              // Verify the structure matches our expected format
-              if (parsedResult && parsedResult.items && Array.isArray(parsedResult.items)) {
-                // Sanitize the items
-                result = {
-                  object: {
-                    items: parsedResult.items.map((item: ParsedItem) => ({
-                      name: item.name || 'Unnamed Item',
-                      description: item.description || '',
-                      timestamp: typeof item.timestamp === 'number' ? 
-                        Math.round(item.timestamp * 10) / 10 : 0.0,
-                      estimated_value: typeof item.estimated_value === 'number' ? 
-                        item.estimated_value : null
-                    }))
-                  }
-                };
-                
-                logger.info('Successfully recovered and fixed the malformed JSON response');
-              } else {
-                // Still invalid structure, can't recover
-                throw new Error('Failed to recover valid structure from malformed JSON');
-              }
-            } catch (parseError) {
-              logger.error('Failed to recover from malformed JSON:', parseError);
-              throw genError; // Re-throw the original error
-            }
-          } else {
-            throw genError; // Re-throw if we don't have text to work with
-          }
-        } else {
-          throw genError; // Re-throw if it's not a JSON parsing error
-        }
-      }
+      const result = await generateObject({
+        model: model,
+        schema: OutputSchema,
+        prompt,
+        mode: 'json'
+      });
       
       const analyzedItems = result.object.items || [];
       logger.info(`Generated ${analyzedItems.length} items from Gemini API`);
@@ -253,7 +181,7 @@ IMPORTANT: Format timestamps as numbers with EXACTLY one decimal place (e.g., 2.
         logger.info(`Adding timestamps and estimated values to items`);
         
         // Create array of new items to insert
-        const itemsToInsert = analyzedItems.map((item: z.infer<typeof ItemSchema>) => {
+        const itemsToInsert = analyzedItems.map(item => {
           // Sanitize timestamp - ensure it has only 1 decimal place
           let sanitizedTimestamp = 0;
           if (item.timestamp !== undefined && item.timestamp !== null) {
