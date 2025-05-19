@@ -23,6 +23,15 @@ const OutputSchema = z.object({
   items: z.array(ItemSchema),
 });
 
+// Define types for the analyzed items
+interface AnalyzedItem {
+  name: string;
+  description?: string;
+  timestamp?: number;
+  estimated_value?: number | null;
+  id?: string;
+}
+
 // Helper to handle errors consistently
 const handleError = (error: unknown, status = 500) => {
   logger.error('Error processing merge request:', error);
@@ -36,6 +45,12 @@ const handleError = (error: unknown, status = 500) => {
 export async function OPTIONS() {
   return corsOptionsResponse();
 }
+
+// Helper to format timestamps consistently to 1 decimal place
+const formatTimestamp = (timestamp: number | null | undefined): number => {
+  if (timestamp === null || timestamp === undefined) return 0;
+  return Math.round(Number(timestamp) * 10) / 10;
+};
 
 export async function POST(req: NextRequest) {
   console.log(`[Merge API] POST handler started at ${new Date().toISOString()}`);
@@ -105,10 +120,17 @@ export async function POST(req: NextRequest) {
     // Format scratch items for inclusion in the prompt
     const formattedScratchItems = (scratchItems || []).map(item => {
       logger.info(`Processing scratch item: ${JSON.stringify(item)}`);
+      // Ensure timestamp is sanitized before including in prompt
+      const sanitizedTimestamp = item.video_timestamp !== null && item.video_timestamp !== undefined 
+        ? Math.round(Number(item.video_timestamp) * 10) / 10 
+        : 0;
+      
+      logger.info(`Original timestamp: ${item.video_timestamp}, Sanitized: ${sanitizedTimestamp}`);
+      
       return {
         name: item.name,
         description: item.description || '',
-        timestamp: item.video_timestamp !== null && item.video_timestamp !== undefined ? item.video_timestamp : 0,
+        timestamp: sanitizedTimestamp,
         estimated_value: item.estimated_value
       };
     });
@@ -129,7 +151,7 @@ ${transcript}
 Here are the items detected in the video frames (name, description, timestamp in seconds, estimated value):
 ${formattedScratchItems.length > 0 
   ? formattedScratchItems.map(item => 
-      `- ${item.name}${item.description ? `: ${item.description}` : ''}${item.timestamp ? ` (at ${item.timestamp.toFixed(1)}s)` : ''}${item.estimated_value ? ` - Estimated Value: $${item.estimated_value}` : ''}`
+      `- ${item.name}${item.description ? `: ${item.description}` : ''}${item.timestamp ? ` (at ${formatTimestamp(item.timestamp).toFixed(1)}s)` : ''}${item.estimated_value ? ` - Estimated Value: $${item.estimated_value}` : ''}`
     ).join('\n')
   : 'No items were detected in the video frames.'
 }
@@ -157,7 +179,9 @@ Return the result as a JSON array of objects with the following format:
   ]
 }
 
-IMPORTANT: Format timestamps as numbers with a maximum of one decimal place (e.g., 2.0 or 2.1), not strings or numbers with excessive decimal precision. If the timestamp or estimated value is unknown, you can omit it from the object.
+IMPORTANT: Format timestamps as numbers with EXACTLY one decimal place (e.g., 2.0 or 2.1), not strings or numbers with excessive decimal precision. DO NOT return timestamps with more than one decimal place. For example, use 2.0 not 2.000 or 2.00000. If the timestamp or estimated value is unknown, you can omit it from the object.
+
+CRITICAL: Never return timestamps with many decimal places like 0.000000000 as this will break the system. Always round and limit to one decimal place.
 `;
 
     // Generate items using Gemini API
@@ -165,69 +189,263 @@ IMPORTANT: Format timestamps as numbers with a maximum of one decimal place (e.g
     const model = getAiModel();
     
     try {
-      const result = await generateObject({
-        model: model,
-        schema: OutputSchema,
-        prompt,
-        mode: 'json'
-      });
+      // Attempt to generate object using Gemini
+      let result;
+      try {
+        result = await generateObject({
+          model: model,
+          schema: OutputSchema,
+          prompt,
+          mode: 'json'
+        });
+
+        // Log the raw result from Gemini
+        logger.info(`Raw Gemini response items: ${JSON.stringify(result.object.items)}`);
+        
+        // Specifically log estimated values from the raw response
+        if (result.object.items && result.object.items.length > 0) {
+          logger.info('Estimated values in raw Gemini response:');
+          result.object.items.forEach((item, i) => {
+            logger.info(`  Item ${i + 1}: ${item.name}, raw estimated_value: ${JSON.stringify(item.estimated_value)}, type: ${typeof item.estimated_value}`);
+          });
+        }
+      } catch (jsonError: unknown) {
+        // If JSON parsing fails, implement fallback strategy
+        logger.warn('JSON parsing failed, attempting to preprocess response', jsonError);
+        
+        // Try to get the raw text response from the error
+        const errorText = jsonError instanceof Error && 'text' in jsonError 
+          ? String(jsonError.text)
+          : null;
+        
+        if (errorText) {
+          // Preprocess the response to fix timestamp format issues
+          logger.info('Preprocessing malformed response to fix timestamp format');
+          
+          // Step 1: Fix extreme decimal places in timestamp values
+          let preprocessedText = errorText.replace(
+            /"timestamp"\s*:\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)/g, 
+            (match, number) => {
+              // Convert to number and round to 1 decimal place
+              const sanitizedNumber = Math.round(parseFloat(number) * 10) / 10;
+              return `"timestamp": ${sanitizedNumber}`;
+            }
+          );
+          
+          // Step 2: Fix common JSON structural errors
+          
+          // Fix missing commas between array items (replace }{ with },{)
+          preprocessedText = preprocessedText.replace(/}\s*\n\s*{/g, '},{');
+          
+          // Fix incorrect comma placement (replace }, with })
+          preprocessedText = preprocessedText.replace(/},\s*\n\s*]/g, '}]');
+          
+          // Fix malformed array item separators (replace }  , with },)
+          preprocessedText = preprocessedText.replace(/}\s*,\s*\n/g, '},\n');
+          
+          // Remove any trailing commas before closing braces
+          preprocessedText = preprocessedText.replace(/,\s*}/g, '}');
+          
+          // Handle any other common JSON syntax errors we've seen
+          preprocessedText = preprocessedText.replace(/}\s*\n\s*,\s*\n\s*{/g, '},\n{');
+          
+          // Log the preprocessed text for debugging
+          logger.info('Preprocessed text length: ' + preprocessedText.length);
+          logger.info('First 500 chars: ' + preprocessedText.substring(0, 500));
+          logger.info('Last 500 chars: ' + preprocessedText.substring(preprocessedText.length - 500));
+          
+          logger.info('Attempting to parse preprocessed response');
+          
+          // Try to manually parse the fixed JSON
+          try {
+            const parsedJson = JSON.parse(preprocessedText);
+            
+            // Validate against our schema
+            const parsedResult = OutputSchema.safeParse(parsedJson);
+            if (parsedResult.success) {
+              logger.info('Successfully parsed preprocessed response');
+              result = { object: parsedResult.data };
+            } else {
+              logger.error('Schema validation failed for preprocessed response', parsedResult.error);
+              
+              // Try to extract items manually if schema validation fails
+              if (parsedJson && parsedJson.items && Array.isArray(parsedJson.items)) {
+                logger.info('Attempting to extract and sanitize items manually');
+                
+                // Filter and sanitize items
+                const sanitizedItems = parsedJson.items
+                  .filter((item: any) => item && typeof item === 'object' && item.name)
+                  .map((item: any) => ({
+                    name: String(item.name || 'Unnamed Item'),
+                    description: String(item.description || ''),
+                    timestamp: typeof item.timestamp === 'number' 
+                      ? Math.round(item.timestamp * 10) / 10 
+                      : (formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0),
+                    estimated_value: typeof item.estimated_value === 'number' 
+                      ? item.estimated_value 
+                      : null
+                  }));
+                
+                if (sanitizedItems.length > 0) {
+                  logger.info(`Extracted ${sanitizedItems.length} valid items manually`);
+                  result = { object: { items: sanitizedItems } };
+                } else {
+                  throw new Error('Could not extract any valid items from malformed response');
+                }
+              } else {
+                throw new Error('Schema validation failed and no items found in response');
+              }
+            }
+          } catch (parseError) {
+            logger.error('Failed to parse preprocessed response', parseError);
+            
+            // Last resort: Try to extract items using regex patterns
+            logger.info('Attempting emergency item extraction using regex');
+            try {
+              // @ts-expect-error - Emergency fallback code using any types for recovery
+              const itemPattern = /"name"\s*:\s*"([^"]+)"[^}]*"description"\s*:\s*"([^"]+)"[^}]*("timestamp"\s*:\s*(\d+\.?\d*)|"estimated_value"\s*:\s*(\d+\.?\d*))/g;
+              const matches = [...preprocessedText.matchAll(itemPattern)];
+              
+              if (matches.length > 0) {
+                logger.info(`Found ${matches.length} potential items using regex extraction`);
+                // @ts-expect-error - Emergency fallback code using any types for recovery
+                const extractedItems = matches.map((match, index) => ({
+                  name: match[1] || `Item ${index+1}`,
+                  description: match[2] || '',
+                  timestamp: formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0,
+                  estimated_value: 0 // Default value
+                }));
+                
+                result = { object: { items: extractedItems } };
+              } else {
+                // If all recovery attempts fail, fall back to using scratch items directly
+                logger.info('All recovery methods failed, using scratch items directly');
+                result = { 
+                  object: { 
+                    // @ts-expect-error - Emergency fallback code using any types for recovery
+                    items: formattedScratchItems.map(item => ({
+                      name: item.name,
+                      description: item.description || '',
+                      timestamp: item.timestamp,
+                      estimated_value: item.estimated_value
+                    }))
+                  } 
+                };
+              }
+            } catch (regexError) {
+              logger.error('Emergency regex extraction failed', regexError);
+              // Ultimate fallback: Use scratch items directly
+              result = { 
+                object: { 
+                  items: formattedScratchItems.map((item: { name: string; description: string | null; timestamp: number; estimated_value: number | null }) => ({
+                    name: item.name,
+                    description: item.description || '',
+                    timestamp: item.timestamp,
+                    estimated_value: item.estimated_value
+                  }))
+                } 
+              };
+            }
+          }
+        } else {
+          // If we can't get the error text, use scratch items as fallback
+          logger.warn('Could not extract error text, using scratch items as fallback');
+          result = { 
+            object: { 
+              items: formattedScratchItems.map((item: { name: string; description: string | null; timestamp: number; estimated_value: number | null }) => ({
+                name: item.name,
+                description: item.description || '',
+                timestamp: item.timestamp,
+                estimated_value: item.estimated_value
+              }))
+            } 
+          };
+        }
+      }
       
       const analyzedItems = result.object.items || [];
       logger.info(`Generated ${analyzedItems.length} items from Gemini API`);
       
-      // Create new asset items instead of updating an 'items' column
-      if (analyzedItems.length > 0) {
-        // Get default timestamps from scratch items for fallback
-        logger.info(`Adding timestamps and estimated values to items`);
-        
-        // Create array of new items to insert
-        const itemsToInsert = analyzedItems.map(item => {
-          // Sanitize timestamp - ensure it has only 1 decimal place
-          let sanitizedTimestamp = 0;
-          if (item.timestamp !== undefined && item.timestamp !== null) {
-            // Convert to number and round to 1 decimal place
-            sanitizedTimestamp = Math.round(Number(item.timestamp) * 10) / 10;
-            if (isNaN(sanitizedTimestamp)) {
-              logger.warn(`Invalid timestamp format for item "${item.name}": ${item.timestamp}, using default`);
-              sanitizedTimestamp = formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0;
-            }
-          } else {
-            sanitizedTimestamp = formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0;
-          }
-          
-          logger.info(`Item "${item.name}" - Using timestamp: ${sanitizedTimestamp} (${item.timestamp !== undefined ? 'from LLM' : 'from scratch items'}), Value: ${item.estimated_value}`);
-          
-          return {
-            user_id: user_id,
-            name: item.name || 'Unnamed Item',
-            description: item.description || '',
-            media_type: 'item',
-            media_url: '',
-            is_source_video: false,
-            source_video_id: asset.id,
-            item_timestamp: sanitizedTimestamp,
-            mux_playback_id: asset.mux_playback_id,
-            mux_asset_id: asset.mux_asset_id,
-            estimated_value: item.estimated_value !== undefined ? item.estimated_value : null
-          };
-        });
-        
-        // Insert new items as rows in the assets table
-        const { data: insertedItems, error: insertError } = await serviceClient
-          .from('assets')
-          .insert(itemsToInsert)
-          .select('id, name');
-  
-        if (insertError) {
-          return handleError(
-            new Error(`Failed to insert merged items: ${insertError.message}`),
-            500
-          );
+      // Adding timestamps and estimated values to items
+      logger.info('Adding timestamps and estimated values to items');
+
+      // Create array of new items to insert
+      const itemsToInsert = analyzedItems.map((item: AnalyzedItem) => {
+        // Sanitize timestamp - ensure it has only 1 decimal place
+        let sanitizedTimestamp = 0;
+        if (item.timestamp !== undefined && item.timestamp !== null) {
+          sanitizedTimestamp = Math.round(item.timestamp * 10) / 10;
+        } else if (formattedScratchItems.length > 0) {
+          sanitizedTimestamp = formattedScratchItems[0].timestamp;
         }
         
-        logger.info(`Successfully inserted ${insertedItems?.length || 0} items from merge`);
+        // Find matching scratch items to get estimated value
+        const matchingScratchItems = formattedScratchItems.filter(
+          scratchItem => scratchItem.name.toLowerCase() === item.name.toLowerCase()
+        );
+        
+        // Get the estimated value from matching scratch items
+        let sanitizedValue = null;
+        if (matchingScratchItems.length > 0) {
+          sanitizedValue = matchingScratchItems[0].estimated_value;
+          logger.info(`Using estimated_value ${sanitizedValue} from matching scratch item for "${item.name}"`);
+        } else {
+          logger.info(`No matching scratch item found for "${item.name}", using null for estimated_value`);
+        }
+
+        return {
+          name: item.name,
+          description: item.description || '',
+          asset_id: asset.id,
+          user_id: user_id,
+          source_id: item.id || null, // if we have a source ID
+          mux_asset_id: asset.mux_asset_id,
+          item_timestamp: sanitizedTimestamp,
+          source_table: 'merged',
+          estimated_value: sanitizedValue,
+          media_type: 'item',
+          media_url: '',
+          is_source_video: false,
+          source_video_id: asset.id,
+          mux_playback_id: asset.mux_playback_id
+        };
+      });
+
+      // Log the items being inserted
+      logger.info('Inserting items into assets table with estimated values');
+      itemsToInsert.forEach((item, index) => {
+        // The actual estimated_value property on the itemsToInsert object
+        logger.info(`Item ${index + 1}: ${item.name}, value to be inserted: ${JSON.stringify(item.estimated_value)}`);
+      });
+
+      // Log the final payload after all transformations
+      logger.info(`Final insert payload after formatting: ${JSON.stringify(itemsToInsert.map((item) => ({
+        name: item.name,
+        estimated_value: item.estimated_value,
+        type: typeof item.estimated_value
+      })))}`);
+
+      const { data: insertedItems, error: insertError } = await serviceClient
+        .from('assets')
+        .insert(itemsToInsert)
+        .select('id, name, estimated_value');
+  
+      if (insertError) {
+        logger.error(`Insert error details: ${JSON.stringify(insertError)}`);
+        return handleError(
+          new Error(`Failed to insert merged items: ${insertError.message}`),
+          500
+        );
       }
       
+      logger.info(`Successfully inserted ${insertedItems?.length || 0} items from merge.`);
+      if (insertedItems && insertedItems.length > 0) {
+        logger.info('Inserted items details:');
+        insertedItems.forEach((item, i) => {
+          logger.info(`  Item ${i + 1}: ${item.name}, returned estimated_value: ${JSON.stringify(item.estimated_value)}, type: ${typeof item.estimated_value}`);
+        });
+      }
+
       // Just update the asset as processed, without trying to store items in a column
       const { error: updateError } = await serviceClient
         .from('assets')
@@ -243,10 +461,10 @@ IMPORTANT: Format timestamps as numbers with a maximum of one decimal place (e.g
           500
         );
       }
-   
+
       // Only delete scratch items if the environment variable allows it
       const shouldDeleteScratchItems = process.env.DELETE_SCRATCH_ITEMS_AFTER_MERGE === 'true';
-      
+
       if (shouldDeleteScratchItems && formattedScratchItems.length > 0) {
         logger.info(`DELETE_SCRATCH_ITEMS_AFTER_MERGE is set to true, deleting ${formattedScratchItems.length} scratch items`);
         const { error: deleteError } = await serviceClient
@@ -254,7 +472,7 @@ IMPORTANT: Format timestamps as numbers with a maximum of one decimal place (e.g
           .delete()
           .eq('user_id', user_id)
           .eq('mux_asset_id', asset.mux_asset_id);
-   
+
         if (deleteError) {
           logger.error('Error deleting scratch items after merge:', deleteError);
           // Continue even if deletion fails
@@ -264,7 +482,7 @@ IMPORTANT: Format timestamps as numbers with a maximum of one decimal place (e.g
       } else {
         logger.info(`Keeping scratch items after merge (DELETE_SCRATCH_ITEMS_AFTER_MERGE=${process.env.DELETE_SCRATCH_ITEMS_AFTER_MERGE})`);
       }
-  
+
       // Return success response
       return corsJsonResponse({
         success: true,
