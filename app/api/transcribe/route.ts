@@ -177,99 +177,96 @@ export const POST = withAuth(async (request: Request) => {
         console.error(`[Transcribe API] Error marking asset ${assetId} as source:`, markSourceError);
       }
 
-      // Adjust the URL to the new merge endpoint
-      const analyzeUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/api/analyze-transcript/merge-with-scratch`;
-
-      // After successfully updating the transcript, trigger the analysis to extract items from the transcript
-      try {
-        console.log(`[Transcribe] Triggering merged transcript and scratch item analysis for asset ${assetId} with user_id ${asset.user_id} and mux_asset_id ${asset.mux_asset_id}`);
-        console.log(`[Transcribe] Using analyze URL: ${analyzeUrl}`);
-
-        const requestBody = {
-          user_id: asset.user_id,
-          asset_id: assetId,
-          mux_asset_id: asset.mux_asset_id,
-          transcript: transcriptText
-        };
-        
-        console.log(`[Transcribe] Sending request with body: ${JSON.stringify({
-          user_id: asset.user_id,
-          asset_id: assetId, 
-          mux_asset_id: asset.mux_asset_id,
-          transcript_length: transcriptText.length
-        })}`);
-
-        // Try up to 3 times with exponential backoff
-        let retryCount = 0;
-        const maxRetries = 3;
-        let success = false;
-        
-        while (retryCount < maxRetries && !success) {
-          try {
-            if (retryCount > 0) {
-              console.log(`[Transcribe] Retry attempt ${retryCount} for merge-with-scratch API call`);
-              // Exponential backoff: 1s, 2s, 4s, etc.
-              await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount - 1) * 1000));
-            }
-            
-            const analyzeResponse = await fetch(analyzeUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(requestBody)
-            });
-
-            if (!analyzeResponse.ok) {
-              const errorText = await analyzeResponse.text();
-              console.error(`[Transcribe] Error analyzing transcript and scratch items for asset ${assetId}: ${errorText}`);
-              console.error(`[Transcribe] Failed to analyze with status: ${analyzeResponse.status}`);
-              retryCount++;
-            } else {
-              const analysisResult = await analyzeResponse.json();
-              console.log(`[Transcribe] Successfully merged and analyzed transcript and scratch items for asset ${assetId}. Found ${analysisResult.items?.length || 0} items.`);
-              console.log(`[Transcribe] Analysis result: ${JSON.stringify(analysisResult)}`);
-              success = true;
-            }
-          } catch (error) {
-            console.error(`[Transcribe] Exception during attempt ${retryCount + 1} to trigger transcript and scratch item analysis for asset ${assetId}:`, error);
-            retryCount++;
+      const mergeUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/api/analyze-transcript/merge-with-scratch`;
+      console.log(`[Transcribe] Using analyze URL: ${mergeUrl}`);
+      
+      // Even if the transcript is empty, we still want to try to merge with scratch items
+      // Create a request body with or without transcript text
+      const requestBody: {
+        user_id: string;
+        asset_id: string;
+        mux_asset_id: string;
+        transcript?: string;
+      } = {
+        user_id: asset.user_id,
+        asset_id: asset.id,
+        mux_asset_id: asset.mux_asset_id
+      };
+      
+      if (transcriptData && typeof transcriptText === 'string' && transcriptText.length > 0) {
+        requestBody.transcript = transcriptText;
+      } else {
+        console.log(`[Transcribe] No transcript text available, but still proceeding with scratch item merge`);
+      }
+      
+      console.log(`[Transcribe] Sending request with body: ${JSON.stringify({
+        ...requestBody,
+        transcript_length: transcriptText?.length || 0
+      })}`);
+      
+      let attemptCount = 0;
+      const maxAttempts = 3;
+      
+      // Try up to 3 times with exponential backoff
+      let success = false;
+      
+      while (attemptCount < maxAttempts && !success) {
+        try {
+          if (attemptCount > 0) {
+            console.log(`[Transcribe] Retry attempt ${attemptCount} for merge-with-scratch API call`);
+            // Exponential backoff: 1s, 2s, 4s, etc.
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attemptCount - 1) * 1000));
           }
+          
+          const analyzeResponse = await fetch(mergeUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+          });
+
+          if (!analyzeResponse.ok) {
+            const errorText = await analyzeResponse.text();
+            console.error(`[Transcribe] Error analyzing transcript and scratch items for asset ${assetId}: ${errorText}`);
+            console.error(`[Transcribe] Failed to analyze with status: ${analyzeResponse.status}`);
+            attemptCount++;
+          } else {
+            const analysisResult = await analyzeResponse.json();
+            console.log(`[Transcribe] Successfully merged and analyzed transcript and scratch items for asset ${assetId}. Found ${analysisResult.items?.length || 0} items.`);
+            console.log(`[Transcribe] Analysis result: ${JSON.stringify(analysisResult)}`);
+            success = true;
+          }
+        } catch (error) {
+          console.error(`[Transcribe] Exception during attempt ${attemptCount + 1} to trigger transcript and scratch item analysis for asset ${assetId}:`, error);
+          attemptCount++;
         }
-        
-        if (!success) {
-          console.error(`[Transcribe] Failed to merge transcript with scratch items after ${maxRetries} attempts. Will rely on webhook fallback mechanism.`);
-          // We don't fail the overall request if analysis fails - just log the error
-        }
-      } catch (error) {
-        console.error(`[Transcribe] Exception triggering transcript and scratch item analysis for asset ${assetId}:`, error);
+      }
+      
+      if (!success) {
+        console.error(`[Transcribe] Failed to merge transcript with scratch items after ${maxAttempts} attempts. Will rely on webhook fallback mechanism.`);
         // We don't fail the overall request if analysis fails - just log the error
       }
-
+      
+      // Always return a success response at the end of the try block
       return corsJsonResponse({
         success: true,
-        message: 'Transcription processed successfully',
-        assetId
+        message: 'Transcription processed successfully' + (transcriptText?.length ? '' : ' (no speech detected)'),
+        assetId,
+        hasTranscript: !!transcriptText?.length
       });
-    } catch (transcriptionError) {
-      console.error('Error processing transcription:', transcriptionError);
-      
-      // Update asset to show transcription error
+    } catch (error) {
+      console.error(`[Transcribe API] Error processing transcription for asset ${assetId}:`, error);
       await supabase
         .from('assets')
         .update({
           transcript_processing_status: 'error',
-          transcript_error: transcriptionError instanceof Error 
-            ? transcriptionError.message 
-            : 'Unknown transcription error'
+          transcript_error: error instanceof Error ? error.message : String(error)
         })
         .eq('id', assetId);
-
-      return corsErrorResponse(
-        `Transcription processing failed: ${transcriptionError instanceof Error ? transcriptionError.message : 'Unknown error'}`,
-        500
-      );
+      
+      return corsErrorResponse(`Error processing transcription: ${error instanceof Error ? error.message : String(error)}`, 500);
     }
   } catch (error) {
-    console.error('Error in transcription API:', error);
-    return corsErrorResponse('Server error processing transcription request', 500);
+    console.error(`[Transcribe API] Error processing request:`, error);
+    return corsErrorResponse(`Error processing request: ${error instanceof Error ? error.message : String(error)}`, 500);
   }
-}); 
+});

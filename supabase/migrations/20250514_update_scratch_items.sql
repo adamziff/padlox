@@ -32,6 +32,14 @@ ALTER TABLE "public"."scratch_items"
 COMMENT ON COLUMN "public"."scratch_items"."video_timestamp" IS 
   'Timestamp in seconds from the start of the video where this frame was captured';
 
+-- Add estimated_value column
+ALTER TABLE "public"."scratch_items"
+  ADD COLUMN "estimated_value" NUMERIC;
+
+-- Add comment explaining estimated_value column
+COMMENT ON COLUMN "public"."scratch_items"."estimated_value" IS
+  'Estimated value of the item in USD, derived from AI analysis';
+
 -- Add user_id column with foreign key reference
 ALTER TABLE "public"."scratch_items"
   ADD COLUMN "user_id" UUID REFERENCES auth.users(id);

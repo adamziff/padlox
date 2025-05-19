@@ -103,25 +103,40 @@ export function extractPlainText(transcript: TranscriptData): string {
 }
 
 /**
- * Get paragraph-formatted text from TranscriptData
- * @param transcript - The transcript data object
- * @returns The paragraph-formatted text
+ * Extract paragraph format text from Deepgram transcript
+ * @param transcript The transcript data from Deepgram
+ * @returns Formatted paragraph text
  */
 export function extractParagraphText(transcript: TranscriptData): string {
+  // Check if transcript exists and has necessary data
+  if (!transcript || 
+      !transcript.results || 
+      !transcript.results.channels || 
+      !transcript.results.channels[0] || 
+      !transcript.results.channels[0].alternatives || 
+      !transcript.results.channels[0].alternatives[0] || 
+      !transcript.results.channels[0].alternatives[0].paragraphs) {
+    console.log('Invalid or empty transcript format, returning empty string');
+    return '';
+  }
+
   try {
-    // If paragraphs are available, use them
-    const paragraphs = transcript?.results?.channels?.[0]?.alternatives?.[0]?.paragraphs?.paragraphs;
+    // Extract paragraphs from transcript
+    const paragraphs = transcript.results.channels[0].alternatives[0].paragraphs.paragraphs;
     
-    if (paragraphs && paragraphs.length > 0) {
-      return paragraphs.map(paragraph => {
-        return paragraph.sentences.map(sentence => sentence.text).join(' ');
-      }).join('\n\n');
+    if (!paragraphs || paragraphs.length === 0) {
+      console.log('No paragraphs found in transcript');
+      return '';
     }
     
-    // Fall back to plain transcript
-    return extractPlainText(transcript);
+    // Format as a single text block with paragraph breaks
+    return paragraphs.map(p => {
+      // Extract text from all sentences in the paragraph
+      return p.sentences.map(sentence => sentence.text).join(' ');
+    }).filter(text => text.trim().length > 0).join('\n\n');
   } catch (error) {
-    console.error('Error extracting paragraph text from transcript:', error);
-    return extractPlainText(transcript);
+    console.error('Error extracting paragraph text:', error);
+    // Fallback to transcript text if paragraphs can't be extracted
+    return transcript.results.channels[0].alternatives[0].transcript || '';
   }
 } 

@@ -40,7 +40,8 @@ interface ProcessingResult {
 // Define schema for Gemini response
 const InventoryItemSchema = z.object({
   name: z.string().describe('The name of the identified item'),
-  description: z.string().optional().describe('A brief description of the item\'s visible features')
+  description: z.string().optional().describe('A brief description of the item\'s visible features'),
+  estimated_value: z.number().nullable().describe('An estimated value of the item in USD (can be null if impossible to estimate)')
 });
 
 const ResponseSchema = z.object({
@@ -117,6 +118,7 @@ async function analyzeFrameWithGemini(imageUrl: string) {
       For each item detected:
       1. Provide a concise name for the item
       2. Add a brief description of visible features (color, brand, condition, materials, etc.)
+      3. Provide an estimated value in USD as a number. IMPORTANT: You must provide a reasonable USD estimate for EVERY item (or null only if absolutely impossible).
       
       Focus on accuracy. If you're uncertain about an item, don't include it.
       Concentrate on items that would be valuable for insurance documentation.
@@ -181,16 +183,29 @@ async function storeAllItems(
     console.log(`🖼️ [Processor] Storing item #${i+1}: ${item.name}`);
     
     try {
+      // Ensure videoTimestamp is never null
+      const safeTimestamp = videoTimestamp !== null && videoTimestamp !== undefined 
+        ? videoTimestamp 
+        : 0;
+        
       // Insert with the new simplified schema including user_id and mux_asset_id
       const insertData = {
         name: item.name,
         description: item.description,
-        video_timestamp: videoTimestamp,
+        video_timestamp: safeTimestamp,
         user_id: userId || null,
-        mux_asset_id: muxAssetId || null
+        mux_asset_id: muxAssetId || null,
+        estimated_value: item.estimated_value
       };
       
-      console.log(`🖼️ [Processor] Inserting item data: ${JSON.stringify(insertData)}`);
+      console.log(`🖼️ [Processor] Inserting item data: ${JSON.stringify({
+        name: item.name,
+        description: item.description ? item.description.substring(0, 30) + '...' : null,
+        video_timestamp: safeTimestamp,
+        estimated_value: item.estimated_value,
+        user_id: userId ? 'provided' : null,
+        mux_asset_id: muxAssetId ? muxAssetId.substring(0, 10) + '...' : null
+      })}`);
       
       const { data, error } = await supabase.from('scratch_items').insert(insertData);
       
