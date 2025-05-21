@@ -186,22 +186,26 @@ export const POST = withAuth(async (request: Request) => {
         user_id: string;
         asset_id: string;
         mux_asset_id: string;
-        transcript?: string;
+        transcript?: unknown;
       } = {
         user_id: asset.user_id,
         asset_id: asset.id,
         mux_asset_id: asset.mux_asset_id
       };
       
-      if (transcriptData && typeof transcriptText === 'string' && transcriptText.length > 0) {
-        requestBody.transcript = transcriptText;
+      // Send the full transcriptData object if available
+      if (transcriptData) { 
+        requestBody.transcript = transcriptData; 
       } else {
-        console.log(`[Transcribe] No transcript text available, but still proceeding with scratch item merge`);
+        console.log(`[Transcribe] No transcript data available, will proceed with only scratch items for merge`);
       }
       
       console.log(`[Transcribe] Sending request with body: ${JSON.stringify({
-        ...requestBody,
-        transcript_length: transcriptText?.length || 0
+        user_id: requestBody.user_id,
+        asset_id: requestBody.asset_id,
+        mux_asset_id: requestBody.mux_asset_id,
+        transcript_is_object: typeof requestBody.transcript === 'object' && requestBody.transcript !== null,
+        transcript_text_length: transcriptText?.length || 0 // Keep logging text length for reference
       })}`);
       
       let attemptCount = 0;

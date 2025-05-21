@@ -32,6 +32,31 @@ interface AnalyzedItem {
   id?: string;
 }
 
+// Define a minimal local type for the Deepgram word structure
+interface DeepgramWord {
+  word: string;
+  start: number;
+  end: number;
+  punctuated_word?: string;
+}
+
+interface DeepgramAlternative {
+  words: DeepgramWord[];
+  // other properties like transcript, confidence etc. can be added if needed
+}
+
+interface DeepgramChannel {
+  alternatives: DeepgramAlternative[];
+}
+
+interface DeepgramResults {
+  channels: DeepgramChannel[];
+}
+
+interface MinimalDeepgramResponse {
+  results?: DeepgramResults;
+}
+
 // Helper to handle errors consistently
 const handleError = (error: unknown, status = 500) => {
   logger.error('Error processing merge request:', error);
@@ -65,7 +90,26 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { user_id, asset_id, mux_asset_id, transcript } = body;
 
-    console.log(`[Merge API] Request params: user_id=${user_id}, asset_id=${asset_id}, mux_asset_id=${mux_asset_id}, transcript length=${transcript?.length || 0}`);
+    // More detailed logging of the received transcript
+    if (transcript) {
+      logger.info(`Received transcript. Type: ${typeof transcript}`);
+      if (typeof transcript === 'object' && transcript !== null) {
+        logger.info(`Transcript object keys: ${Object.keys(transcript).join(', ')}`);
+        // Log a snippet of results if it exists, to confirm structure
+        const minimalTranscript = transcript as MinimalDeepgramResponse;
+        if (minimalTranscript?.results?.channels?.[0]?.alternatives?.[0]?.words?.length) {
+          logger.info(`Transcript contains ${minimalTranscript.results.channels[0].alternatives[0].words.length} words.`);
+        } else {
+          logger.warn('Transcript object received, but does not seem to contain word-level data at the expected path.');
+        }
+      } else if (typeof transcript === 'string') {
+        logger.info(`Transcript is a string, length: ${transcript.length}`);
+      }
+    } else {
+      logger.warn('No transcript data received in the request body.');
+    }
+
+    console.log(`[Merge API] Request params (after detailed transcript log): user_id=${user_id}, asset_id=${asset_id}, mux_asset_id=${mux_asset_id}`);
 
     // Check for required fields - note that transcript is now optional if we have user_id and an asset ID
     if (!user_id || !(asset_id || mux_asset_id)) {
@@ -135,6 +179,24 @@ export async function POST(req: NextRequest) {
       };
     });
 
+    // Prepare detailed transcript context if transcript is available
+    let detailedTranscriptContext = '';
+    if (transcript && typeof transcript === 'object') { 
+      try {
+        const transcriptDataObject: MinimalDeepgramResponse = typeof transcript === 'string' ? JSON.parse(transcript) : transcript;
+        
+        if (transcriptDataObject?.results?.channels?.[0]?.alternatives?.[0]?.words) {
+          const wordsWithTimestamps = transcriptDataObject.results.channels[0].alternatives[0].words;
+          detailedTranscriptContext = JSON.stringify(wordsWithTimestamps.map((w: DeepgramWord) => ({ w: w.punctuated_word || w.word, s: w.start, e: w.end })));
+          logger.info('Successfully created detailed transcript context for the prompt.');
+        } else {
+          logger.warn('Transcript data is present but lacks the expected structure for detailed word timestamps.');
+        }
+      } catch (e) {
+        logger.error('Error processing transcript data for detailed context:', e);
+      }
+    }
+
     logger.info(`Found ${formattedScratchItems.length} scratch items to merge with transcript`);
 
     // Create a prompt that includes both transcript and scratch items
@@ -142,11 +204,12 @@ export async function POST(req: NextRequest) {
 You are an insurance inspection assistant analyzing a home inspection video. You will be given a transcript (if available) and a list of items detected in video frames (scratch_items).
 Your goal is to create a single, consolidated, and deduplicated list of all unique items for a home inventory.
 
-${transcript ? `--- TRANSCRIPT (PRIMARY SOURCE) ---
-${transcript}
---- END OF TRANSCRIPT ---
-
-The transcript is the PRIMARY SOURCE OF TRUTH. When the user mentions an item, ALWAYS prioritize its details (name, description, timestamp) over the AI vision detections (scratch_items).` 
+${transcript ? 
+  `--- TRANSCRIPT (PRIMARY SOURCE) ---
+${typeof transcript === 'string' ? transcript : JSON.stringify(transcript) /* Fallback to stringifying if not already a string */}
+${detailedTranscriptContext ? `\n\n--- DETAILED TRANSCRIPT WORD TIMESTAMPS (FOR PRECISE ITEM TIMESTAMPING) ---
+${detailedTranscriptContext}` : ''}
+--- END OF TRANSCRIPT DATA ---` 
 : `No audio transcript is available for this video. Rely solely on the visually detected scratch_items.`}
 
 --- VISUALLY DETECTED ITEMS (SCRATCH_ITEMS - SECONDARY SOURCE) ---
@@ -162,9 +225,9 @@ Please analyze all available information to create the final consolidated list.
 
 CRITICAL MERGING, DEDUPLICATION, AND NAMING LOGIC:
 
-1.  TIMELINE INTEGRATION:
+1.  TIMELINE INTEGRATION & TRANSCRIPT TIMESTAMPING:
     -   Carefully consider the timestamps of items from BOTH the transcript and scratch_items.
-    -   If an item is mentioned in the transcript, its timestamp is when the user FIRST mentions it. This is the definitive timestamp.
+    -   If an item is mentioned in the transcript, its timestamp is when the user FIRST mentions it. **Use the start time ('s') from the DETAILED TRANSCRIPT WORD TIMESTAMPS for this.** This is the definitive timestamp.
     -   Merge items chronologically where possible, using timestamps to resolve order and duplicates.
 
 2.  ADVANCED DEDUPLICATION (VERY IMPORTANT):
@@ -174,13 +237,13 @@ CRITICAL MERGING, DEDUPLICATION, AND NAMING LOGIC:
         *   Create ONLY ONE entry.
         *   NAME: ALWAYS use the name from the transcript. Make it descriptive (2-3 words min).
         *   DESCRIPTION: ALWAYS use the description from the transcript (enhance with visual details from scratch_items if relevant and not contradictory).
-        *   TIMESTAMP: ALWAYS use the EARLIEST timestamp from the transcript.
+        *   TIMESTAMP: ALWAYS use the EARLIEST start time ('s') from the DETAILED TRANSCRIPT WORD TIMESTAMPS for when the item was first mentioned.
         *   ESTIMATED VALUE: Use the transcript's value if specified. If not, use the value from the BEST MATCHING scratch_item. If no match or no scratch_item value, provide a reasonable estimate.
 
 3.  TRANSCRIPT-ONLY ITEMS:
     -   Name: Use transcript name; make it descriptive (2-3 words min).
     -   Description: Use transcript description.
-    -   Timestamp: Use transcript timestamp.
+    -   Timestamp: Use the EARLIEST start time ('s') from the DETAILED TRANSCRIPT WORD TIMESTAMPS.
     -   Estimated Value: ALWAYS assign one. If not in transcript, estimate reasonably (can use similar scratch_items as a guide if available).
 
 4.  SCRATCH_ITEMS-ONLY ITEMS (after thorough deduplication):
