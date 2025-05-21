@@ -113,14 +113,28 @@ async function analyzeFrameWithGemini(imageUrl: string) {
     
     // Format the prompt for analyzing the image
     const prompt = `Analyze this image of a room or space for a home inventory system.
-      Identify household items that would be important for insurance purposes.
+      Identify household items and personal belongings that would be important for insurance purposes.
       
-      For each item detected:
-      1. Provide a concise name for the item
-      2. Add a brief description of visible features (color, brand, condition, materials, etc.)
-      3. Provide an estimated value in USD as a number. IMPORTANT: You must provide a reasonable USD estimate for EVERY item (or null only if absolutely impossible).
+      IMPORTANT EXCLUSIONS:
+      - DO NOT include fixed features of the home itself (e.g., windows, doors, walls, ceilings, floors, built-in shelving).
+      - DO NOT include everyday clothing or accessories being worn by people in the video (e.g., shirts, pants, common jewelry like a simple necklace or watch) unless they are clearly high-value designer items or explicitly highlighted as valuable.
+      - Focus ONLY on movable contents and distinct, valuable personal property.
+
+      For each item detected that meets the criteria:
+      1. Provide a specific and descriptive name (2-3 words minimum) that clearly distinguishes this item from similar items.
+         - For example, use "Brown Leather Sofa" instead of just "Sofa".
+         - For electronics, include brand if visible: "Apple MacBook Pro" instead of just "Laptop".
+         - For artwork or decorative items, describe the style: "Abstract Canvas Painting" instead of just "Artwork".
+         - DO NOT MAKE UP OR GUESS DETAILS. ONLY USE WHAT YOU SEE IN THE IMAGE.
       
-      Focus on accuracy. If you're uncertain about an item, don't include it.
+      2. Write a DETAILED TWO-SENTENCE description:
+         - First sentence must cover physical attributes: size, color, material, distinctive features.
+         - Second sentence must describe location in the room and apparent condition.
+         - Example: "Large brown leather sectional sofa with chaise and decorative pillows. The sofa is positioned against the living room wall and appears to be in excellent condition with minimal wear."
+      
+      3. Provide an estimated value in USD as a number. IMPORTANT: You must provide a reasonable USD estimate for EVERY item (never return null).
+      
+      Focus on accuracy and DETAIL. Your descriptions must be specific enough that identical items detected in different frames can be recognized as the same item.
       Concentrate on items that would be valuable for insurance documentation.
       
       The image shows:`;

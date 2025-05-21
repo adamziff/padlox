@@ -139,85 +139,77 @@ export async function POST(req: NextRequest) {
 
     // Create a prompt that includes both transcript and scratch items
     const prompt = `
-You are an insurance inspection assistant analyzing a video and transcript from a home inspection.
+You are an insurance inspection assistant analyzing a home inspection video. You will be given a transcript (if available) and a list of items detected in video frames (scratch_items).
+Your goal is to create a single, consolidated, and deduplicated list of all unique items for a home inventory.
 
-${transcript ? `I have a transcript from a home inspection video and a list of items that were detected in the video frames during recording.
-
-Here is the transcript. This is the PRIMARY SOURCE OF TRUTH. When the user mentions any item in the transcript, ALWAYS prioritize these details over the AI vision detections:
---- TRANSCRIPT (PRIMARY SOURCE) ---
+${transcript ? `--- TRANSCRIPT (PRIMARY SOURCE) ---
 ${transcript}
---- END OF TRANSCRIPT ---` : `I have a list of items that were detected in the video frames during a home inspection recording. There is no audio transcript available.`}
+--- END OF TRANSCRIPT ---
 
-Here are the items detected in the video frames (name, description, timestamp in seconds, estimated value). These are SECONDARY references and should only be used when an item is NOT mentioned in the transcript:
+The transcript is the PRIMARY SOURCE OF TRUTH. When the user mentions an item, ALWAYS prioritize its details (name, description, timestamp) over the AI vision detections (scratch_items).` 
+: `No audio transcript is available for this video. Rely solely on the visually detected scratch_items.`}
+
+--- VISUALLY DETECTED ITEMS (SCRATCH_ITEMS - SECONDARY SOURCE) ---
 ${formattedScratchItems.length > 0 
   ? formattedScratchItems.map(item => 
-      `- ${item.name}${item.description ? `: ${item.description}` : ''}${item.timestamp ? ` (at ${formatTimestamp(item.timestamp).toFixed(1)}s)` : ''}${item.estimated_value ? ` - Estimated Value: $${item.estimated_value}` : ''}`
-    ).join('\n')
+      `- Name: ${item.name}\n  Description: ${item.description}\n  Timestamp: ${formatTimestamp(item.timestamp).toFixed(1)}s\n  Estimated Value: $${item.estimated_value}`
+    ).join('\n\n')
   : 'No items were detected in the video frames.'
 }
+--- END OF SCRATCH_ITEMS ---
 
-Please analyze ${transcript ? 'both the transcript and' : ''} the detected items to create a single, consolidated list of all unique items for a home inventory. 
+Please analyze all available information to create the final consolidated list.
 
-MERGING INSTRUCTIONS (CRITICAL):
-1. If an item is mentioned in BOTH the transcript and the detected video frames:
-   - Create ONLY ONE entry for that item (be smart about recognizing the same item even if named differently)
-   - ALWAYS use the NAME from the transcript but make it MORE DESCRIPTIVE (2-3 words minimum)
-   - ALWAYS use the DESCRIPTION from the transcript (enhanced with visual details if relevant)
-   - ALWAYS use the EARLIEST TIMESTAMP from when the user first mentions the item in the transcript
-   - For estimated value: if mentioned in transcript, use that value, otherwise use the value from similar scratch items
+CRITICAL MERGING, DEDUPLICATION, AND NAMING LOGIC:
 
-2. If an item appears ONLY in the transcript:
-   - Use all details directly from the transcript
-   - Make the name MORE DESCRIPTIVE (2-3 words minimum)
-   - ALWAYS ASSIGN AN ESTIMATED VALUE - this should never be empty or null
-   - If no value is explicitly mentioned, use the most similar item from scratch items as a reference, or provide a reasonable estimate
+1.  TIMELINE INTEGRATION:
+    -   Carefully consider the timestamps of items from BOTH the transcript and scratch_items.
+    -   If an item is mentioned in the transcript, its timestamp is when the user FIRST mentions it. This is the definitive timestamp.
+    -   Merge items chronologically where possible, using timestamps to resolve order and duplicates.
 
-3. If an item appears ONLY in the visual detection (scratch_items):
-   - Use all details from the visual detection including its timestamp and estimated value
-   - Make the name MORE DESCRIPTIVE (2-3 words minimum) than the generic detection name
+2.  ADVANCED DEDUPLICATION (VERY IMPORTANT):
+    -   IDENTICAL ITEMS IN SCRATCH_ITEMS: If the same physical item is detected in scratch_items across multiple consecutive timestamps (e.g., "White headphones case" at 0s, "white airpods pro case" at 2s, "white airpods pro" at 4s), these are VERY LIKELY the SAME ITEM. Create only ONE entry for it, using the name/description from the most detailed detection and the EARLIEST timestamp it appeared.
+    -   DESCRIPTION COMPARISON: Don't just match by name. Compare item DESCRIPTIONS. If two items have very similar descriptions, they are likely the same item even if named slightly differently. Merge them into one.
+    -   TRANSCRIPT vs. SCRATCH_ITEMS: If an item is in the transcript AND a similar item is in scratch_items:
+        *   Create ONLY ONE entry.
+        *   NAME: ALWAYS use the name from the transcript. Make it descriptive (2-3 words min).
+        *   DESCRIPTION: ALWAYS use the description from the transcript (enhance with visual details from scratch_items if relevant and not contradictory).
+        *   TIMESTAMP: ALWAYS use the EARLIEST timestamp from the transcript.
+        *   ESTIMATED VALUE: Use the transcript's value if specified. If not, use the value from the BEST MATCHING scratch_item. If no match or no scratch_item value, provide a reasonable estimate.
 
-NAMING REQUIREMENTS:
-- ALL item names must be 2-3 words minimum to be descriptive and distinct
-- Generic names like just "Artwork" are NOT acceptable - use "Abstract Wall Artwork" or "Framed Flower Painting" instead
-- For electronics, include the type, brand, or model if known (e.g., "Apple iPhone 14", "Dell Work Laptop")
-- For furniture, include color, material, or style (e.g., "Brown Leather Sofa", "Wooden Storage Cabinet")
+3.  TRANSCRIPT-ONLY ITEMS:
+    -   Name: Use transcript name; make it descriptive (2-3 words min).
+    -   Description: Use transcript description.
+    -   Timestamp: Use transcript timestamp.
+    -   Estimated Value: ALWAYS assign one. If not in transcript, estimate reasonably (can use similar scratch_items as a guide if available).
 
-TIMESTAMP PRIORITY:
-- For ANY item mentioned in the transcript, the timestamp MUST be from when the user FIRST mentions it
-- NEVER use timestamps from visual detection for items that are mentioned in the transcript
-- Round all timestamps to ONE decimal place (e.g., 2.0, 3.5)
+4.  SCRATCH_ITEMS-ONLY ITEMS (after thorough deduplication):
+    -   Name: Make it descriptive (2-3 words min), more so than the generic detection name.
+    -   Description: Use its detailed description.
+    -   Timestamp: Use its timestamp.
+    -   Estimated Value: Use its estimated value.
 
-DEDUPLICATION REQUIREMENTS:
-- Be smart about recognizing the same items described differently (e.g., "iPhone"/"smartphone", "work computer"/"laptop")
-- Don't create separate entries for the same item detected in multiple frames or mentioned multiple times
-- If a transcript item can be matched to ANY scratch item, make sure to use the scratch item's estimated value
+5.  NAMING REQUIREMENTS (APPLIES TO ALL FINAL ITEMS):
+    -   All item names must be 2-3 words minimum, descriptive, and distinct.
+    -   Avoid generic names like "Artwork"; use "Abstract Wall Artwork" or "Framed Flower Painting".
+    -   Electronics: Include type, brand/model if known (e.g., "Apple iPhone 14", "Dell Work Laptop").
+    -   Furniture: Include color, material, or style (e.g., "Brown Leather Sofa", "Wooden Storage Cabinet").
 
-Pay special attention to match items that might be referred to differently. For example, if the transcript mentions a "work computer" and the visual detection found a "laptop" or "Dell laptop", these are likely the same item and should be merged using transcript details for name/description/timestamp but keeping the estimated value from the scratch item.
-
-For each UNIQUE item in your final consolidated list:
-1. Name: Clear, DESCRIPTIVE name (2-3 words minimum)
-2. Description: Detailed description (from transcript if mentioned there)
-3. Timestamp: When the item first appears or is first mentioned (MUST use transcript timing if mentioned there)
-4. Estimated value: Required numeric amount in USD (NEVER return null or 0 for estimated value)
-
-Return the result as a JSON array with this exact format:
+OUTPUT FORMAT (JSON - items array):
 {
   "items": [
     {
       "name": "Descriptive Item Name (2-3 words)",
-      "description": "Detailed description",
-      "timestamp": 2.0,
-      "estimated_value": 100.00
+      "description": "Detailed description from primary source, enhanced if appropriate.",
+      "timestamp": 2.0, // Single decimal place
+      "estimated_value": 100.00 // Positive numeric USD value, never null/0
     }
   ]
 }
 
-CRUCIAL FORMAT REQUIREMENTS:
-- Format all timestamps as numbers with EXACTLY one decimal place (e.g., 2.0 or 2.1)
-- Never use timestamps with multiple decimal places (e.g., avoid 2.0000000)
-- All timestamps must be between 0 and the video duration
-- Always include a positive numeric estimated_value for every item - this is MANDATORY
-- NEVER return estimated_value as null, undefined, or 0
+CRUCIAL FORMATTING & VALUE REQUIREMENTS:
+-   Timestamps: Numbers with EXACTLY one decimal place (e.g., 2.0 or 2.1).
+-   Estimated Value: Positive numeric USD value for EVERY item. NEVER null, undefined, or 0.
 `;
 
     // Generate items using Gemini API
