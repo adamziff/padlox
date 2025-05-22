@@ -49,14 +49,25 @@ export default async function Dashboard() {
         return <div>Error loading dashboard data: {error.message}</div>;
     }
 
-    // The 'tags' will be an array of objects like [{id, name}, ...].
     // The 'rooms' field from the query `asset_rooms(rooms(*))` should directly give the room object
     // or an empty array if no room is associated, due to the one-to-one nature enforced by UNIQUE(asset_id) on asset_rooms.
     const assetsWithProcessedRelations = (assetsData || []).map(asset => {
-        // `asset.asset_rooms` will be an array, but because of the UNIQUE constraint on asset_id,
-        // it will contain at most one item like: { rooms: { id, name, ... } } or be empty.
-        const roomLink = Array.isArray(asset.asset_rooms) && asset.asset_rooms.length > 0 ? asset.asset_rooms[0] : null;
-        const room = roomLink ? roomLink.rooms : null;
+        // `asset.asset_rooms` from Supabase for `asset_rooms(rooms(*))` can be:
+        // 1. An object like { rooms: { id: '...', name: '...' } } if a room is linked (as confirmed by logs).
+        // 2. null if no room is linked.
+        // 3. Potentially an empty array [] in some edge cases, though not observed for linked rooms.
+
+        const roomDataFromSupabase = asset.asset_rooms;
+        let room = null;
+
+        if (roomDataFromSupabase && typeof roomDataFromSupabase === 'object' && !Array.isArray(roomDataFromSupabase) && roomDataFromSupabase.rooms) {
+            // Handles the primary case observed in logs: asset_rooms is an object like { rooms: { ... } }
+            room = roomDataFromSupabase.rooms;
+        } else if (Array.isArray(roomDataFromSupabase) && roomDataFromSupabase.length > 0 && roomDataFromSupabase[0] && roomDataFromSupabase[0].rooms) {
+            // Fallback for an array structure, e.g., [{ rooms: { ... } }]
+            room = roomDataFromSupabase[0].rooms;
+        }
+        // If roomDataFromSupabase is null, an empty array, or an object without a .rooms property, room remains null.
 
         // Process tags from asset_tags
         const tagsData = asset.asset_tags; // This will be an array of { tags: { id, name } }
@@ -72,6 +83,11 @@ export default async function Dashboard() {
         };
     });
 
+    // DEBUG: Log the processed rooms on the server
+    // console.log("[app/dashboard/page.tsx] Assets after processing relations (sample of rooms):");
+    // assetsWithProcessedRelations.slice(0, 5).forEach(a => {
+    //     console.log(`  Asset ID: ${a.id}, Name: ${a.name}, Room: ${JSON.stringify(a.room)}`);
+    // });
 
     // Calculate metrics
     const filteredAssetsForCount = assetsWithProcessedRelations.filter(asset => asset.media_type === 'item' || asset.media_type === 'image');
