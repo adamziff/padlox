@@ -6,15 +6,12 @@ const tagNameSchema = z.object({
   name: z.string().min(1, { message: 'Tag name cannot be empty' }),
 });
 
-interface RouteParams {
-  params: {
-    tagId: string;
-  };
-}
-
-export async function PUT(req: NextRequest, { params }: RouteParams) {
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ tagId: string }> }
+) {
   const supabase = await createClient();
-  const { tagId } = params;
+  const { tagId } = await params;
 
   if (!tagId) {
     return NextResponse.json({ error: 'Tag ID is required' }, { status: 400 });
@@ -95,9 +92,12 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: RouteParams) {
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ tagId: string }> }
+) {
   const supabase = await createClient();
-  const { tagId } = params;
+  const { tagId } = await params;
 
   if (!tagId) {
     return NextResponse.json({ error: 'Tag ID is required' }, { status: 400 });

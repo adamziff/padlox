@@ -6,16 +6,12 @@ const assetTagSchema = z.object({
   tag_id: z.string().uuid({ message: 'Invalid Tag ID format' }),
 });
 
-interface RouteParams {
-  params: {
-    assetId: string;
-  };
-}
-
-export async function POST(req: NextRequest, { params: paramsPromise }: RouteParams) {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ assetId: string }> }
+) {
   const supabase = await createClient();
-  const params = await paramsPromise;
-  const { assetId } = params;
+  const { assetId } = await params;
 
   if (!assetId) {
     return NextResponse.json({ error: 'Asset ID is required' }, { status: 400 });
@@ -95,10 +91,12 @@ export async function POST(req: NextRequest, { params: paramsPromise }: RoutePar
   }
 }
 
-export async function DELETE(req: NextRequest, { params: paramsPromise }: RouteParams) {
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ assetId: string }> }
+) {
   const supabase = await createClient();
-  const params = await paramsPromise;
-  const { assetId } = params;
+  const { assetId } = await params;
 
   if (!assetId) {
     return NextResponse.json({ error: 'Asset ID is required' }, { status: 400 });

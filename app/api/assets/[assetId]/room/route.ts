@@ -6,14 +6,11 @@ const assetRoomSchema = z.object({
   room_id: z.string().uuid({ message: 'Invalid Room ID format' }),
 });
 
-interface RouteParams {
-  params: {
-    assetId: string;
-  };
-}
-
 // POST to assign or update a room for an asset (upsert behavior)
-export async function POST(req: NextRequest, { params }: RouteParams) {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ assetId: string }> }
+) {
   const supabase = await createClient();
   const { assetId } = await params;
 
@@ -102,10 +99,12 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE to remove a room association from an asset
-export async function DELETE(req: NextRequest, { params: paramsPromise }: RouteParams) {
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ assetId: string }> }
+) {
   const supabase = await createClient();
-  const params = await paramsPromise; // Await the params
-  const { assetId } = params;
+  const { assetId } = await params;
 
   if (!assetId) {
     return NextResponse.json({ error: 'Asset ID is required' }, { status: 400 });

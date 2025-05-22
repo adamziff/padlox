@@ -6,13 +6,10 @@ const roomNameSchema = z.object({
   name: z.string().min(1, { message: 'Room name cannot be empty' }),
 });
 
-interface RouteParams {
-  params: {
-    roomId: string;
-  };
-}
-
-export async function PUT(req: NextRequest, { params }: RouteParams) {
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ roomId: string }> }
+) {
   const supabase = await createClient();
   const { roomId } = await params;
 
@@ -95,7 +92,10 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: RouteParams) {
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ roomId: string }> }
+) {
   const supabase = await createClient();
   const { roomId } = await params;
 

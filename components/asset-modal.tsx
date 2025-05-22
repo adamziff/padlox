@@ -45,17 +45,14 @@ export function AssetModal({
     const [isDeleting, setIsDeleting] = useState(false);
     const [isLoadingMuxTokens, setIsLoadingMuxTokens] = useState(false);
     const [muxPlaybackToken, setMuxPlaybackToken] = useState<string | null>(null);
-    const [muxThumbnailToken, setMuxThumbnailToken] = useState<string | null>(null);
 
     useEffect(() => {
         console.log('[AssetModal] useEffect syncing internal asset state from initialAsset:', initialAsset);
         setAsset(initialAsset);
         if (initialAsset) {
             setMuxPlaybackToken(null);
-            setMuxThumbnailToken(null);
         } else {
             setMuxPlaybackToken(null);
-            setMuxThumbnailToken(null);
         }
     }, [initialAsset]);
 
@@ -70,10 +67,8 @@ export function AssetModal({
                 .then(data => {
                     if (data.tokens) {
                         setMuxPlaybackToken(data.tokens.playback);
-                        setMuxThumbnailToken(data.tokens.thumbnail);
                     } else if (data.token) {
                         setMuxPlaybackToken(data.token);
-                        setMuxThumbnailToken(data.token);
                     }
                     if (!data.tokens && !data.token) {
                         throw new Error('No tokens returned from API');
@@ -156,7 +151,6 @@ export function AssetModal({
                     <div className="md:col-span-1 bg-background flex items-center justify-center overflow-hidden md:max-h-[calc(100vh-120px)]">
                         <AssetMediaDisplay
                             asset={asset}
-                            modalToken={muxThumbnailToken}
                             isLoadingToken={isLoadingMuxTokens}
                             isMuxReady={isMuxReady}
                             isMuxProcessing={Boolean(isMuxProcessing)}
