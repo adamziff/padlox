@@ -10,7 +10,7 @@ The system captures frames from the video recording at regular intervals, analyz
 sequenceDiagram
     participant Browser
     participant Vercel as Vercel API
-    participant Gemini as Gemini Vision API
+    participant Gemini as Gemini Vision AI
     participant Supabase
     
     Browser->>Browser: Record video & capture frames
