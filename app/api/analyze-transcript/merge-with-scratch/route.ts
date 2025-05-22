@@ -17,6 +17,8 @@ const ItemSchema = z.object({
   description: z.string().optional(),
   timestamp: z.number().optional(),
   estimated_value: z.number(),
+  tag_names: z.array(z.string()).optional(),
+  room_name: z.string().optional(),
 });
 
 const OutputSchema = z.object({
@@ -29,7 +31,9 @@ interface AnalyzedItem {
   description?: string;
   timestamp?: number;
   estimated_value?: number | null;
-  id?: string;
+  tag_names?: string[];
+  room_name?: string;
+  id?: string; // Will be populated after insertion
 }
 
 // Define a minimal local type for the Deepgram word structure
@@ -121,6 +125,29 @@ export async function POST(req: NextRequest) {
 
     // Create a Supabase client
     const serviceClient = createServiceSupabaseClient();
+
+    // Fetch user's tags and rooms
+    const { data: userTags, error: userTagsError } = await serviceClient
+      .from('tags')
+      .select('name')
+      .eq('user_id', user_id);
+
+    if (userTagsError) {
+      logger.warn('Error fetching user tags:', userTagsError.message);
+      // Continue without tags if fetch fails
+    }
+    const availableTagNames = userTags?.map(t => t.name) || [];
+
+    const { data: userRooms, error: userRoomsError } = await serviceClient
+      .from('rooms')
+      .select('name')
+      .eq('user_id', user_id);
+
+    if (userRoomsError) {
+      logger.warn('Error fetching user rooms:', userRoomsError.message);
+      // Continue without rooms if fetch fails
+    }
+    const availableRoomNames = userRooms?.map(r => r.name) || [];
 
     // Fetch the asset to ensure it exists and belongs to the user
     let assetQuery = serviceClient.from('assets').select('*');
@@ -221,6 +248,10 @@ ${formattedScratchItems.length > 0
 }
 --- END OF SCRATCH_ITEMS ---
 
+--- USER'S EXISTING TAGS AND ROOMS ---
+Available Tags: ${availableTagNames.length > 0 ? availableTagNames.join(', ') : 'No tags defined by user.'}
+Available Rooms: ${availableRoomNames.length > 0 ? availableRoomNames.join(', ') : 'No rooms defined by user.'}
+
 Please analyze all available information to create the final consolidated list.
 
 CRITICAL MERGING, DEDUPLICATION, AND NAMING LOGIC:
@@ -252,7 +283,13 @@ CRITICAL MERGING, DEDUPLICATION, AND NAMING LOGIC:
     -   Timestamp: Use its timestamp.
     -   Estimated Value: Use its estimated value.
 
-5.  NAMING REQUIREMENTS (APPLIES TO ALL FINAL ITEMS):
+5.  TAGGING AND ROOM ASSIGNMENT (OPTIONAL):
+    -   For each item, if appropriate, you can suggest a `room_name` and an array of `tag_names`.
+    -   `room_name`: MUST be ONE of the "Available Rooms" listed above. If no room is a good fit, do not assign one.
+    -   `tag_names`: MUST be a selection from the "Available Tags" listed above. If no tags are a good fit, do not assign any.
+    -   Only assign tags/rooms if there's a clear and logical fit based on the item's nature and the provided lists. Do not invent new tags or rooms.
+
+6.  NAMING REQUIREMENTS (APPLIES TO ALL FINAL ITEMS):
     -   All item names must be 2-3 words minimum, descriptive, and distinct.
     -   Avoid generic names like "Artwork"; use "Abstract Wall Artwork" or "Framed Flower Painting".
     -   Electronics: Include type, brand/model if known (e.g., "Apple iPhone 14", "Dell Work Laptop").
@@ -265,7 +302,9 @@ OUTPUT FORMAT (JSON - items array):
       "name": "Descriptive Item Name (2-3 words)",
       "description": "Detailed description from primary source, enhanced if appropriate.",
       "timestamp": 2.0, // Single decimal place
-      "estimated_value": 100.00 // Positive numeric USD value, never null/0
+      "estimated_value": 100.00, // Positive numeric USD value, never null/0
+      "tag_names": ["Electronics", "Important"], // Optional, from user's list
+      "room_name": "Office" // Optional, from user's list
     }
   ]
 }
@@ -273,6 +312,8 @@ OUTPUT FORMAT (JSON - items array):
 CRUCIAL FORMATTING & VALUE REQUIREMENTS:
 -   Timestamps: Numbers with EXACTLY one decimal place (e.g., 2.0 or 2.1).
 -   Estimated Value: Positive numeric USD value for EVERY item. NEVER null, undefined, or 0.
+-   tag_names: Must be an array of strings, selected ONLY from the "Available Tags" provided. Omit if no suitable tags.
+-   room_name: Must be a single string, selected ONLY from the "Available Rooms" provided. Omit if no suitable room.
 `;
 
     // Generate items using Gemini API
@@ -292,12 +333,12 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
 
         // Log the raw result from Gemini
         logger.info(`Raw Gemini response items: ${JSON.stringify(result.object.items)}`);
-        
-        // Specifically log estimated values from the raw response
+
+        // Specifically log estimated values, tags, and rooms from the raw response
         if (result.object.items && result.object.items.length > 0) {
-          logger.info('Estimated values in raw Gemini response:');
+          logger.info('Details in raw Gemini response:');
           result.object.items.forEach((item, i) => {
-            logger.info(`  Item ${i + 1}: ${item.name}, raw estimated_value: ${JSON.stringify(item.estimated_value)}, type: ${typeof item.estimated_value}`);
+            logger.info(`  Item ${i + 1}: ${item.name}, raw estimated_value: ${JSON.stringify(item.estimated_value)}, type: ${typeof item.estimated_value}, tag_names: ${JSON.stringify(item.tag_names)}, room_name: ${item.room_name}`);
           });
         }
       } catch (jsonError: unknown) {
@@ -369,17 +410,28 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
                   .map((item: Record<string, unknown>) => ({
                     name: String(item.name || 'Unnamed Item'),
                     description: String(item.description || ''),
-                    timestamp: typeof item.timestamp === 'number' 
-                      ? Math.round(item.timestamp * 10) / 10 
+                    timestamp: typeof item.timestamp === 'number'
+                      ? Math.round(item.timestamp * 10) / 10
                       : (formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0),
-                    estimated_value: typeof item.estimated_value === 'number' 
-                      ? item.estimated_value 
-                      : null
+                    estimated_value: typeof item.estimated_value === 'number'
+                      ? item.estimated_value
+                      : null,
+                    tag_names: Array.isArray(item.tag_names) ? item.tag_names.map(String) : undefined,
+                    room_name: typeof item.room_name === 'string' ? item.room_name : undefined,
                   }));
-                
+
                 if (sanitizedItems.length > 0) {
                   logger.info(`Extracted ${sanitizedItems.length} valid items manually`);
-                  result = { object: { items: sanitizedItems } };
+                  // Ensure the result conforms to OutputSchema, even if some fields are missing
+                  const validatedItems = sanitizedItems.map(item => ({
+                      name: item.name,
+                      description: item.description,
+                      timestamp: item.timestamp,
+                      estimated_value: item.estimated_value === null ? 0 : item.estimated_value, // Ensure estimated_value is a number
+                      tag_names: item.tag_names,
+                      room_name: item.room_name,
+                  }));
+                  result = { object: { items: validatedItems } };
                 } else {
                   throw new Error('Could not extract any valid items from malformed response');
                 }
@@ -402,223 +454,248 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
                   name: match[1] || `Item ${index+1}`,
                   description: match[2] || '',
                   timestamp: formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0,
-                  estimated_value: 0 // Default value, since schema now requires it
+                  estimated_value: 0, // Default value, since schema now requires it
+                  // tag_names and room_name will be undefined here
                 }));
-                
+
                 result = { object: { items: extractedItems } };
               } else {
                 // If all recovery attempts fail, fall back to using scratch items directly
                 logger.info('All recovery methods failed, using scratch items directly');
-                result = { 
-                  object: { 
+                result = {
+                  object: {
                     items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => ({
                       name: item.name,
                       description: item.description || '',
                       timestamp: item.timestamp,
-                      estimated_value: item.estimated_value !== null ? item.estimated_value : 0 // Ensure a number
+                      estimated_value: item.estimated_value !== null ? item.estimated_value : 0, // Ensure a number
+                      // tag_names and room_name will be undefined
                     }))
-                  } 
+                  }
                 };
               }
             } catch (regexError: unknown) {
               logger.error('Error during regex extraction:', regexError);
               // Ultimate fallback: use scratch items if regex itself errors
               logger.info('Regex extraction failed, using scratch items directly as ultimate fallback');
-              result = { 
-                object: { 
+              result = {
+                object: {
                   items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => ({
                     name: item.name,
                     description: item.description || '',
                     timestamp: item.timestamp,
-                    estimated_value: item.estimated_value !== null ? item.estimated_value : 0 // Ensure a number
+                    estimated_value: item.estimated_value !== null ? item.estimated_value : 0, // Ensure a number
+                    // tag_names and room_name will be undefined
                   }))
-                } 
+                }
               };
             }
           }
         } else {
           // If we can't get the error text, use scratch items as fallback
           logger.warn('Could not extract error text, using scratch items as fallback');
-          result = { 
-            object: { 
+          result = {
+            object: {
               items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => ({
                 name: item.name,
                 description: item.description || '',
                 timestamp: item.timestamp,
-                estimated_value: item.estimated_value !== null ? item.estimated_value : 0 // Ensure a number
+                estimated_value: item.estimated_value !== null ? item.estimated_value : 0, // Ensure a number
+                // tag_names and room_name will be undefined
               }))
-            } 
+            }
           };
         }
       }
-      
-      const analyzedItems = result.object.items || [];
-      logger.info(`Generated ${analyzedItems.length} items from Gemini API`);
-      
-      // Adding timestamps and estimated values to items
-      logger.info('Adding timestamps and estimated values to items');
 
-      // Create array of new items to insert
-      const itemsToInsert = analyzedItems.map((item: AnalyzedItem) => {
-        // Sanitize timestamp - ensure it has only 1 decimal place
+      const analyzedItems: AnalyzedItem[] = result.object.items || [];
+      logger.info(`Generated ${analyzedItems.length} items from Gemini API`);
+
+      // Prepare items for insertion (without tag/room linking yet)
+      const itemsToInsertData = analyzedItems.map((item: AnalyzedItem) => {
         let sanitizedTimestamp = 0;
         if (item.timestamp !== undefined && item.timestamp !== null) {
           sanitizedTimestamp = Math.round(item.timestamp * 10) / 10;
         } else if (formattedScratchItems.length > 0) {
           sanitizedTimestamp = formattedScratchItems[0].timestamp;
         }
-        
-        // Find matching scratch items to get estimated value
+
         const matchingScratchItems = formattedScratchItems.filter(
           scratchItem => {
-            // More flexible matching - check if names are similar
             const itemNameLower = item.name.toLowerCase();
             const scratchNameLower = scratchItem.name.toLowerCase();
-            
-            // Direct match
             if (itemNameLower === scratchNameLower) return true;
-            
-            // Contains match (iPhone contains phone, laptop contains computer, etc)
             if (itemNameLower.includes(scratchNameLower) || scratchNameLower.includes(itemNameLower)) return true;
-            
-            // Special cases for common device types
             if ((itemNameLower.includes('phone') && scratchNameLower.includes('smartphone')) ||
                 (itemNameLower.includes('iphone') && scratchNameLower.includes('smartphone')) ||
                 (itemNameLower.includes('computer') && scratchNameLower.includes('laptop')) ||
                 (itemNameLower.includes('laptop') && scratchNameLower.includes('computer'))) {
               return true;
             }
-            
             return false;
           }
         );
-        
-        // Get estimated value with fallbacks to ensure it's never null
-        let sanitizedValue = null;
-        
-        // First try: Use value from item (LLM assigned value)
+
+        let sanitizedValue: number;
         if (item.estimated_value !== undefined && item.estimated_value !== null && item.estimated_value > 0) {
           sanitizedValue = item.estimated_value;
-          logger.info(`Using LLM-provided estimated_value ${sanitizedValue} for "${item.name}"`);
-        } 
-        // Second try: Find matching scratch item value
-        else if (matchingScratchItems.length > 0 && matchingScratchItems[0].estimated_value !== null) {
+        } else if (matchingScratchItems.length > 0 && matchingScratchItems[0].estimated_value !== null && matchingScratchItems[0].estimated_value !== undefined && matchingScratchItems[0].estimated_value > 0) {
           sanitizedValue = matchingScratchItems[0].estimated_value;
-          logger.info(`Using estimated_value ${sanitizedValue} from matching scratch item "${matchingScratchItems[0].name}" for "${item.name}"`);
-        } 
-        // Third try: Set fallback value based on item type
-        else {
-          // Assign reasonable default values based on item category
+        } else {
           const itemNameLower = item.name.toLowerCase();
-          if (itemNameLower.includes('phone') || itemNameLower.includes('iphone') || itemNameLower.includes('smartphone')) {
-            sanitizedValue = 800;
-          } else if (itemNameLower.includes('laptop') || itemNameLower.includes('computer') || itemNameLower.includes('macbook')) {
-            sanitizedValue = 1200;
-          } else if (itemNameLower.includes('sofa') || itemNameLower.includes('couch')) {
-            sanitizedValue = 600;
-          } else if (itemNameLower.includes('tv') || itemNameLower.includes('television')) {
-            sanitizedValue = 500;
-          } else if (itemNameLower.includes('artwork') || itemNameLower.includes('painting') || itemNameLower.includes('frame')) {
-            sanitizedValue = 150;
-          } else {
-            // Last resort fallback
-            sanitizedValue = 100;
-          }
-          logger.info(`No value found for "${item.name}", using fallback value: ${sanitizedValue}`);
+          if (itemNameLower.includes('phone') || itemNameLower.includes('iphone') || itemNameLower.includes('smartphone')) sanitizedValue = 800;
+          else if (itemNameLower.includes('laptop') || itemNameLower.includes('computer') || itemNameLower.includes('macbook')) sanitizedValue = 1200;
+          else if (itemNameLower.includes('sofa') || itemNameLower.includes('couch')) sanitizedValue = 600;
+          else if (itemNameLower.includes('tv') || itemNameLower.includes('television')) sanitizedValue = 500;
+          else if (itemNameLower.includes('artwork') || itemNameLower.includes('painting') || itemNameLower.includes('frame')) sanitizedValue = 150;
+          else sanitizedValue = 100;
         }
+        logger.info(`Value for "${item.name}": ${sanitizedValue}`);
 
         return {
+          // Data for 'assets' table
           name: item.name,
           description: item.description || '',
           user_id: user_id,
-          mux_asset_id: asset.mux_asset_id,
+          mux_asset_id: asset.mux_asset_id, // Use the parent video's mux_asset_id
           item_timestamp: sanitizedTimestamp,
           estimated_value: sanitizedValue,
-          media_type: 'item',
-          media_url: '',
+          media_type: 'item' as const, // Explicitly type as 'item'
+          media_url: '', // No direct media URL for items derived from video
           is_source_video: false,
-          source_video_id: asset.id,
-          mux_playback_id: asset.mux_playback_id
+          source_video_id: asset.id, // Link to the original video asset
+          mux_playback_id: asset.mux_playback_id, // Inherit playback ID for context if needed
+          // Store AI suggested tag/room names temporarily for post-insertion linking
+          ai_suggested_tag_names: item.tag_names,
+          ai_suggested_room_name: item.room_name,
         };
       });
 
-      // Log the items being inserted
-      logger.info('Inserting items into assets table with estimated values');
-      itemsToInsert.forEach((item: AnalyzedItem & { estimated_value: number | null }, index: number) => {
-        // The actual estimated_value property on the itemsToInsert object
-        logger.info(`Item ${index + 1}: ${item.name}, value to be inserted: ${JSON.stringify(item.estimated_value)}`);
-      });
-
-      // Log the final payload after all transformations
-      logger.info(`Final insert payload after formatting: ${JSON.stringify(itemsToInsert.map((item: AnalyzedItem & { estimated_value: number | null }) => ({
-        name: item.name,
-        estimated_value: item.estimated_value,
-        type: typeof item.estimated_value
-      })))}`);
-
+      logger.info('Inserting items into assets table...');
       const { data: insertedItems, error: insertError } = await serviceClient
         .from('assets')
-        .insert(itemsToInsert)
-        .select('id, name, estimated_value');
-  
+        .insert(itemsToInsertData.map(item => ({
+          name: item.name,
+          description: item.description,
+          user_id: item.user_id,
+          mux_asset_id: item.mux_asset_id,
+          item_timestamp: item.item_timestamp,
+          estimated_value: item.estimated_value,
+          media_type: item.media_type,
+          media_url: item.media_url,
+          is_source_video: item.is_source_video,
+          source_video_id: item.source_video_id,
+          mux_playback_id: item.mux_playback_id,
+        })))
+        .select('id, name, estimated_value'); // Select ID for linking
+
       if (insertError) {
         logger.error(`Insert error details: ${JSON.stringify(insertError)}`);
-        return handleError(
-          new Error(`Failed to insert merged items: ${insertError.message}`),
-          500
-        );
-      }
-      
-      logger.info(`Successfully inserted ${insertedItems?.length || 0} items from merge.`);
-      if (insertedItems && insertedItems.length > 0) {
-        logger.info('Inserted items details:');
-        insertedItems.forEach((item, i) => {
-          logger.info(`  Item ${i + 1}: ${item.name}, returned estimated_value: ${JSON.stringify(item.estimated_value)}, type: ${typeof item.estimated_value}`);
-        });
+        return handleError(new Error(`Failed to insert merged items: ${insertError.message}`), 500);
       }
 
-      // Just update the asset as processed, without trying to store items in a column
+      logger.info(`Successfully inserted ${insertedItems?.length || 0} items from merge.`);
+
+      // --- Link Tags and Rooms ---
+      if (insertedItems && insertedItems.length > 0) {
+        for (let i = 0; i < insertedItems.length; i++) {
+          const dbItem = insertedItems[i];
+          const aiItem = analyzedItems[i]; // Corresponding AI item with tag/room suggestions
+
+          // Link Tags
+          if (aiItem.tag_names && aiItem.tag_names.length > 0) {
+            const validTagIds: string[] = [];
+            for (const tagName of aiItem.tag_names) {
+              const { data: tagData, error: tagFetchError } = await serviceClient
+                .from('tags')
+                .select('id')
+                .eq('user_id', user_id)
+                .eq('name', tagName) // Case-sensitive match
+                .single();
+
+              if (tagFetchError || !tagData) {
+                logger.warn(`Suggested tag "${tagName}" for item "${dbItem.name}" not found or error: ${tagFetchError?.message}. Skipping.`);
+              } else {
+                validTagIds.push(tagData.id);
+              }
+            }
+
+            if (validTagIds.length > 0) {
+              const assetTagsToInsert = validTagIds.map(tagId => ({
+                asset_id: dbItem.id,
+                tag_id: tagId,
+              }));
+              const { error: assetTagsError } = await serviceClient.from('asset_tags').insert(assetTagsToInsert);
+              if (assetTagsError) {
+                logger.error(`Error linking tags to asset ${dbItem.id}:`, assetTagsError.message);
+              } else {
+                logger.info(`Successfully linked ${validTagIds.length} tags to asset ${dbItem.id}`);
+              }
+            }
+          }
+
+          // Link Room
+          if (aiItem.room_name) {
+            const { data: roomData, error: roomFetchError } = await serviceClient
+              .from('rooms')
+              .select('id')
+              .eq('user_id', user_id)
+              .eq('name', aiItem.room_name) // Case-sensitive match
+              .single();
+
+            if (roomFetchError || !roomData) {
+              logger.warn(`Suggested room "${aiItem.room_name}" for item "${dbItem.name}" not found or error: ${roomFetchError?.message}. Skipping.`);
+            } else {
+              // Upsert to handle potential existing room assignment (though asset_rooms has UNIQUE on asset_id)
+              // For now, simple insert. If it fails due to unique constraint, it means it's already in a room.
+              const { error: assetRoomError } = await serviceClient
+                .from('asset_rooms')
+                .upsert({ asset_id: dbItem.id, room_id: roomData.id }, { onConflict: 'asset_id' }); // Use upsert
+
+              if (assetRoomError) {
+                logger.error(`Error linking room to asset ${dbItem.id}:`, assetRoomError.message);
+              } else {
+                logger.info(`Successfully linked room ${aiItem.room_name} to asset ${dbItem.id}`);
+              }
+            }
+          }
+        }
+      }
+      // --- End Link Tags and Rooms ---
+
+
       const { error: updateError } = await serviceClient
         .from('assets')
-        .update({
-          is_processed: true,
-          last_updated: new Date().toISOString()
-        })
+        .update({ is_processed: true, last_updated: new Date().toISOString() })
         .eq('id', asset.id);
 
       if (updateError) {
-        return handleError(
-          new Error(`Failed to update asset processed status: ${updateError.message}`),
-          500
-        );
+        return handleError(new Error(`Failed to update asset processed status: ${updateError.message}`), 500);
       }
 
-      // Only delete scratch items if the environment variable allows it
       const shouldDeleteScratchItems = process.env.DELETE_SCRATCH_ITEMS_AFTER_MERGE === 'true';
-      
       if (shouldDeleteScratchItems && formattedScratchItems.length > 0) {
+        // ... (deletion logic remains the same)
         logger.info(`DELETE_SCRATCH_ITEMS_AFTER_MERGE is set to true, deleting ${formattedScratchItems.length} scratch items`);
         const { error: deleteError } = await serviceClient
           .from('scratch_items')
           .delete()
           .eq('user_id', user_id)
-          .eq('mux_asset_id', asset.mux_asset_id);
-  
+          .eq('mux_asset_id', asset.mux_asset_id); // Ensure we only delete for the correct asset
+
         if (deleteError) {
           logger.error('Error deleting scratch items after merge:', deleteError);
-          // Continue even if deletion fails
         } else {
-          logger.info(`Successfully deleted ${formattedScratchItems.length} scratch items after merge`);
+          logger.info(`Successfully deleted ${formattedScratchItems.length} scratch items after merge for mux_asset_id ${asset.mux_asset_id}`);
         }
       } else {
-        logger.info(`Keeping scratch items after merge (DELETE_SCRATCH_ITEMS_AFTER_MERGE=${process.env.DELETE_SCRATCH_ITEMS_AFTER_MERGE})`);
+        logger.info(`Keeping scratch items after merge (DELETE_SCRATCH_ITEMS_AFTER_MERGE=${process.env.DELETE_SCRATCH_ITEMS_AFTER_MERGE}) or no scratch items to delete.`);
       }
-  
-      // Return success response
+
       return corsJsonResponse({
         success: true,
-        items: analyzedItems,
-        message: 'Successfully merged transcript with scratch items',
+        items: insertedItems?.map(item => ({ ...item, tag_names: analyzedItems.find(ai => ai.name === item.name)?.tag_names, room_name: analyzedItems.find(ai => ai.name === item.name)?.room_name })) || [],
+        message: 'Successfully merged transcript with scratch items and processed tags/rooms.',
       });
     } catch (error: unknown) {
       return handleError(error);

@@ -26,4 +26,11 @@ export interface Asset {
     transcript_error?: string | null
     items_generated?: boolean | null
     is_processed?: boolean | null
-} 
+    tags?: Array<{ id: string; name: string }> | null;
+    room?: { id: string; name: string } | null;
+}
+
+// If AssetWithMuxData is a distinct type, ensure it also includes these.
+// Assuming AssetWithMuxData might extend Asset or compose it.
+// If it's defined elsewhere, that file will need a similar update.
+// For now, assuming Asset is the primary type used by AssetCard.

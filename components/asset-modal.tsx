@@ -11,16 +11,38 @@ import { MuxPlayer } from './mux-player'
 import { getMuxThumbnailUrl } from '@/lib/mux'
 import { Input } from './ui/input'
 import { Textarea } from './ui/textarea'
-import { Label } from '@/components/ui/label'
-import { useDebouncedCallback } from 'use-debounce'
+import { Label } from '@/components/ui/label';
+import { useDebouncedCallback } from 'use-debounce';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Assuming shadcn/ui
+import { Badge } from "@/components/ui/badge"; // Assuming shadcn/ui
 
-interface AssetModalProps {
-    asset: AssetWithMuxData
-    onClose: () => void
-    onDelete?: (id: string) => void
+// Define Tag and Room types if not imported from a central location
+interface Tag {
+    id: string;
+    name: string;
 }
 
-export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModalProps) {
+interface Room {
+    id: string;
+    name: string;
+}
+interface AssetModalProps {
+    asset: AssetWithMuxData;
+    onClose: () => void;
+    onDelete?: (id: string) => void;
+    availableTags: Tag[];
+    availableRooms: Room[];
+    onAssetUpdate: (updatedAsset: AssetWithMuxData) => void;
+}
+
+export function AssetModal({
+    asset: initialAsset,
+    onClose,
+    onDelete,
+    availableTags,
+    availableRooms,
+    onAssetUpdate
+}: AssetModalProps) {
     const [asset, setAsset] = useState<AssetWithMuxData>(initialAsset);
     const [isDeleting, setIsDeleting] = useState(false);
     const supabase = createClient();
@@ -34,6 +56,17 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
     const [isSaving, setIsSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
     const [saveSuccess, setSaveSuccess] = useState(false);
+
+    // State for managing current room and tags in the modal
+    const [currentRoomId, setCurrentRoomId] = useState<string>(initialAsset.room?.id || "");
+    const [currentTagIds, setCurrentTagIds] = useState<string[]>(initialAsset.tags?.map(t => t.id) || []);
+    
+    // State for UI feedback during room/tag updates
+    const [isUpdatingRoom, setIsUpdatingRoom] = useState(false);
+    const [roomUpdateError, setRoomUpdateError] = useState<string | null>(null);
+    const [isUpdatingTags, setIsUpdatingTags] = useState(false);
+    const [tagsUpdateError, setTagsUpdateError] = useState<string | null>(null);
+    const [tagsToAdd, setTagsToAdd] = useState<string[]>([]); // For the multi-select to add tags
 
     // Define these based on the current asset state
     const isItem = asset.media_type === 'item';
@@ -276,15 +309,18 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
         setEditableName(asset.name || '');
         setEditableDescription(asset.description || '');
         setEditableValue(asset.estimated_value != null ? String(asset.estimated_value) : '');
-    }, [asset]);
+        // Update current room and tags if the initialAsset prop changes (e.g. parent re-renders with new data)
+        setCurrentRoomId(initialAsset.room?.id || "");
+        setCurrentTagIds(initialAsset.tags?.map(t => t.id) || []);
+    }, [asset, initialAsset]);
 
-    // Debounced save function
+
+    // Debounced save function for name, description, value
     const debouncedSave = useDebouncedCallback(async () => {
-        if (!editableName) { // Add validation if needed
+        if (!editableName) {
             setSaveError('Name cannot be empty.');
             return;
         }
-
         const valueToSave = editableValue.trim() === '' ? null : parseFloat(editableValue);
         if (editableValue.trim() !== '' && (isNaN(valueToSave!) || valueToSave! < 0)) {
             setSaveError('Invalid estimated value. Must be a non-negative number.');
@@ -294,29 +330,32 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
         setIsSaving(true);
         setSaveError(null);
         setSaveSuccess(false);
-
         try {
-            const { error } = await supabase
-                .from('assets')
-                .update({
-                    name: editableName,
-                    description: editableDescription || null,
-                    estimated_value: valueToSave
-                })
-                .eq('id', asset.id);
-
-            if (error) throw error;
-
-            // Update local asset state immediately for perceived speed
-            setAsset(prev => ({
-                ...prev,
+            const updates = {
                 name: editableName,
                 description: editableDescription || null,
                 estimated_value: valueToSave
-            }));
-            setSaveSuccess(true);
-            setTimeout(() => setSaveSuccess(false), 2000); // Hide success message after 2s
+            };
+            const { data: updatedDbAsset, error } = await supabase
+                .from('assets')
+                .update(updates)
+                .eq('id', asset.id)
+                .select('*, tags(id,name), rooms(id,name)') // Re-fetch relations
+                .single();
 
+            if (error) throw error;
+            
+            if (updatedDbAsset) {
+                 const processedAsset = {
+                    ...updatedDbAsset,
+                    room: Array.isArray(updatedDbAsset.rooms) ? updatedDbAsset.rooms[0] : updatedDbAsset.rooms,
+                    tags: updatedDbAsset.tags || []
+                } as AssetWithMuxData;
+                setAsset(processedAsset); // Update local state with full asset from DB
+                onAssetUpdate(processedAsset); // Propagate to parent
+            }
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 2000);
         } catch (error) {
             console.error('Error saving asset details:', error);
             const message = error instanceof Error ? error.message : 'Unknown error';
@@ -324,18 +363,16 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
         } finally {
             setIsSaving(false);
         }
-    }, 500); // Debounce time in ms
+    }, 500);
 
-    // Trigger save when inputs change
     useEffect(() => {
-        // Avoid saving on initial load
-        if (editableName !== initialAsset.name ||
+        if (initialAsset && (editableName !== initialAsset.name ||
             editableDescription !== (initialAsset.description || '') ||
-            editableValue !== (initialAsset.estimated_value != null ? String(initialAsset.estimated_value) : '')) {
+            editableValue !== (initialAsset.estimated_value != null ? String(initialAsset.estimated_value) : ''))) {
             debouncedSave();
         }
     }, [editableName, editableDescription, editableValue, initialAsset, debouncedSave]);
-
+    
     // Log asset state for debugging
     useEffect(() => {
         if (process.env.NODE_ENV !== 'production') {
@@ -710,6 +747,172 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Room Management */}
+                                <div className="mt-4">
+                                    <Label htmlFor="asset-room" className="font-medium mb-1 block">Room</Label>
+                                    <Select
+                                        value={currentRoomId}
+                                        onValueChange={async (newRoomId) => {
+                                            setIsUpdatingRoom(true);
+                                            setRoomUpdateError(null);
+                                            const oldRoomId = currentRoomId;
+                                            setCurrentRoomId(newRoomId || ""); // Update UI immediately
+
+                                            try {
+                                                let updatedDbAsset;
+                                                if (newRoomId && newRoomId !== "") {
+                                                    const response = await fetch(`/api/assets/${asset.id}/room`, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({ room_id: newRoomId }),
+                                                    });
+                                                    if (!response.ok) throw new Error(await response.text());
+                                                    // Fetch the updated asset to get new room name
+                                                } else if (oldRoomId !== "") { // Only delete if there was a room
+                                                    const response = await fetch(`/api/assets/${asset.id}/room`, { method: 'DELETE' });
+                                                    if (!response.ok) throw new Error(await response.text());
+                                                }
+                                                
+                                                // Re-fetch asset to get updated relations
+                                                const { data, error } = await supabase.from('assets').select('*, tags(id,name), rooms(id,name)').eq('id', asset.id).single();
+                                                if (error) throw error;
+                                                updatedDbAsset = data;
+
+                                                if (updatedDbAsset) {
+                                                    const processedAsset = {
+                                                        ...updatedDbAsset,
+                                                        room: Array.isArray(updatedDbAsset.rooms) ? updatedDbAsset.rooms[0] : updatedDbAsset.rooms,
+                                                        tags: updatedDbAsset.tags || []
+                                                    } as AssetWithMuxData;
+                                                    setAsset(processedAsset);
+                                                    onAssetUpdate(processedAsset);
+                                                    setCurrentRoomId(processedAsset.room?.id || "");
+                                                }
+                                            } catch (e: any) {
+                                                setRoomUpdateError(e.message || 'Failed to update room');
+                                                setCurrentRoomId(oldRoomId); // Revert UI on error
+                                            } finally {
+                                                setIsUpdatingRoom(false);
+                                            }
+                                        }}
+                                    >
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Select a room" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="">No Room</SelectItem>
+                                            {availableRooms.map(room => (
+                                                <SelectItem key={room.id} value={room.id}>{room.name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {isUpdatingRoom && <p className="text-xs text-muted-foreground mt-1">Updating room...</p>}
+                                    {roomUpdateError && <p className="text-xs text-destructive mt-1">{roomUpdateError}</p>}
+                                </div>
+
+                                {/* Tag Management */}
+                                <div className="mt-4">
+                                    <Label className="font-medium mb-1 block">Tags</Label>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {asset.tags?.map(tag => (
+                                            <Badge key={tag.id} variant="secondary" className="flex items-center gap-1">
+                                                {tag.name}
+                                                <button
+                                                    onClick={async () => {
+                                                        setIsUpdatingTags(true);
+                                                        setTagsUpdateError(null);
+                                                        try {
+                                                            const response = await fetch(`/api/assets/${asset.id}/tags`, {
+                                                                method: 'DELETE',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ tag_id: tag.id }),
+                                                            });
+                                                            if (!response.ok) throw new Error('Failed to remove tag');
+                                                            
+                                                            // Update local state
+                                                            const updatedTags = asset.tags?.filter(t => t.id !== tag.id) || [];
+                                                            const updatedAsset = { ...asset, tags: updatedTags };
+                                                            setAsset(updatedAsset);
+                                                            setCurrentTagIds(updatedTags.map(t => t.id));
+                                                            onAssetUpdate(updatedAsset);
+
+                                                        } catch (e: any) {
+                                                            setTagsUpdateError(e.message || 'Failed to remove tag');
+                                                        } finally {
+                                                            setIsUpdatingTags(false);
+                                                        }
+                                                    }}
+                                                    className="ml-1 text-muted-foreground hover:text-foreground"
+                                                    aria-label={`Remove tag ${tag.name}`}
+                                                >
+                                                    &times;
+                                                </button>
+                                            </Badge>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2 items-center">
+                                        <select
+                                            multiple
+                                            value={tagsToAdd}
+                                            onChange={(e) => setTagsToAdd(Array.from(e.target.selectedOptions, option => option.value))}
+                                            className="block w-full pl-3 pr-10 py-2 text-base border-input bg-background hover:border-ring focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring sm:text-sm rounded-md shadow-sm h-20"
+                                        >
+                                            {availableTags.filter(at => !currentTagIds.includes(at.id)).map(tag => (
+                                                <option key={tag.id} value={tag.id}>{tag.name}</option>
+                                            ))}
+                                        </select>
+                                        <Button
+                                            size="sm"
+                                            onClick={async () => {
+                                                if (tagsToAdd.length === 0) return;
+                                                setIsUpdatingTags(true);
+                                                setTagsUpdateError(null);
+                                                let success = true;
+                                                for (const tagId of tagsToAdd) {
+                                                    try {
+                                                        const response = await fetch(`/api/assets/${asset.id}/tags`, {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify({ tag_id: tagId }),
+                                                        });
+                                                        if (!response.ok && response.status !== 409) { // 409 means already associated, which is fine
+                                                            throw new Error(`Failed to add tag ${availableTags.find(t=>t.id === tagId)?.name || tagId}`);
+                                                        }
+                                                    } catch (e) {
+                                                        console.error(e);
+                                                        setTagsUpdateError((prev) => (prev ? `${prev}, ${e instanceof Error ? e.message : String(e)}` : `${e instanceof Error ? e.message : String(e)}`));
+                                                        success = false;
+                                                    }
+                                                }
+                                                // Re-fetch asset to get updated relations
+                                                const { data: updatedDbAsset, error: fetchError } = await supabase.from('assets').select('*, tags(id,name), rooms(id,name)').eq('id', asset.id).single();
+                                                if (fetchError) {
+                                                    setTagsUpdateError((prev) => (prev ? `${prev}, Failed to refresh asset` : 'Failed to refresh asset'));
+                                                } else if (updatedDbAsset) {
+                                                     const processedAsset = {
+                                                        ...updatedDbAsset,
+                                                        room: Array.isArray(updatedDbAsset.rooms) ? updatedDbAsset.rooms[0] : updatedDbAsset.rooms,
+                                                        tags: updatedDbAsset.tags || []
+                                                    } as AssetWithMuxData;
+                                                    setAsset(processedAsset);
+                                                    onAssetUpdate(processedAsset);
+                                                    setCurrentTagIds(processedAsset.tags?.map(t => t.id) || []);
+                                                }
+                                                setTagsToAdd([]); // Clear selection
+                                                setIsUpdatingTags(false);
+                                                if(success && !tagsUpdateError) setTagsUpdateError(null); // Clear error if all successful
+                                            }}
+                                            disabled={isUpdatingTags || tagsToAdd.length === 0}
+                                        >
+                                            Add Tag(s)
+                                        </Button>
+                                    </div>
+                                    {isUpdatingTags && <p className="text-xs text-muted-foreground mt-1">Updating tags...</p>}
+                                    {tagsUpdateError && <p className="text-xs text-destructive mt-1">{tagsUpdateError}</p>}
+                                </div>
+
+
                                 <div>
                                     <h3 className="font-medium mb-2">Added On</h3>
                                     <p className="text-muted-foreground">
@@ -723,4 +926,4 @@ export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModa
             </div>
         </div>
     )
-} 
+}

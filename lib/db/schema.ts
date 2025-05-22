@@ -243,6 +243,74 @@ export interface Database {
                 }
             }
             scratch_items: ScratchItemsTable
+            tags: {
+                Row: {
+                    id: string
+                    user_id: string
+                    name: string
+                    created_at: string
+                }
+                Insert: {
+                    id?: string
+                    user_id: string
+                    name: string
+                    created_at?: string
+                }
+                Update: {
+                    id?: string
+                    user_id?: string
+                    name?: string
+                    created_at?: string
+                }
+            }
+            rooms: {
+                Row: {
+                    id: string
+                    user_id: string
+                    name: string
+                    created_at: string
+                }
+                Insert: {
+                    id?: string
+                    user_id: string
+                    name: string
+                    created_at?: string
+                }
+                Update: {
+                    id?: string
+                    user_id?: string
+                    name?: string
+                    created_at?: string
+                }
+            }
+            asset_tags: {
+                Row: {
+                    asset_id: string
+                    tag_id: string
+                }
+                Insert: {
+                    asset_id: string
+                    tag_id: string
+                }
+                Update: {
+                    asset_id?: string
+                    tag_id?: string
+                }
+            }
+            asset_rooms: {
+                Row: {
+                    asset_id: string
+                    room_id: string
+                }
+                Insert: {
+                    asset_id: string
+                    room_id: string
+                }
+                Update: {
+                    asset_id?: string
+                    room_id?: string
+                }
+            }
         }
         Functions: {
             notify_transcript_ready: {

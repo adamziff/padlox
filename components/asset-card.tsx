@@ -147,10 +147,29 @@ export function AssetCard({
                 <h3 className="text-white font-medium truncate text-sm sm:text-base">
                     {asset.name}
                 </h3>
-                {asset.estimated_value && (
+                {asset.estimated_value != null && (
                     <p className="text-white/90 text-xs sm:text-sm">
                         {formatCurrency(asset.estimated_value)}
                     </p>
+                )}
+                {asset.room && (
+                    <p className="text-white/80 text-xs truncate mt-0.5">
+                        Room: {asset.room.name}
+                    </p>
+                )}
+                {asset.tags && asset.tags.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                        {asset.tags.slice(0, 3).map(tag => ( // Show up to 3 tags
+                            <span key={tag.id} className="px-1.5 py-0.5 text-xs bg-white/20 text-white rounded-md">
+                                {tag.name}
+                            </span>
+                        ))}
+                        {asset.tags.length > 3 && (
+                             <span className="px-1.5 py-0.5 text-xs bg-white/20 text-white rounded-md">
+                                +{asset.tags.length - 3} more
+                            </span>
+                        )}
+                    </div>
                 )}
             </div>
 

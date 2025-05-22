@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react' // Added useEffect
 import { useDashboardLogic } from '@/hooks/use-dashboard-logic'
 import { CameraCaptureWrapper } from './camera-capture-wrapper'
 import { MediaPreview } from './media-preview'
@@ -11,8 +11,34 @@ import { User } from '@supabase/supabase-js'
 import { DashboardHeader } from './dashboard-header'
 import { AssetGrid } from './asset-grid'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, Package } from 'lucide-react';
+import { DollarSign, Package, PlusCircle } from 'lucide-react'; // Added PlusCircle
 import { formatCurrency } from '@/utils/format';
+import { Button } from '@/components/ui/button'; // Added Button
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+    DialogClose,
+    DialogTrigger,
+} from "@/components/ui/dialog"; // Added Dialog components
+import { Input } from "@/components/ui/input"; // Added Input
+import { Label } from "@/components/ui/label"; // Added Label
+
+// Basic types for Tag and Room - ideally these would come from a shared types file
+interface Tag {
+    id: string;
+    name: string;
+    // user_id?: string; // If needed
+}
+
+interface Room {
+    id: string;
+    name: string;
+    // user_id?: string; // If needed
+}
 
 type DashboardClientProps = {
     initialAssets: AssetWithMuxData[];
@@ -63,24 +89,157 @@ export function DashboardClient({
     });
 
     const [searchTerm, setSearchTerm] = useState('');
+    const [userTags, setUserTags] = useState<Tag[]>([]);
+    const [userRooms, setUserRooms] = useState<Room[]>([]);
+    const [selectedRoomId, setSelectedRoomId] = useState<string>(""); // "" for All Rooms
+    const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
 
+    // State for "Create Tag" dialog
+    const [isCreateTagDialogOpen, setIsCreateTagDialogOpen] = useState(false);
+    const [newTagName, setNewTagName] = useState("");
+    const [createTagLoading, setCreateTagLoading] = useState(false);
+    const [createTagError, setCreateTagError] = useState<string | null>(null);
+
+    // State for "Create Room" dialog
+    const [isCreateRoomDialogOpen, setIsCreateRoomDialogOpen] = useState(false);
+    const [newRoomName, setNewRoomName] = useState("");
+    const [createRoomLoading, setCreateRoomLoading] = useState(false);
+    const [createRoomError, setCreateRoomError] = useState<string | null>(null);
+
+
+    const fetchUserTagsAndRooms = async () => {
+        try {
+            const [tagsResponse, roomsResponse] = await Promise.all([
+                fetch('/api/tags'),
+                fetch('/api/rooms')
+            ]);
+
+            if (tagsResponse.ok) {
+                const tagsData = await tagsResponse.json();
+                setUserTags(tagsData.data || []);
+            } else {
+                console.error('Failed to fetch tags');
+                setUserTags([]);
+            }
+
+            if (roomsResponse.ok) {
+                const roomsData = await roomsResponse.json();
+                setUserRooms(roomsData.data || []);
+            } else {
+                console.error('Failed to fetch rooms');
+                setUserRooms([]);
+            }
+        } catch (error) {
+            console.error('Error fetching tags or rooms:', error);
+            setUserTags([]);
+            setUserRooms([]);
+        }
+    };
+
+    useEffect(() => {
+        fetchUserTagsAndRooms();
+    }, []);
+
+    const handleRoomChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+        setSelectedRoomId(event.target.value);
+    };
+
+    const handleTagChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+        const selectedOptions = Array.from(event.target.selectedOptions, option => option.value);
+        setSelectedTagIds(selectedOptions.filter(id => id !== "")); // Filter out "All Tags" placeholder if used
+    };
+
+    const handleCreateTag = async () => {
+        if (!newTagName.trim()) {
+            setCreateTagError("Tag name cannot be empty.");
+            return;
+        }
+        setCreateTagLoading(true);
+        setCreateTagError(null);
+        try {
+            const response = await fetch('/api/tags', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newTagName }),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || `Failed to create tag (status: ${response.status})`);
+            }
+            setUserTags(prevTags => [...prevTags, result.data]);
+            setNewTagName("");
+            setIsCreateTagDialogOpen(false);
+            // Consider adding a success toast/notification here
+        } catch (error: any) {
+            setCreateTagError(error.message || "An unknown error occurred.");
+        } finally {
+            setCreateTagLoading(false);
+        }
+    };
+
+    const handleCreateRoom = async () => {
+        if (!newRoomName.trim()) {
+            setCreateRoomError("Room name cannot be empty.");
+            return;
+        }
+        setCreateRoomLoading(true);
+        setCreateRoomError(null);
+        try {
+            const response = await fetch('/api/rooms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newRoomName }),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                throw new Error(result.error || `Failed to create room (status: ${response.status})`);
+            }
+            setUserRooms(prevRooms => [...prevRooms, result.data]);
+            setNewRoomName("");
+            setIsCreateRoomDialogOpen(false);
+            // Consider adding a success toast/notification here
+        } catch (error: any) {
+            setCreateRoomError(error.message || "An unknown error occurred.");
+        } finally {
+            setCreateRoomLoading(false);
+        }
+    };
+    
     const displayedAssets = useMemo(() => {
-        const filtered = assets.filter(asset => {
+        let filtered = assets.filter(asset => {
+            // Exclude processed source videos
             if (asset.media_type === 'video' && asset.is_source_video === true && asset.is_processed === true) {
                 return false;
-            }
-            if (searchTerm) {
-                const term = searchTerm.toLowerCase();
-                const nameMatch = asset.name?.toLowerCase().includes(term);
-                const descMatch = asset.description?.toLowerCase().includes(term);
-                const transcriptMatch = asset.transcript_text?.toLowerCase().includes(term);
-                return nameMatch || descMatch || transcriptMatch;
             }
             return true;
         });
 
+        // Apply search term filter
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase();
+            filtered = filtered.filter(asset => {
+                const nameMatch = asset.name?.toLowerCase().includes(term);
+                const descMatch = asset.description?.toLowerCase().includes(term);
+                const transcriptMatch = asset.transcript_text?.toLowerCase().includes(term);
+                return nameMatch || descMatch || transcriptMatch;
+            });
+        }
+
+        // Apply room filter
+        if (selectedRoomId && selectedRoomId !== "") {
+            filtered = filtered.filter(asset => asset.room?.id === selectedRoomId);
+        }
+        
+        // Apply tags filter (AND logic: asset must have ALL selected tags)
+        if (selectedTagIds.length > 0) {
+            filtered = filtered.filter(asset => {
+                const assetTagIds = asset.tags?.map(tag => tag.id) || [];
+                return selectedTagIds.every(selectedTagId => assetTagIds.includes(selectedTagId));
+            });
+        }
+
         return filtered;
-    }, [assets, searchTerm]);
+    }, [assets, searchTerm, selectedRoomId, selectedTagIds]);
 
     const renderActiveUploads = () => {
         const uploads = Object.values(activeUploads);
@@ -147,6 +306,122 @@ export function DashboardClient({
                     searchTerm={searchTerm}
                     onSearchChange={setSearchTerm}
                 />
+                
+                {/* Filter UI Elements */}
+                <div className="my-4 flex flex-col sm:flex-row gap-4 items-center">
+                    {/* Room Filter */}
+                    <div className="w-full sm:w-auto">
+                        <label htmlFor="room-filter" className="block text-sm font-medium text-muted-foreground mb-1">
+                            Filter by Room
+                        </label>
+                        <select
+                            id="room-filter"
+                            value={selectedRoomId}
+                            onChange={handleRoomChange}
+                            className="block w-full pl-3 pr-10 py-2 text-base border-input bg-background hover:border-ring focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring sm:text-sm rounded-md shadow-sm"
+                        >
+                            <option value="">All Rooms</option>
+                            {userRooms.map(room => (
+                                <option key={room.id} value={room.id}>
+                                    {room.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Tag Filter (Basic Multi-Select) */}
+                    <div className="w-full sm:w-auto">
+                         <label htmlFor="tag-filter" className="block text-sm font-medium text-muted-foreground mb-1">
+                            Filter by Tags (Ctrl/Cmd to select)
+                        </label>
+                        <select
+                            id="tag-filter"
+                            multiple
+                            value={selectedTagIds}
+                            onChange={handleTagChange}
+                            className="block w-full pl-3 pr-10 py-2 text-base border-input bg-background hover:border-ring focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring sm:text-sm rounded-md shadow-sm h-24"
+                        >
+                            {userTags.map(tag => (
+                                <option key={tag.id} value={tag.id}>
+                                    {tag.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                     {/* Create New Tag/Room Buttons */}
+                    <div className="flex flex-col sm:flex-row gap-2 mt-2 sm:mt-0 sm:ml-auto">
+                        <Dialog open={isCreateTagDialogOpen} onOpenChange={setIsCreateTagDialogOpen}>
+                            <DialogTrigger asChild>
+                                <Button variant="outline" size="sm" className="flex items-center gap-1">
+                                    <PlusCircle className="h-4 w-4" /> Create Tag
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogHeader>
+                                    <DialogTitle>Create New Tag</DialogTitle>
+                                    <DialogDescription>Enter a name for your new tag.</DialogDescription>
+                                </DialogHeader>
+                                <div className="grid gap-4 py-4">
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="new-tag-name" className="text-right">Name</Label>
+                                        <Input
+                                            id="new-tag-name"
+                                            value={newTagName}
+                                            onChange={(e) => setNewTagName(e.target.value)}
+                                            className="col-span-3"
+                                            disabled={createTagLoading}
+                                        />
+                                    </div>
+                                    {createTagError && <p className="col-span-4 text-sm text-destructive text-center">{createTagError}</p>}
+                                </div>
+                                <DialogFooter>
+                                    <DialogClose asChild>
+                                        <Button variant="outline" disabled={createTagLoading}>Cancel</Button>
+                                    </DialogClose>
+                                    <Button onClick={handleCreateTag} disabled={createTagLoading}>
+                                        {createTagLoading ? "Creating..." : "Create Tag"}
+                                    </Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
+
+                        <Dialog open={isCreateRoomDialogOpen} onOpenChange={setIsCreateRoomDialogOpen}>
+                            <DialogTrigger asChild>
+                                <Button variant="outline" size="sm" className="flex items-center gap-1">
+                                    <PlusCircle className="h-4 w-4" /> Create Room
+                                </Button>
+                            </DialogTrigger>
+                            <DialogContent>
+                                <DialogHeader>
+                                    <DialogTitle>Create New Room</DialogTitle>
+                                    <DialogDescription>Enter a name for your new room.</DialogDescription>
+                                </DialogHeader>
+                                <div className="grid gap-4 py-4">
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="new-room-name" className="text-right">Name</Label>
+                                        <Input
+                                            id="new-room-name"
+                                            value={newRoomName}
+                                            onChange={(e) => setNewRoomName(e.target.value)}
+                                            className="col-span-3"
+                                            disabled={createRoomLoading}
+                                        />
+                                    </div>
+                                    {createRoomError && <p className="col-span-4 text-sm text-destructive text-center">{createRoomError}</p>}
+                                </div>
+                                <DialogFooter>
+                                    <DialogClose asChild>
+                                        <Button variant="outline" disabled={createRoomLoading}>Cancel</Button>
+                                    </DialogClose>
+                                    <Button onClick={handleCreateRoom} disabled={createRoomLoading}>
+                                        {createRoomLoading ? "Creating..." : "Create Room"}
+                                    </Button>
+                                </DialogFooter>
+                            </DialogContent>
+                        </Dialog>
+                    </div>
+                </div>
+
 
                 <div className="grid grid-cols-2 md:grid-cols-2 gap-4 my-6">
                     <Card>
@@ -204,6 +479,32 @@ export function DashboardClient({
                         asset={selectedAsset}
                         onClose={handleCloseAssetModal}
                         onDelete={handleDelete}
+                        availableTags={userTags}
+                        availableRooms={userRooms}
+                        onAssetUpdate={(updatedAsset) => {
+                            // Find and update the asset in the main 'assets' list
+                            const updatedAssets = assets.map(a => 
+                                a.id === updatedAsset.id ? { ...a, ...updatedAsset } : a
+                            );
+                            // This assumes 'assets' is directly managed or useDashboardLogic provides a setter
+                            // For now, logging it. A proper state update mechanism is needed here.
+                            console.log('Asset updated in modal, propagate to dashboard state:', updatedAsset);
+                            // If useDashboardLogic returns a setter for 'assets', use it here.
+                            // e.g., setAssets(updatedAssets); 
+                            // For the purpose of this task, we'll assume selectedAsset in modal will reflect changes,
+                            // and AssetCard will re-render if selectedAsset is part of its key or props.
+                            // A more robust solution would be to lift state or use a global state manager.
+                             // Find the asset in the main assets list and update it
+                            const index = assets.findIndex(a => a.id === updatedAsset.id);
+                            if (index !== -1) {
+                                const newAssets = [...assets];
+                                newAssets[index] = { ...newAssets[index], ...updatedAsset };
+                                // Call a setter from useDashboardLogic if available, e.g., updateAssets(newAssets)
+                                // For now, this direct mutation won't trigger re-renders unless `assets` itself is replaced.
+                                // This is a placeholder for where the actual state update for the `assets` list would go.
+                                console.log("Updated asset in list (conceptual):", newAssets[index]);
+                            }
+                        }}
                     />
                 )}
 
