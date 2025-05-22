@@ -36,6 +36,9 @@ export default async function Dashboard() {
             *,
             asset_rooms(
                 rooms(*)
+            ),
+            asset_tags(
+                tags(*)
             )
         `)
         .eq('user_id', user.id)
@@ -47,16 +50,25 @@ export default async function Dashboard() {
     }
 
     // The 'tags' will be an array of objects like [{id, name}, ...].
-    // The 'rooms' field from the query `rooms (id, name)` might return an array with one item or null/empty array
-    // if no room is associated. We want to transform it to a single object or null.
+    // The 'rooms' field from the query `asset_rooms(rooms(*))` should directly give the room object
+    // or an empty array if no room is associated, due to the one-to-one nature enforced by UNIQUE(asset_id) on asset_rooms.
     const assetsWithProcessedRelations = (assetsData || []).map(asset => {
-        const roomData = asset.rooms;
-        // Ensure room is an object or null, not an array for one-to-one
-        const room = Array.isArray(roomData) && roomData.length > 0 ? roomData[0] : null;
+        // `asset.asset_rooms` will be an array, but because of the UNIQUE constraint on asset_id,
+        // it will contain at most one item like: { rooms: { id, name, ... } } or be empty.
+        const roomLink = Array.isArray(asset.asset_rooms) && asset.asset_rooms.length > 0 ? asset.asset_rooms[0] : null;
+        const room = roomLink ? roomLink.rooms : null;
+
+        // Process tags from asset_tags
+        const tagsData = asset.asset_tags; // This will be an array of { tags: { id, name } }
+        const tags = Array.isArray(tagsData) ? tagsData.map(at => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
+
         return {
             ...asset,
-            tags: asset.tags || [], // Ensure tags is always an array
-            room: room,
+            tags: tags,
+            room: room, // Correctly assign the single room object or null
+            // Remove the original join tables from the final object if they are large and not needed directly by client
+            asset_rooms: undefined,
+            asset_tags: undefined,
         };
     });
 

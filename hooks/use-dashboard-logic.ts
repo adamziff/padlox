@@ -56,6 +56,77 @@ export function useDashboardLogic({
 
     const supabase = createClient();
 
+    const fetchAndUpdateAssetState = useCallback(async (assetId: string) => {
+        console.log(`[FETCH & UPDATE] Fetching updated data for asset ${assetId}`);
+        const { data: updatedAssetData, error } = await supabase
+            .from('assets')
+            .select(`
+                *,
+                asset_rooms(
+                    rooms(*)
+                ),
+                asset_tags(
+                    tags(*)
+                )
+            `)
+            .eq('id', assetId)
+            .eq('user_id', user.id)
+            .single();
+
+        if (error) {
+            console.error(`[FETCH & UPDATE] Error fetching asset ${assetId}:`, error);
+            if (error.code === 'PGRST116') {
+                 setAssets(prevAssets => prevAssets.filter(a => a.id !== assetId));
+                 console.log(`[FETCH & UPDATE] Asset ${assetId} not found after update, removing from local state.`);
+            }
+            return;
+        }
+
+        if (updatedAssetData) {
+            const roomLink = Array.isArray(updatedAssetData.asset_rooms) && updatedAssetData.asset_rooms.length > 0 ? updatedAssetData.asset_rooms[0] : null;
+            const room = roomLink ? roomLink.rooms : null;
+            const tagsData = updatedAssetData.asset_tags;
+            const tags = Array.isArray(tagsData) ? tagsData.map((at: any) => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
+
+            let processedAsset = {
+                ...updatedAssetData,
+                room,
+                tags,
+                asset_rooms: undefined,
+                asset_tags: undefined,
+            } as AssetWithMuxData;
+            
+            if (processedAsset.media_type === 'image' && processedAsset.media_url && !processedAsset.media_url.startsWith('http')) {
+                processedAsset = {
+                    ...processedAsset,
+                    media_url: `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${processedAsset.media_url}`
+                };
+            }
+
+            setAssets(prevAssets => {
+                const existingAssetIndex = prevAssets.findIndex(a => a.id === processedAsset.id);
+                let newAssetsList;
+                if (existingAssetIndex !== -1) {
+                    newAssetsList = [...prevAssets];
+                    newAssetsList[existingAssetIndex] = processedAsset;
+                    console.log(`[FETCH & UPDATE] Updated asset ${processedAsset.id} in local state.`);
+                } else {
+                    newAssetsList = [processedAsset, ...prevAssets];
+                    console.log(`[FETCH & UPDATE] Added new asset ${processedAsset.id} to local state (was not present).`);
+                }
+                const { totalItems: newTotalItems, totalValue: newTotalValue } = calculateTotals(newAssetsList);
+                setTotalItems(newTotalItems);
+                setTotalValue(newTotalValue);
+                return newAssetsList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+            });
+
+            if (selectedAsset?.id === processedAsset.id) {
+                setSelectedAsset(processedAsset);
+                console.log(`[FETCH & UPDATE] Updated selectedAsset state for ${processedAsset.id}.`);
+            }
+        }
+    }, [supabase, user?.id, selectedAsset?.id]);
+
     // Fetch thumbnail token for Mux videos
     const fetchThumbnailToken = useCallback(async (playbackId: string, timestamp?: number) => {
         try {
@@ -316,11 +387,66 @@ export function useDashboardLogic({
                 }
             });
 
+        // Realtime for asset_tags
+        const assetTagsChannel = supabase
+            .channel('asset-tags-changes')
+            .on('postgres_changes', 
+                { event: '*', schema: 'public', table: 'asset_tags' }, 
+                async (payload) => {
+                    console.log('[ASSET_TAGS CHANNEL] Received payload:', payload);
+                    let assetIdToUpdate: string | null = null;
+
+                    if (payload.eventType === 'INSERT' && payload.new && payload.new.asset_id) {
+                        assetIdToUpdate = payload.new.asset_id;
+                    } else if (payload.eventType === 'DELETE' && payload.old && payload.old.asset_id) {
+                        assetIdToUpdate = payload.old.asset_id;
+                    }
+
+                    if (assetIdToUpdate) {
+                        console.log(`[ASSET_TAGS CHANNEL] Change detected for asset_id: ${assetIdToUpdate}. Re-fetching asset.`);
+                        await fetchAndUpdateAssetState(assetIdToUpdate);
+                    }
+                }
+            )
+            .subscribe(async (status) => {
+                console.log('[ASSET_TAGS CHANNEL] Status:', status);
+            });
+
+        // Realtime for asset_rooms
+        const assetRoomsChannel = supabase
+            .channel('asset-rooms-changes')
+            .on('postgres_changes', 
+                { event: '*', schema: 'public', table: 'asset_rooms' }, 
+                async (payload) => {
+                    console.log('[ASSET_ROOMS CHANNEL] Received payload:', payload);
+                    let assetIdToUpdate: string | null = null;
+
+                    if (payload.eventType === 'INSERT' && payload.new && payload.new.asset_id) {
+                        assetIdToUpdate = payload.new.asset_id;
+                    } else if (payload.eventType === 'DELETE' && payload.old && payload.old.asset_id) {
+                        // For asset_rooms, a DELETE means the asset is now roomless
+                        // or if a room_id is part of old, it refers to that.
+                        // The asset_id is the key.
+                        assetIdToUpdate = payload.old.asset_id;
+                    }
+                    
+                    if (assetIdToUpdate) {
+                        console.log(`[ASSET_ROOMS CHANNEL] Change detected for asset_id: ${assetIdToUpdate}. Re-fetching asset.`);
+                        await fetchAndUpdateAssetState(assetIdToUpdate);
+                    }
+                }
+            )
+            .subscribe(async (status) => {
+                console.log('[ASSET_ROOMS CHANNEL] Status:', status);
+            });
+
         return () => {
             console.log('[REALTIME CLEANUP] Unsubscribing from asset changes.');
             channel.unsubscribe();
+            supabase.removeChannel(assetTagsChannel);
+            supabase.removeChannel(assetRoomsChannel);
         };
-    }, [user.id, supabase, fetchThumbnailToken, selectedAsset, mediaErrors]);
+    }, [user.id, supabase, fetchAndUpdateAssetState, fetchThumbnailToken, selectedAsset, mediaErrors]);
 
     // Handle captured media files
     const handleCapture = useCallback(async (file: File) => {

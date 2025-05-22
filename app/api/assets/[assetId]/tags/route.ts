@@ -13,8 +13,9 @@ interface RouteParams {
   };
 }
 
-export async function POST(req: NextRequest, { params }: RouteParams) {
+export async function POST(req: NextRequest, { params: paramsPromise }: RouteParams) {
   const supabase = await createClient();
+  const params = await paramsPromise;
   const { assetId } = params;
 
   if (!assetId) {
@@ -93,8 +94,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: RouteParams) {
+export async function DELETE(req: NextRequest, { params: paramsPromise }: RouteParams) {
   const supabase = await createClient();
+  const params = await paramsPromise;
   const { assetId } = params;
 
   if (!assetId) {

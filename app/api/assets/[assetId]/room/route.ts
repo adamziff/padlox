@@ -106,8 +106,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE to remove a room association from an asset
-export async function DELETE(req: NextRequest, { params }: RouteParams) {
+export async function DELETE(req: NextRequest, { params: paramsPromise }: RouteParams) {
   const supabase = await createClient();
+  const params = await paramsPromise; // Await the params
   const { assetId } = params;
 
   if (!assetId) {
