@@ -111,8 +111,12 @@ export function useDashboardLogic({
                     newAssetsList[existingAssetIndex] = processedAsset;
                     console.log(`[FETCH & UPDATE] Updated asset ${processedAsset.id} in local state.`);
                 } else {
+                    // This case should ideally be handled by the main 'assets' INSERT subscription.
+                    // If it happens here, it implies an asset was updated (e.g. tag added)
+                    // but wasn't in the local state, which might be unusual.
+                    // For safety, we'll add it, but it's worth noting.
                     newAssetsList = [processedAsset, ...prevAssets];
-                    console.log(`[FETCH & UPDATE] Added new asset ${processedAsset.id} to local state (was not present).`);
+                    console.warn(`[FETCH & UPDATE] Asset ${processedAsset.id} was not in local state but re-fetched and added. This might indicate a sync issue or stale state elsewhere.`);
                 }
                 const { totalItems: newTotalItems, totalValue: newTotalValue } = calculateTotals(newAssetsList);
                 setTotalItems(newTotalItems);
@@ -120,12 +124,14 @@ export function useDashboardLogic({
                 return newAssetsList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
             });
 
-            if (selectedAsset?.id === processedAsset.id) {
-                setSelectedAsset(processedAsset);
-                console.log(`[FETCH & UPDATE] Updated selectedAsset state for ${processedAsset.id}.`);
-            }
+            // The main 'assets' subscription (event: UPDATE) will handle updating selectedAsset if necessary.
+            // No need to do it here directly as it was causing dependency churn.
+            // if (selectedAsset?.id === processedAsset.id) {
+            //     setSelectedAsset(processedAsset);
+            //     console.log(`[FETCH & UPDATE] Updated selectedAsset state for ${processedAsset.id}.`);
+            // }
         }
-    }, [supabase, user?.id, selectedAsset?.id]);
+    }, [supabase, user?.id]); // Removed selectedAsset?.id from dependencies
 
     // Fetch thumbnail token for Mux videos
     const fetchThumbnailToken = useCallback(async (playbackId: string, timestamp?: number) => {
@@ -446,7 +452,7 @@ export function useDashboardLogic({
             supabase.removeChannel(assetTagsChannel);
             supabase.removeChannel(assetRoomsChannel);
         };
-    }, [user.id, supabase, fetchAndUpdateAssetState, fetchThumbnailToken, selectedAsset, mediaErrors]);
+    }, [user.id, supabase, fetchAndUpdateAssetState, fetchThumbnailToken, mediaErrors]); // Removed selectedAsset
 
     // Handle captured media files
     const handleCapture = useCallback(async (file: File) => {
@@ -637,17 +643,29 @@ export function useDashboardLogic({
 
     // Handle clicking on an asset
     const handleAssetClick = useCallback((asset: AssetWithMuxData, event: React.MouseEvent) => {
-        // Ignore clicks on source video assets (only items/images should open modal)
-        if (asset.media_type === 'video') {
-            console.log(`Clicked on video asset ${asset.id}, ignoring click for modal.`);
-            return; 
-        }
-        // Ignore clicks if Mux video is still preparing (redundant check, but safe)
-        if (asset.mux_asset_id && asset.mux_processing_status === 'preparing') return;
+        // AssetCard now determines if an asset is clickable (e.g. not a video in 'preparing' state
+        // or other non-interactive states). If this function is called, we assume the asset
+        // is intended to be interactive.
+
+        // The main reason to potentially block here would be if it's a specific type of video
+        // that, despite being 'ready', should not open a modal (e.g., a source video that has generated items).
+        // However, `displayedAssets` in DashboardClient already filters out processed source videos.
+        // Thus, any asset reaching here from a click on AssetCard should generally proceed.
+
+        // Redundant check, as AssetCard's isClickable handles this:
+        // if (asset.mux_asset_id && asset.mux_processing_status === 'preparing') return;
+
+        // The original broad check that blocked all 'video' types:
+        // if (asset.media_type === 'video') {
+        //     console.log(`Clicked on video asset ${asset.id}, ignoring click for modal.`);
+        //     return; 
+        // }
         
         if (isSelectionMode) {
+            console.log(`[HANDLE ASSET CLICK] Selection mode ON. Toggling selection for asset: ${asset.id}`);
             toggleAssetSelection(asset.id, event);
         } else {
+            console.log(`[HANDLE ASSET CLICK] Selection mode OFF. Setting selected asset to open modal:`, asset);
             setSelectedAsset(asset);
         }
     }, [isSelectionMode, toggleAssetSelection, setSelectedAsset]);

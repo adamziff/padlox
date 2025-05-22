@@ -33,23 +33,41 @@ export function AssetCard({
     onImageError,
 }: AssetCardProps) {
     // Always show loading spinner for video assets until transcription finishes and items appear
-    const isProcessingVideo = asset.media_type === 'video';
-    const isItem = asset.media_type === 'item';
-    const isClickable = !isProcessingVideo;
+    const isVideoAsset = asset.media_type === 'video';
+    const isItemAsset = asset.media_type === 'item';
+    const isImageAsset = asset.media_type === 'image';
+
+    // Determine clickability:
+    // - Images are always clickable.
+    // - Items (derived from videos) are always clickable.
+    // - Videos are clickable only if their Mux processing is 'ready'.
+    // - Assets with errors that prevent display might also be considered not clickable,
+    //   but the current error handling shows a retry button, so the card itself can remain clickable
+    //   to potentially open a modal with more details if needed.
+    const isMuxVideoReady = isVideoAsset && asset.mux_asset_id && asset.mux_processing_status === 'ready';
+    const isClickable = isImageAsset || isItemAsset || isMuxVideoReady;
+
+    // Determine if we should show a processing spinner:
+    // This is slightly different from clickability. We show spinner if:
+    // 1. It's a video asset AND Mux status is not 'ready' (e.g., 'preparing', 'processing', or null/undefined if not yet started)
+    // This also covers the case where the video is a "source video" that might be undergoing further backend processing
+    // even if Mux itself is done. The original `isProcessingVideo` logic was a bit broad.
+    // Let's refine this to: show spinner if it's a video and not yet ready for playback/interaction.
+    const showProcessingSpinner = isVideoAsset && (!asset.mux_asset_id || asset.mux_processing_status !== 'ready');
 
     // Determine the image source URL dynamically
     let imageUrl = '';
     let imageKey = asset.id; // Use a base key, modify for items with timestamps
 
-    if (isItem && asset.mux_playback_id && itemTimestamp != null) {
+    if (isItemAsset && asset.mux_playback_id && itemTimestamp != null) {
         imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
         // Stable key: Based on asset ID and timestamp (if applicable)
         imageKey = `${asset.id}-item-${itemTimestamp}`;
-    } else if (asset.media_type === 'video' && asset.mux_playback_id && asset.mux_processing_status === 'ready') {
+    } else if (isVideoAsset && asset.mux_playback_id && asset.mux_processing_status === 'ready') {
         // We do not load thumbnails for video assets; isProcessingVideo covers all videos
         // imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
         // imageKey = `${asset.id}-video`;
-    } else if (asset.media_type === 'image') {
+    } else if (isImageAsset) {
         imageUrl = asset.media_url;
         // Stable key: Based on asset ID for images
         imageKey = `${asset.id}-image`;
@@ -86,7 +104,7 @@ export function AssetCard({
                 </div>
             )}
 
-            {isProcessingVideo ? (
+            {showProcessingSpinner ? (
                 <div className="w-full h-full flex items-center justify-center">
                     <div className="text-center">
                         <div className="h-10 w-10 mx-auto mb-2 flex items-center justify-center">
@@ -165,7 +183,7 @@ export function AssetCard({
                             </span>
                         ))}
                         {asset.tags.length > 3 && (
-                             <span className="px-1.5 py-0.5 text-xs bg-white/20 text-white rounded-md">
+                            <span className="px-1.5 py-0.5 text-xs bg-white/20 text-white rounded-md">
                                 +{asset.tags.length - 3} more
                             </span>
                         )}

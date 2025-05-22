@@ -80,13 +80,17 @@ export function DashboardClient({
         handleRetryMediaPreview,
         handleCloseAssetModal,
         totalItems,
-        totalValue
+        totalValue,
+        handleAssetDeletedFromModal
     } = useDashboardLogic({
         initialAssets,
         user,
         initialTotalItems,
         initialTotalValue
     });
+
+    const logicSelectedAsset = selectedAsset; // Assign to a new variable for logging
+    console.log('[DashboardClient] selectedAsset value from useDashboardLogic:', logicSelectedAsset);
 
     const [searchTerm, setSearchTerm] = useState('');
     const [userTags, setUserTags] = useState<Tag[]>([]);
@@ -356,8 +360,8 @@ export function DashboardClient({
                             <div className="flex flex-wrap gap-2">
                                 <button
                                     className={`px-3 py-1.5 rounded-full text-sm ${selectedRoomId === ""
-                                            ? "bg-primary text-primary-foreground"
-                                            : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
                                         }`}
                                     onClick={() => handleRoomChange("")}
                                 >
@@ -367,8 +371,8 @@ export function DashboardClient({
                                     <button
                                         key={room.id}
                                         className={`px-3 py-1.5 rounded-full text-sm ${selectedRoomId === room.id
-                                                ? "bg-primary text-primary-foreground"
-                                                : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                            ? "bg-primary text-primary-foreground"
+                                            : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
                                             }`}
                                         onClick={() => handleRoomChange(room.id)}
                                     >
@@ -398,8 +402,8 @@ export function DashboardClient({
                                     <button
                                         key={tag.id}
                                         className={`px-3 py-1.5 rounded-full text-sm ${selectedTagIds.includes(tag.id)
-                                                ? "bg-primary text-primary-foreground"
-                                                : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                            ? "bg-primary text-primary-foreground"
+                                            : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
                                             }`}
                                         onClick={() => toggleTagSelection(tag.id)}
                                     >
@@ -586,35 +590,38 @@ export function DashboardClient({
                     fetchThumbnailToken={fetchThumbnailToken}
                 />
 
-                {selectedAsset && (
+                {/* Conditional rendering for AssetModal based on selectedAsset */}
+                {logicSelectedAsset && (
                     <AssetModal
-                        asset={selectedAsset}
+                        asset={logicSelectedAsset}
+                        isOpen={true} // If logicSelectedAsset is truthy, modal should be open
                         onClose={handleCloseAssetModal}
-                        onDelete={handleDelete}
+                        onAssetDeleted={handleAssetDeletedFromModal} // Correct prop name and handler from useDashboardLogic
                         availableTags={userTags}
                         availableRooms={userRooms}
-                        onAssetUpdate={(updatedAsset) => {
+                        onAssetUpdated={(updatedAsset: AssetWithMuxData) => { // Correct prop name
                             // Find and update the asset in the main 'assets' list
-                            const updatedAssets = assets.map(a =>
+                            const currentAssets = assets; // Assuming assets is from useDashboardLogic and current
+                            const updatedAssets = currentAssets.map(a =>
                                 a.id === updatedAsset.id ? { ...a, ...updatedAsset } : a
                             );
-                            // This assumes 'assets' is directly managed or useDashboardLogic provides a setter
-                            // For now, logging it. A proper state update mechanism is needed here.
-                            console.log('Asset updated in modal, propagate to dashboard state:', updatedAsset);
-                            // If useDashboardLogic returns a setter for 'assets', use it here.
-                            // e.g., setAssets(updatedAssets); 
-                            // For the purpose of this task, we'll assume selectedAsset in modal will reflect changes,
-                            // and AssetCard will re-render if selectedAsset is part of its key or props.
-                            // A more robust solution would be to lift state or use a global state manager.
-                            // Find the asset in the main assets list and update it
-                            const index = assets.findIndex(a => a.id === updatedAsset.id);
-                            if (index !== -1) {
-                                const newAssets = [...assets];
-                                newAssets[index] = { ...newAssets[index], ...updatedAsset };
-                                // Call a setter from useDashboardLogic if available, e.g., updateAssets(newAssets)
-                                // For now, this direct mutation won't trigger re-renders unless `assets` itself is replaced.
-                                // This is a placeholder for where the actual state update for the `assets` list would go.
-                                console.log("Updated asset in list (conceptual):", newAssets[index]);
+                            console.log('Asset updated in modal, conceptual update to dashboard state:', updatedAsset);
+
+                            // The actual update to the `assets` list in `useDashboardLogic` will be handled
+                            // by its own internal logic or realtime updates. 
+                            // If `useDashboardLogic` needs a direct way to set `assets`, it would provide a setter.
+                            // For now, we assume `AssetModal` updates its own view of the asset, and `useDashboardLogic`
+                            // handles the master list updates, which then propagate back to `DashboardClient` via the `assets` prop.
+
+                            // If the updated asset is the selectedAsset, ensure the modal shows the latest version.
+                            // This is typically handled inside AssetModal by its `useEffect` on the `asset` prop or
+                            // by `useDashboardLogic` updating `selectedAsset` which causes a prop change for AssetModal.
+                            if (logicSelectedAsset && logicSelectedAsset.id === updatedAsset.id) {
+                                // The `selectedAsset` in `useDashboardLogic` should be updated if the asset being edited is the one selected.
+                                // The realtime UPDATE handler in `useDashboardLogic` already does: setSelectedAsset(updatedAsset);
+                                // So, this explicit call might be redundant if realtime is fast enough.
+                                // However, onAssetUpdated is a direct callback, so updating selectedAsset here ensures immediate consistency for the modal.
+                                // Consider if setSelectedAsset should be exposed from useDashboardLogic or if this update path is sufficient.
                             }
                         }}
                     />
