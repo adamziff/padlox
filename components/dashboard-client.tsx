@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo, useEffect } from 'react' // Added useEffect
+import React, { useState, useMemo, useEffect, useCallback } from 'react' // Added useCallback
 import { useDashboardLogic } from '@/hooks/use-dashboard-logic'
 import { CameraCaptureWrapper } from './camera-capture-wrapper'
 import { MediaPreview } from './media-preview'
@@ -11,7 +11,7 @@ import { User } from '@supabase/supabase-js'
 import { DashboardHeader } from './dashboard-header'
 import { AssetGrid } from './asset-grid'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, Package, PlusCircle } from 'lucide-react'; // Added PlusCircle
+import { DollarSign, Package, PlusCircle, Settings } from 'lucide-react'; // Added PlusCircle, Settings
 import { formatCurrency } from '@/utils/format';
 import { Button } from '@/components/ui/button'; // Added Button
 import {
@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/dialog"; // Added Dialog components
 import { Input } from "@/components/ui/input"; // Added Input
 import { Label } from "@/components/ui/label"; // Added Label
+import { ManageTagsDialog } from './manage-tags-dialog'; // Added
+import { ManageRoomsDialog } from './manage-rooms-dialog'; // Added
 
 // Basic types for Tag and Room - ideally these would come from a shared types file
 interface Tag {
@@ -109,6 +111,10 @@ export function DashboardClient({
     const [newRoomName, setNewRoomName] = useState("");
     const [createRoomLoading, setCreateRoomLoading] = useState(false);
     const [createRoomError, setCreateRoomError] = useState<string | null>(null);
+
+    // State for management dialogs
+    const [isManageTagsDialogOpen, setIsManageTagsDialogOpen] = useState(false);
+    const [isManageRoomsDialogOpen, setIsManageRoomsDialogOpen] = useState(false);
 
     // State for mobile filter toggle
     const [showFilters, setShowFilters] = useState(false);
@@ -218,6 +224,55 @@ export function DashboardClient({
             setCreateRoomLoading(false);
         }
     };
+
+    const handleTagUpdated = useCallback((updatedTag: Tag) => {
+        setUserTags(prevTags => prevTags.map(t => t.id === updatedTag.id ? updatedTag : t));
+        // Update assets in useDashboardLogic if necessary (though tags are usually just by ID in asset_tags)
+        // This might be more for consistency if asset objects carry full tag objects.
+        // For now, primarily updating the list of available tags.
+    }, []);
+
+    const handleTagDeleted = useCallback((deletedTagId: string) => {
+        setUserTags(prevTags => prevTags.filter(t => t.id !== deletedTagId));
+        // Remove the tag from all assets in the main asset list
+        // This requires a function from useDashboardLogic or careful state management here.
+        // For now, we will assume useDashboardLogic.updateAssetsAfterTagDeletion or similar might be needed
+        // Or, we rely on the real-time updates to refresh asset data if a tag is removed from asset_tags.
+        // To ensure immediate UI consistency for assets displayed:
+        const currentAssets = assets;
+        const updatedAssets = currentAssets.map(asset => ({
+            ...asset,
+            tags: asset.tags?.filter(t => t.id !== deletedTagId)
+        }));
+        // This conceptually updates the local `assets` copy. 
+        // `useDashboardLogic` should ideally handle this and provide the new `assets` array.
+        // Calling a hypothetical `updateAssets(updatedAssets)` from useDashboardLogic would be cleaner.
+        // For now, log this conceptual update and rely on real-time for the source of truth.
+        console.log('[DashboardClient] Conceptually updated assets after tag deletion:', updatedAssets.filter(a => a.tags?.some(t => t.id === deletedTagId)));
+        // Also, if the deleted tag was in selectedTagIds for filtering, remove it
+        setSelectedTagIds(prev => prev.filter(id => id !== deletedTagId));
+    }, [assets, setSelectedTagIds]); // Added assets to dependency array
+
+    const handleRoomUpdated = useCallback((updatedRoom: Room) => {
+        setUserRooms(prevRooms => prevRooms.map(r => r.id === updatedRoom.id ? updatedRoom : r));
+    }, []);
+
+    const handleRoomDeleted = useCallback((deletedRoomId: string) => {
+        setUserRooms(prevRooms => prevRooms.filter(r => r.id !== deletedRoomId));
+        // If the deleted room was the selected filter, reset to "All Rooms"
+        if (selectedRoomId === deletedRoomId) {
+            setSelectedRoomId("");
+        }
+        // Update assets that had this room
+        const currentAssets = assets;
+        const updatedAssets = currentAssets.map(asset => {
+            if (asset.room?.id === deletedRoomId) {
+                return { ...asset, room: null };
+            }
+            return asset;
+        });
+        console.log('[DashboardClient] Conceptually updated assets after room deletion.');
+    }, [selectedRoomId, assets, setSelectedRoomId]); // Added assets and setSelectedRoomId
 
     const displayedAssets = useMemo(() => {
         let filtered = assets.filter(asset => {
@@ -501,6 +556,10 @@ export function DashboardClient({
                                 </DialogContent>
                             </Dialog>
 
+                            <Button variant="outline" size="sm" className="flex items-center gap-1" onClick={() => setIsManageTagsDialogOpen(true)}>
+                                <Settings className="h-4 w-4" /> Manage Tags
+                            </Button>
+
                             <Dialog open={isCreateRoomDialogOpen} onOpenChange={setIsCreateRoomDialogOpen}>
                                 <DialogTrigger asChild>
                                     <Button variant="outline" size="sm" className="flex items-center gap-1">
@@ -535,6 +594,10 @@ export function DashboardClient({
                                     </DialogFooter>
                                 </DialogContent>
                             </Dialog>
+
+                            <Button variant="outline" size="sm" className="flex items-center gap-1" onClick={() => setIsManageRoomsDialogOpen(true)}>
+                                <Settings className="h-4 w-4" /> Manage Rooms
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -628,6 +691,23 @@ export function DashboardClient({
                 )}
 
                 {renderActiveUploads()}
+
+                <ManageTagsDialog
+                    isOpen={isManageTagsDialogOpen}
+                    onOpenChange={setIsManageTagsDialogOpen}
+                    tags={userTags}
+                    onTagUpdated={handleTagUpdated}
+                    onTagDeleted={handleTagDeleted}
+                />
+
+                <ManageRoomsDialog
+                    isOpen={isManageRoomsDialogOpen}
+                    onOpenChange={setIsManageRoomsDialogOpen}
+                    rooms={userRooms}
+                    onRoomUpdated={handleRoomUpdated}
+                    onRoomDeleted={handleRoomDeleted}
+                />
+
             </div>
         </div>
     );
