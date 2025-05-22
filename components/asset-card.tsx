@@ -129,7 +129,7 @@ export function AssetCard({
                                 <SpinnerIcon />
                             </span>
                         </div>
-                        <p className="text-sm text-muted-foreground">Processing video...</p>
+                        <p className="text-sm text-muted-foreground">Processing video... (let him cook)</p>
                     </div>
                 </div>
             ) : imageUrl ? (

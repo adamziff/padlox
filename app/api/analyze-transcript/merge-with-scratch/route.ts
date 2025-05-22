@@ -231,19 +231,14 @@ export async function POST(req: NextRequest) {
 You are an insurance inspection assistant analyzing a home inspection video. You will be given a transcript (if available) and a list of items detected in video frames (scratch_items).
 Your goal is to create a single, consolidated, and deduplicated list of all unique items for a home inventory.
 
-${transcript ? 
-  `--- TRANSCRIPT (PRIMARY SOURCE) ---
-${typeof transcript === 'string' ? transcript : JSON.stringify(transcript) /* Fallback to stringifying if not already a string */}
-${detailedTranscriptContext ? `\n\n--- DETAILED TRANSCRIPT WORD TIMESTAMPS (FOR PRECISE ITEM TIMESTAMPING) ---
-${detailedTranscriptContext}` : ''}
---- END OF TRANSCRIPT DATA ---` 
-: `No audio transcript is available for this video. Rely solely on the visually detected scratch_items.`}
+${transcript ?
+  `--- TRANSCRIPT (PRIMARY SOURCE FOR ITEM IDENTIFICATION AND ROOM ASSIGNMENT) ---\n${typeof transcript === 'string' ? transcript : JSON.stringify(transcript) /* Fallback to stringifying if not already a string */}\n${detailedTranscriptContext ? `\\n\\n--- DETAILED TRANSCRIPT WORD TIMESTAMPS (FOR PRECISE ITEM TIMESTAMPING) ---\n${detailedTranscriptContext}` : ''}\n--- END OF TRANSCRIPT DATA ---`
+: `No audio transcript is available for this video. Rely solely on the visually detected scratch_items for item identification. Room assignment will not be possible without a transcript.`}
 
---- VISUALLY DETECTED ITEMS (SCRATCH_ITEMS - SECONDARY SOURCE) ---
-${formattedScratchItems.length > 0 
-  ? formattedScratchItems.map(item => 
-      `- Name: ${item.name}\n  Description: ${item.description}\n  Timestamp: ${formatTimestamp(item.timestamp).toFixed(1)}s\n  Estimated Value: $${item.estimated_value}`
-    ).join('\n\n')
+--- VISUALLY DETECTED ITEMS (SCRATCH_ITEMS - SECONDARY SOURCE FOR ITEM DETAILS AND TAGGING) ---\n${formattedScratchItems.length > 0
+  ? formattedScratchItems.map(item =>
+      `- Name: ${item.name}\\n  Description: ${item.description}\\n  Timestamp: ${formatTimestamp(item.timestamp).toFixed(1)}s\\n  Estimated Value: $${item.estimated_value}`
+    ).join('\\n\\n')
   : 'No items were detected in the video frames.'
 }
 --- END OF SCRATCH_ITEMS ---
@@ -283,13 +278,18 @@ CRITICAL MERGING, DEDUPLICATION, AND NAMING LOGIC:
     -   Timestamp: Use its timestamp.
     -   Estimated Value: Use its estimated value.
 
-5.  TAGGING AND ROOM ASSIGNMENT (OPTIONAL):
-    -   For each item, if appropriate, you can suggest a \`room_name\` and an array of \`tag_names\`.
-    -   \`room_name\`: MUST be ONE of the "Available Rooms" listed above. If no room is a good fit, do not assign one.
-    -   \`tag_names\`: MUST be a selection from the "Available Tags" listed above. If no tags are a good fit, do not assign any.
-    -   Only assign tags/rooms if there's a clear and logical fit based on the item's nature and the provided lists. Do not invent new tags or rooms.
+5.  ROOM ASSIGNMENT (BASED **ONLY** ON TRANSCRIPT):
+    -   For each item identified primarily from the transcript, suggest a \`room_name\`.
+    -   The \`room_name\` should be based on contextual clues within the transcript (e.g., "in the kitchen, I see a toaster", "moving to the living room...").
+    -   If the transcript suggests a room not in the "Available Rooms" list, **STILL PROVIDE THE SUGGESTED ROOM NAME**. The system will create it if needed.
+    -   If no clear room context can be inferred from the transcript for an item, do not assign a \`room_name\`.
 
-6.  NAMING REQUIREMENTS (APPLIES TO ALL FINAL ITEMS):
+6.  TAGGING (BASED ON **BOTH** TRANSCRIPT AND SCRATCH_ITEMS):
+    -   For each item, suggest an array of \`tag_names\` based on its characteristics and context from both the transcript and scratch_items.
+    -   If appropriate tags are suggested that are not in the "Available Tags" list, **STILL PROVIDE THE SUGGESTED TAG NAMES**. The system will create them if needed.
+    -   Only assign tags if there's a clear and logical fit. If no tags are suitable, do not assign any.
+
+7.  NAMING REQUIREMENTS (APPLIES TO ALL FINAL ITEMS):
     -   All item names must be 2-3 words minimum, descriptive, and distinct.
     -   Avoid generic names like "Artwork"; use "Abstract Wall Artwork" or "Framed Flower Painting".
     -   Electronics: Include type, brand/model if known (e.g., "Apple iPhone 14", "Dell Work Laptop").
@@ -303,8 +303,8 @@ OUTPUT FORMAT (JSON - items array):
       "description": "Detailed description from primary source, enhanced if appropriate.",
       "timestamp": 2.0, // Single decimal place
       "estimated_value": 100.00, // Positive numeric USD value, never null/0
-      "tag_names": ["Electronics", "Important"], // Optional, from user's list
-      "room_name": "Office" // Optional, from user's list
+      "tag_names": ["Electronics", "Important", "New Suggested Tag"], // Optional, suggest new if appropriate
+      "room_name": "Office" // Optional, suggest new if appropriate (based on transcript)
     }
   ]
 }
@@ -312,8 +312,8 @@ OUTPUT FORMAT (JSON - items array):
 CRUCIAL FORMATTING & VALUE REQUIREMENTS:
 -   Timestamps: Numbers with EXACTLY one decimal place (e.g., 2.0 or 2.1).
 -   Estimated Value: Positive numeric USD value for EVERY item. NEVER null, undefined, or 0.
--   tag_names: Must be an array of strings, selected ONLY from the "Available Tags" provided. Omit if no suitable tags.
--   room_name: Must be a single string, selected ONLY from the "Available Rooms" provided. Omit if no suitable room.
+-   tag_names: Must be an array of strings. You can suggest tags not in the "Available Tags" list. Omit if no suitable tags.
+-   room_name: Must be a single string. You can suggest a room not in the "Available Rooms" list if indicated by the transcript. Omit if no suitable room.
 `;
 
     // Generate items using Gemini API
@@ -602,26 +602,50 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
           const dbItem = insertedItems[i];
           const aiItem = analyzedItems[i]; // Corresponding AI item with tag/room suggestions
 
-          // Link Tags
+          // Link Tags (Create if not exist)
           if (aiItem.tag_names && aiItem.tag_names.length > 0) {
-            const validTagIds: string[] = [];
+            const tagIdsToLink: string[] = [];
             for (const tagName of aiItem.tag_names) {
-              const { data: tagData, error: tagFetchError } = await serviceClient
+              let tagId: string | null = null;
+
+              // Check if tag exists
+              const { data: existingTag, error: fetchTagError } = await serviceClient
                 .from('tags')
                 .select('id')
                 .eq('user_id', user_id)
-                .eq('name', tagName) // Case-sensitive match
+                .eq('name', tagName)
                 .single();
 
-              if (tagFetchError || !tagData) {
-                logger.warn(`Suggested tag "${tagName}" for item "${dbItem.name}" not found or error: ${tagFetchError?.message}. Skipping.`);
+              if (fetchTagError && fetchTagError.code !== 'PGRST116') { // PGRST116: 'No rows found'
+                logger.warn(`Error fetching tag "${tagName}": ${fetchTagError.message}`);
+              } else if (existingTag) {
+                tagId = existingTag.id;
               } else {
-                validTagIds.push(tagData.id);
+                // Tag does not exist, create it
+                logger.info(`Tag "${tagName}" not found for user. Creating it.`);
+                const { data: newTag, error: createTagError } = await serviceClient
+                  .from('tags')
+                  .insert({ user_id: user_id, name: tagName })
+                  .select('id')
+                  .single();
+
+                if (createTagError) {
+                  logger.error(`Error creating tag "${tagName}": ${createTagError.message}`);
+                } else if (newTag) {
+                  tagId = newTag.id;
+                  logger.info(`Successfully created tag "${tagName}" with id ${tagId}`);
+                  // Optionally, update availableTagNames for subsequent items in this run, though not strictly necessary
+                  // availableTagNames.push(tagName); 
+                }
+              }
+
+              if (tagId) {
+                tagIdsToLink.push(tagId);
               }
             }
 
-            if (validTagIds.length > 0) {
-              const assetTagsToInsert = validTagIds.map(tagId => ({
+            if (tagIdsToLink.length > 0) {
+              const assetTagsToInsert = tagIdsToLink.map(tagId => ({
                 asset_id: dbItem.id,
                 tag_id: tagId,
               }));
@@ -629,28 +653,50 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
               if (assetTagsError) {
                 logger.error(`Error linking tags to asset ${dbItem.id}:`, assetTagsError.message);
               } else {
-                logger.info(`Successfully linked ${validTagIds.length} tags to asset ${dbItem.id}`);
+                logger.info(`Successfully linked ${tagIdsToLink.length} tags to asset ${dbItem.id}`);
               }
             }
           }
 
-          // Link Room
+          // Link Room (Create if not exist)
           if (aiItem.room_name) {
-            const { data: roomData, error: roomFetchError } = await serviceClient
+            let roomId: string | null = null;
+
+            // Check if room exists
+            const { data: existingRoom, error: fetchRoomError } = await serviceClient
               .from('rooms')
               .select('id')
               .eq('user_id', user_id)
-              .eq('name', aiItem.room_name) // Case-sensitive match
+              .eq('name', aiItem.room_name)
               .single();
 
-            if (roomFetchError || !roomData) {
-              logger.warn(`Suggested room "${aiItem.room_name}" for item "${dbItem.name}" not found or error: ${roomFetchError?.message}. Skipping.`);
+            if (fetchRoomError && fetchRoomError.code !== 'PGRST116') { // PGRST116: 'No rows found'
+              logger.warn(`Error fetching room "${aiItem.room_name}": ${fetchRoomError.message}`);
+            } else if (existingRoom) {
+              roomId = existingRoom.id;
             } else {
-              // Upsert to handle potential existing room assignment (though asset_rooms has UNIQUE on asset_id)
-              // For now, simple insert. If it fails due to unique constraint, it means it's already in a room.
+              // Room does not exist, create it
+              logger.info(`Room "${aiItem.room_name}" not found for user. Creating it.`);
+              const { data: newRoom, error: createRoomError } = await serviceClient
+                .from('rooms')
+                .insert({ user_id: user_id, name: aiItem.room_name })
+                .select('id')
+                .single();
+              
+              if (createRoomError) {
+                logger.error(`Error creating room "${aiItem.room_name}": ${createRoomError.message}`);
+              } else if (newRoom) {
+                roomId = newRoom.id;
+                logger.info(`Successfully created room "${aiItem.room_name}" with id ${roomId}`);
+                // Optionally, update availableRoomNames for subsequent items in this run
+                // availableRoomNames.push(aiItem.room_name);
+              }
+            }
+
+            if (roomId) {
               const { error: assetRoomError } = await serviceClient
                 .from('asset_rooms')
-                .upsert({ asset_id: dbItem.id, room_id: roomData.id }, { onConflict: 'asset_id' }); // Use upsert
+                .upsert({ asset_id: dbItem.id, room_id: roomId }, { onConflict: 'asset_id' });
 
               if (assetRoomError) {
                 logger.error(`Error linking room to asset ${dbItem.id}:`, assetRoomError.message);

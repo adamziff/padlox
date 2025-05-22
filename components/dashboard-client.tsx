@@ -313,7 +313,7 @@ export function DashboardClient({
                     <div key={index} className="bg-background text-foreground border border-border rounded-lg p-3 shadow-md text-sm">
                         <p className="font-semibold">{
                             upload.status === 'uploading' ? 'Uploading...' :
-                                upload.status === 'processing' ? 'Processing video...' :
+                                upload.status === 'processing' ? 'Processing video... (let him cook)' :
                                     upload.status === 'preparing_transcription' ? 'Preparing transcription...' :
                                         upload.status === 'transcribing' ? 'Transcribing...' :
                                             upload.status === 'analyzing' ? 'Analyzing item...' :
