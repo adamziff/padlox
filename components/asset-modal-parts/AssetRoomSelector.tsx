@@ -97,7 +97,7 @@ export function AssetRoomSelector({
                 const roomLink = Array.isArray(refreshedAsset.asset_rooms) && refreshedAsset.asset_rooms.length > 0 ? refreshedAsset.asset_rooms[0] : null;
                 const finalRoom = roomLink ? roomLink.rooms : null;
                 const tagsData = refreshedAsset.asset_tags;
-                const finalTags = Array.isArray(tagsData) ? tagsData.map((at: any) => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
+                const finalTags = Array.isArray(tagsData) ? tagsData.map((at: { tags: { id: string, name: string } }) => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
 
                 onAssetUpdate({
                     ...refreshedAsset,
@@ -112,9 +112,9 @@ export function AssetRoomSelector({
             }
             setRoomUpdateError(null); // Clear error on success
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Failed to update room:', error);
-            setRoomUpdateError(error.message || 'Failed to update room.');
+            setRoomUpdateError(error instanceof Error ? error.message : 'Failed to update room.');
             // Revert optimistic UI change on error
             setCurrentRoomId(initialAsset.room?.id || "no-room");
         } finally {

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
 import { z } from 'zod';
 
 const tagNameSchema = z.object({
@@ -30,8 +29,8 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
   let body;
   try {
     body = await req.json();
-  } catch (e: any) {
-    return NextResponse.json({ error: 'Invalid JSON body', details: e.message }, { status: 400 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: 'Invalid JSON body', details: e instanceof Error ? e.message : 'Unknown error' }, { status: 400 });
   }
 
   const validationResult = tagNameSchema.safeParse(body);
@@ -90,9 +89,9 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
     }
 
     return NextResponse.json({ data: updatedTag }, { status: 200 });
-  } catch (e: any) {
-    console.error('Unexpected error updating tag:', e.message);
-    return NextResponse.json({ error: 'An unexpected error occurred', details: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    console.error('Unexpected error updating tag:', e instanceof Error ? e.message : 'Unknown error');
+    return NextResponse.json({ error: 'An unexpected error occurred', details: e instanceof Error ? e.message : 'Unknown error' }, { status: 500 });
   }
 }
 
@@ -160,8 +159,8 @@ export async function DELETE(req: NextRequest, { params }: RouteParams) {
     }
 
     return new NextResponse(null, { status: 204 });
-  } catch (e: any) {
-    console.error('Unexpected error deleting tag:', e.message);
-    return NextResponse.json({ error: 'An unexpected error occurred', details: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    console.error('Unexpected error deleting tag:', e instanceof Error ? e.message : 'Unknown error');
+    return NextResponse.json({ error: 'An unexpected error occurred', details: e instanceof Error ? e.message : 'Unknown error' }, { status: 500 });
   }
 }

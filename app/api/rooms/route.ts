@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
 import { z } from 'zod';
 
 const roomNameSchema = z.object({
   name: z.string().min(1, { message: 'Room name cannot be empty' }),
 });
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const supabase = await createClient();
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -29,9 +28,9 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ data: rooms || [] }, { status: 200 });
-  } catch (e: any) {
-    console.error('Unexpected error fetching rooms:', e.message);
-    return NextResponse.json({ error: 'An unexpected error occurred', details: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    console.error('Unexpected error fetching rooms:', e instanceof Error ? e.message : 'Unknown error');
+    return NextResponse.json({ error: 'An unexpected error occurred', details: e instanceof Error ? e.message : 'Unknown error' }, { status: 500 });
   }
 }
 
@@ -47,8 +46,8 @@ export async function POST(req: NextRequest) {
   let body;
   try {
     body = await req.json();
-  } catch (e: any) {
-    return NextResponse.json({ error: 'Invalid JSON body', details: e.message }, { status: 400 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: 'Invalid JSON body', details: e instanceof Error ? e.message : 'Unknown error' }, { status: 400 });
   }
 
   const validationResult = roomNameSchema.safeParse(body);
@@ -89,8 +88,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ data: newRoom }, { status: 201 });
-  } catch (e: any) {
-    console.error('Unexpected error creating room:', e.message);
-    return NextResponse.json({ error: 'An unexpected error occurred', details: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    console.error('Unexpected error creating room:', e instanceof Error ? e.message : 'Unknown error');
+    return NextResponse.json({ error: 'An unexpected error occurred', details: e instanceof Error ? e.message : 'Unknown error' }, { status: 500 });
   }
 }

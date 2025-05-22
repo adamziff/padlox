@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
 import { z } from 'zod';
 
 const assetTagSchema = z.object({
@@ -31,8 +30,9 @@ export async function POST(req: NextRequest, { params: paramsPromise }: RoutePar
   let body;
   try {
     body = await req.json();
-  } catch (e: any) {
-    return NextResponse.json({ error: 'Invalid JSON body', details: e.message }, { status: 400 });
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: 'Invalid JSON body', details: errorMessage }, { status: 400 });
   }
 
   const validationResult = assetTagSchema.safeParse(body);
@@ -88,9 +88,10 @@ export async function POST(req: NextRequest, { params: paramsPromise }: RoutePar
     }
 
     return NextResponse.json({ data: newAssetTag }, { status: 201 });
-  } catch (e: any) {
-    console.error('Unexpected error associating tag with asset:', e.message);
-    return NextResponse.json({ error: 'An unexpected error occurred', details: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    console.error('Unexpected error associating tag with asset:', errorMessage);
+    return NextResponse.json({ error: 'An unexpected error occurred', details: errorMessage }, { status: 500 });
   }
 }
 
@@ -112,8 +113,9 @@ export async function DELETE(req: NextRequest, { params: paramsPromise }: RouteP
   let body;
   try {
     body = await req.json();
-  } catch (e: any) {
-    return NextResponse.json({ error: 'Invalid JSON body', details: e.message }, { status: 400 });
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: 'Invalid JSON body', details: errorMessage }, { status: 400 });
   }
   
   const validationResult = assetTagSchema.safeParse(body);
@@ -143,7 +145,7 @@ export async function DELETE(req: NextRequest, { params: paramsPromise }: RouteP
     // 2. Delete the association
     // RLS on asset_tags will ensure that users can only delete associations
     // if they own the asset AND the tag. The check above for asset ownership is an explicit layer.
-    const { error: deleteError, count } = await supabase
+    const { error: deleteError } = await supabase
       .from('asset_tags')
       .delete()
       .eq('asset_id', assetId)
@@ -161,8 +163,9 @@ export async function DELETE(req: NextRequest, { params: paramsPromise }: RouteP
     // }
 
     return new NextResponse(null, { status: 204 });
-  } catch (e: any) {
-    console.error('Unexpected error removing tag from asset:', e.message);
-    return NextResponse.json({ error: 'An unexpected error occurred', details: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    console.error('Unexpected error removing tag from asset:', errorMessage);
+    return NextResponse.json({ error: 'An unexpected error occurred', details: errorMessage }, { status: 500 });
   }
 }

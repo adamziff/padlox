@@ -107,7 +107,7 @@ export function AssetTagsManager({
                 const roomLink = Array.isArray(refreshedAsset.asset_rooms) && refreshedAsset.asset_rooms.length > 0 ? refreshedAsset.asset_rooms[0] : null;
                 const finalRoom = roomLink ? roomLink.rooms : null;
                 const tagsData = refreshedAsset.asset_tags;
-                const finalTags = Array.isArray(tagsData) ? tagsData.map((at: any) => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
+                const finalTags = Array.isArray(tagsData) ? tagsData.map((at: { tags: { id: string, name: string } }) => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
 
                 const processedAsset = {
                     ...refreshedAsset,
@@ -124,9 +124,9 @@ export function AssetTagsManager({
                 throw new Error("Failed to refresh asset after tag update.");
             }
 
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Error saving tags:", error);
-            setEditTagsError(error.message || "An unexpected error occurred while saving tags.");
+            setEditTagsError(error instanceof Error ? error.message : "An unexpected error occurred while saving tags.");
         } finally {
             setIsSavingTags(false);
         }

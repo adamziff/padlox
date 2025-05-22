@@ -70,7 +70,7 @@ export default async function Dashboard() {
         // If roomDataFromSupabase is null, an empty array, or an object without a .rooms property, room remains null.
 
         // Process tags from asset_tags
-        const tagsData = asset.asset_tags; // This will be an array of { tags: { id, name } }
+        const tagsData = asset.asset_tags as { tags: { id: string, name: string } }[]; // This will be an array of { tags: { id, name } }
         const tags = Array.isArray(tagsData) ? tagsData.map(at => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
 
         return {
@@ -92,13 +92,13 @@ export default async function Dashboard() {
     // Calculate metrics
     const filteredAssetsForCount = assetsWithProcessedRelations.filter(asset => asset.media_type === 'item' || asset.media_type === 'image');
     const totalItems = filteredAssetsForCount.length;
-    const totalValue = assetsWithProcessedRelations.reduce((sum: number, asset: any) => { // Use 'any' for now, will be AssetWithMuxData
+    const totalValue = assetsWithProcessedRelations.reduce((sum: number, asset: AssetWithMuxData) => { // Use 'any' for now, will be AssetWithMuxData
         const value = typeof asset.estimated_value === 'number' ? asset.estimated_value : 0;
         return sum + value;
     }, 0);
 
     // Transform assets to include absolute media_url if it's not a Mux video
-    const transformedAssets = assetsWithProcessedRelations.map((asset: any) => { // Use 'any' for now
+    const transformedAssets = assetsWithProcessedRelations.map((asset: AssetWithMuxData) => { // Use 'any' for now
         if (asset.mux_asset_id) {
             return asset as AssetWithMuxData;
         }

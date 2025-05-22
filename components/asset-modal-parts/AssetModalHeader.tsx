@@ -2,7 +2,6 @@
 
 import { Button } from '@/components/ui/button';
 import { CrossIcon, TrashIcon, DownloadIcon } from '@/components/icons';
-import { AssetWithMuxData } from '@/types/mux';
 import { DialogTitle, DialogDescription, DialogHeader, DialogClose } from "@/components/ui/dialog";
 
 interface AssetModalHeaderProps {

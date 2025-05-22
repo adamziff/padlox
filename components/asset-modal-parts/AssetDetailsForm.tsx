@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { AssetWithMuxData } from '@/types/mux';
 import { createClient } from '@/utils/supabase/client';
 import { useDebouncedCallback } from 'use-debounce';
-import { formatCurrency } from '@/utils/format'; // Assuming you have this for display
 
 interface AssetDetailsFormProps {
     asset: AssetWithMuxData;
@@ -78,7 +77,7 @@ export function AssetDetailsForm({
                 const roomLink = Array.isArray(updatedDbAsset.asset_rooms) && updatedDbAsset.asset_rooms.length > 0 ? updatedDbAsset.asset_rooms[0] : null;
                 const finalRoom = roomLink ? roomLink.rooms : null;
                 const tagsData = updatedDbAsset.asset_tags;
-                const finalTags = Array.isArray(tagsData) ? tagsData.map((at: any) => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
+                const finalTags = Array.isArray(tagsData) ? tagsData.map((at: { tags: { id: string, name: string } }) => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
 
                 const processedAsset = {
                     ...updatedDbAsset,
@@ -95,9 +94,9 @@ export function AssetDetailsForm({
             } else {
                 throw new Error("Asset update returned no data.");
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error('Error saving asset details:', error);
-            setSaveError(`Save failed: ${error.message || 'Unknown error'}`);
+            setSaveError(`Save failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
             // Optionally revert changes on error:
             // setEditableName(asset.name || '');
             // setEditableDescription(asset.description || '');

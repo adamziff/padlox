@@ -7,7 +7,6 @@ import { AssetWithMuxData } from '@/types/mux';
 
 interface AssetMediaDisplayProps {
     asset: AssetWithMuxData;
-    modalToken: string | null;
     isLoadingToken: boolean;
     isMuxReady: boolean;
     isMuxProcessing: boolean;
@@ -15,7 +14,6 @@ interface AssetMediaDisplayProps {
 
 export function AssetMediaDisplay({
     asset,
-    modalToken,
     isLoadingToken,
     isMuxReady,
     isMuxProcessing

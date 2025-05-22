@@ -1,22 +1,8 @@
 'use client'
 
 import { AssetWithMuxData } from '@/types/mux'
-import Image from 'next/image'
-import { Button } from './ui/button'
-import { formatCurrency } from '@/utils/format'
-import { CrossIcon, TrashIcon, DownloadIcon } from './icons'
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { MuxPlayer } from './mux-player'
-import { getMuxThumbnailUrl } from '@/lib/mux'
-import { Input } from './ui/input'
-import { Textarea } from './ui/textarea'
-import { Label } from '@/components/ui/label';
-import { useDebouncedCallback } from 'use-debounce';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Assuming shadcn/ui
-import { Badge } from "@/components/ui/badge"; // Assuming shadcn/ui
-import { Dialog, DialogContent, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { DialogClose } from "@/components/ui/dialog";
+import { useState, useEffect, useCallback } from 'react'
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toast } from 'sonner';
 import { AssetModalHeader } from './asset-modal-parts/AssetModalHeader';
 import { AssetMediaDisplay } from './asset-modal-parts/AssetMediaDisplay';
@@ -55,7 +41,6 @@ export function AssetModal({
     availableTags
 }: AssetModalProps) {
     console.log('[AssetModal] Props received - isOpen:', isOpen, 'initialAsset:', initialAsset);
-    const supabase = createClient();
     const [asset, setAsset] = useState<AssetWithMuxData | null>(initialAsset);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isLoadingMuxTokens, setIsLoadingMuxTokens] = useState(false);
@@ -121,8 +106,8 @@ export function AssetModal({
             toast.success(`Asset "${asset.name || 'Untitled'}" deleted successfully.`);
             onAssetDeleted(asset.id);
             onClose(); // Close modal after deletion
-        } catch (error: any) { // Catch any error
-            toast.error(`Error deleting asset: ${error.message}`);
+        } catch (error: unknown) { // Catch any error
+            toast.error(`Error deleting asset: ${error instanceof Error ? error.message : 'Unknown error'}`);
         } finally {
             setIsDeleting(false);
         }

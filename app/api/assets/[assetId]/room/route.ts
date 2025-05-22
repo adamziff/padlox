@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
 import { z } from 'zod';
 
 const assetRoomSchema = z.object({
   room_id: z.string().uuid({ message: 'Invalid Room ID format' }),
-});
-
-// Schema for allowing null to remove a room, if desired for POST/PUT
-const assetRoomOptionalSchema = z.object({
-  room_id: z.string().uuid({ message: 'Invalid Room ID format' }).nullable(),
 });
 
 interface RouteParams {
@@ -36,8 +30,9 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   let body;
   try {
     body = await req.json();
-  } catch (e: any) {
-    return NextResponse.json({ error: 'Invalid JSON body', details: e.message }, { status: 400 });
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: 'Invalid JSON body', details: errorMessage }, { status: 400 });
   }
 
   // Using optional schema if you want to allow setting room_id to null via POST
@@ -99,9 +94,10 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     // Let's return 200 OK for successful association or update.
     return NextResponse.json({ data: newAssetRoom }, { status: 200 });
 
-  } catch (e: any) {
-    console.error('Unexpected error associating room with asset:', e.message);
-    return NextResponse.json({ error: 'An unexpected error occurred', details: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    console.error('Unexpected error associating room with asset:', errorMessage);
+    return NextResponse.json({ error: 'An unexpected error occurred', details: errorMessage }, { status: 500 });
   }
 }
 
@@ -139,7 +135,7 @@ export async function DELETE(req: NextRequest, { params: paramsPromise }: RouteP
 
     // 2. Delete the association
     // RLS on asset_rooms ensures user can only delete if they own the asset.
-    const { error: deleteError, count } = await supabase
+    const { error: deleteError } = await supabase
       .from('asset_rooms')
       .delete()
       .eq('asset_id', assetId); // No need to specify room_id, as an asset can only be in one room.
@@ -149,13 +145,10 @@ export async function DELETE(req: NextRequest, { params: paramsPromise }: RouteP
       return NextResponse.json({ error: 'Failed to remove room from asset', details: deleteError.message }, { status: 500 });
     }
 
-    // if (count === 0) {
-      // This could mean the association didn't exist, which is fine for a DELETE.
-    // }
-
     return new NextResponse(null, { status: 204 });
-  } catch (e: any) {
-    console.error('Unexpected error removing room from asset:', e.message);
-    return NextResponse.json({ error: 'An unexpected error occurred', details: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const errorMessage = e instanceof Error ? e.message : String(e);
+    console.error('Unexpected error removing room from asset:', errorMessage);
+    return NextResponse.json({ error: 'An unexpected error occurred', details: errorMessage }, { status: 500 });
   }
 }

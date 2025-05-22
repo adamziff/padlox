@@ -190,8 +190,8 @@ export function DashboardClient({
             setNewTagName("");
             setIsCreateTagDialogOpen(false);
             // Consider adding a success toast/notification here
-        } catch (error: any) {
-            setCreateTagError(error.message || "An unknown error occurred.");
+        } catch (error: unknown) {
+            setCreateTagError(error instanceof Error ? error.message : "An unknown error occurred.");
         } finally {
             setCreateTagLoading(false);
         }
@@ -218,8 +218,8 @@ export function DashboardClient({
             setNewRoomName("");
             setIsCreateRoomDialogOpen(false);
             // Consider adding a success toast/notification here
-        } catch (error: any) {
-            setCreateRoomError(error.message || "An unknown error occurred.");
+        } catch (error: unknown) {
+            setCreateRoomError(error instanceof Error ? error.message : "An unknown error occurred.");
         } finally {
             setCreateRoomLoading(false);
         }
@@ -263,16 +263,7 @@ export function DashboardClient({
         if (selectedRoomId === deletedRoomId) {
             setSelectedRoomId("");
         }
-        // Update assets that had this room
-        const currentAssets = assets;
-        const updatedAssets = currentAssets.map(asset => {
-            if (asset.room?.id === deletedRoomId) {
-                return { ...asset, room: null };
-            }
-            return asset;
-        });
-        console.log('[DashboardClient] Conceptually updated assets after room deletion.');
-    }, [selectedRoomId, assets, setSelectedRoomId]); // Added assets and setSelectedRoomId
+    }, [selectedRoomId, setSelectedRoomId]); // Added assets and setSelectedRoomId
 
     const displayedAssets = useMemo(() => {
         let filtered = assets.filter(asset => {
@@ -338,27 +329,6 @@ export function DashboardClient({
             </div>
         );
     }
-
-    const handleDelete = async (assetId: string) => {
-        console.log(`Attempting to delete asset ${assetId}`);
-        try {
-            const response = await fetch('/api/delete', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ assetId }),
-            });
-            const result = await response.json();
-            if (!response.ok) {
-                throw new Error(result.error || 'Failed to delete asset');
-            }
-            console.log("Asset delete API call successful");
-            handleCloseAssetModal();
-        } catch (error) {
-            console.error('Error deleting asset:', error);
-        }
-    };
 
     return (
         <div className="min-h-screen flex flex-col">
@@ -663,12 +633,6 @@ export function DashboardClient({
                         availableTags={userTags}
                         availableRooms={userRooms}
                         onAssetUpdated={(updatedAsset: AssetWithMuxData) => { // Correct prop name
-                            // Find and update the asset in the main 'assets' list
-                            const currentAssets = assets; // Assuming assets is from useDashboardLogic and current
-                            const updatedAssets = currentAssets.map(a =>
-                                a.id === updatedAsset.id ? { ...a, ...updatedAsset } : a
-                            );
-                            console.log('Asset updated in modal, conceptual update to dashboard state:', updatedAsset);
 
                             // The actual update to the `assets` list in `useDashboardLogic` will be handled
                             // by its own internal logic or realtime updates. 
