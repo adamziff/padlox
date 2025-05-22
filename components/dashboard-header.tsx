@@ -32,6 +32,9 @@ export function DashboardHeader({
         <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-center gap-4">
                 <h1 className="text-2xl font-semibold tracking-tight">Inventory Dashboard</h1>
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                    Alpha
+                </span>
             </div>
 
             <div className="flex flex-col md:flex-row items-center gap-2 w-full md:w-auto">
