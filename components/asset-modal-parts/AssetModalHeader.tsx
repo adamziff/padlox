@@ -3,7 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { CrossIcon, TrashIcon, DownloadIcon } from '@/components/icons';
 import { AssetWithMuxData } from '@/types/mux';
-import { DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { DialogTitle, DialogDescription, DialogHeader, DialogClose } from "@/components/ui/dialog";
 
 interface AssetModalHeaderProps {
     assetName: string | null | undefined;
@@ -23,16 +23,18 @@ export function AssetModalHeader({
     hasMuxData
 }: AssetModalHeaderProps) {
     return (
-        <div className="flex items-center justify-between p-4 border-b">
-            <DialogTitle asChild>
-                <h2 className="text-lg font-semibold truncate pr-2" title={assetName || 'Asset Details'}>
-                    {assetName || 'Asset Details'}
-                </h2>
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-                Details and actions for the asset: {assetName || 'Asset Details'}.
-            </DialogDescription>
-            <div className="flex items-center space-x-2">
+        <DialogHeader className="flex flex-row items-center justify-between p-4 border-b space-x-2">
+            <div className="flex-grow flex items-center min-w-0">
+                <DialogTitle asChild>
+                    <h2 className="text-lg font-semibold truncate pr-2" title={assetName || 'Asset Details'}>
+                        {assetName || 'Asset Details'}
+                    </h2>
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                    Details and actions for the asset: {assetName || 'Asset Details'}.
+                </DialogDescription>
+            </div>
+            <div className="flex items-center space-x-2 flex-shrink-0">
                 {!hasMuxData && (
                     <Button variant="outline" size="icon" onClick={onDownload} title="Download Asset">
                         <DownloadIcon />
@@ -50,10 +52,12 @@ export function AssetModalHeader({
                         )}
                     </Button>
                 )}
-                <Button variant="ghost" size="icon" onClick={onClose} title="Close Modal">
-                    <CrossIcon />
-                </Button>
+                <DialogClose asChild>
+                    <Button variant="ghost" size="icon" onClick={onClose} title="Close Modal">
+                        <CrossIcon />
+                    </Button>
+                </DialogClose>
             </div>
-        </div>
+        </DialogHeader>
     );
 } 

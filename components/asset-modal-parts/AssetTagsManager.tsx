@@ -164,7 +164,7 @@ export function AssetTagsManager({
                         {availableTags.map(tag => (
                             <Button
                                 key={tag.id}
-                                variant={pendingTagIds.includes(tag.id) ? "secondary" : "outline"}
+                                variant={pendingTagIds.includes(tag.id) ? "default" : "outline"}
                                 onClick={() => handleToggleTagInEditModal(tag.id)}
                                 className="w-full justify-start text-xs h-8 truncate"
                                 title={tag.name}

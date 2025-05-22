@@ -168,7 +168,7 @@ export function AssetModal({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-0 max-h-[calc(100vh-120px)] md:max-h-[calc(100vh-70px-50px)]">
                     {/* Left Column: Media Display */}
-                    <div className="md:col-span-1 bg-slate-900 flex items-center justify-center overflow-hidden md:max-h-[calc(100vh-120px)]">
+                    <div className="md:col-span-1 bg-background flex items-center justify-center overflow-hidden md:max-h-[calc(100vh-120px)]">
                         <AssetMediaDisplay
                             asset={asset}
                             modalToken={muxThumbnailToken}
