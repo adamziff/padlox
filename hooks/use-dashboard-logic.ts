@@ -83,8 +83,14 @@ export function useDashboardLogic({
         }
 
         if (updatedAssetData) {
-            const roomLink = Array.isArray(updatedAssetData.asset_rooms) && updatedAssetData.asset_rooms.length > 0 ? updatedAssetData.asset_rooms[0] : null;
-            const room = roomLink ? roomLink.rooms : null;
+            const roomDataFromSupabase = updatedAssetData.asset_rooms;
+            let room = null;
+            if (roomDataFromSupabase && typeof roomDataFromSupabase === 'object' && !Array.isArray(roomDataFromSupabase) && roomDataFromSupabase.rooms) {
+                room = roomDataFromSupabase.rooms;
+            } else if (Array.isArray(roomDataFromSupabase) && roomDataFromSupabase.length > 0 && roomDataFromSupabase[0] && roomDataFromSupabase[0].rooms) {
+                room = roomDataFromSupabase[0].rooms;
+            }
+
             const tagsData = updatedAssetData.asset_tags;
             const tags = Array.isArray(tagsData) ? tagsData.map((at: any) => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
 
@@ -111,10 +117,6 @@ export function useDashboardLogic({
                     newAssetsList[existingAssetIndex] = processedAsset;
                     console.log(`[FETCH & UPDATE] Updated asset ${processedAsset.id} in local state.`);
                 } else {
-                    // This case should ideally be handled by the main 'assets' INSERT subscription.
-                    // If it happens here, it implies an asset was updated (e.g. tag added)
-                    // but wasn't in the local state, which might be unusual.
-                    // For safety, we'll add it, but it's worth noting.
                     newAssetsList = [processedAsset, ...prevAssets];
                     console.warn(`[FETCH & UPDATE] Asset ${processedAsset.id} was not in local state but re-fetched and added. This might indicate a sync issue or stale state elsewhere.`);
                 }
@@ -124,14 +126,15 @@ export function useDashboardLogic({
                 return newAssetsList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
             });
 
-            // The main 'assets' subscription (event: UPDATE) will handle updating selectedAsset if necessary.
-            // No need to do it here directly as it was causing dependency churn.
-            // if (selectedAsset?.id === processedAsset.id) {
-            //     setSelectedAsset(processedAsset);
-            //     console.log(`[FETCH & UPDATE] Updated selectedAsset state for ${processedAsset.id}.`);
-            // }
+            setSelectedAsset(prevSelectedAsset => {
+                if (prevSelectedAsset?.id === processedAsset.id) {
+                    console.log(`[FETCH & UPDATE] Updated selectedAsset state for ${processedAsset.id} with fully processed relations via functional update.`);
+                    return processedAsset;
+                }
+                return prevSelectedAsset;
+            });
         }
-    }, [supabase, user?.id]); // Removed selectedAsset?.id from dependencies
+    }, [supabase, user?.id, setAssets, setSelectedAsset, setTotalItems, setTotalValue]);
 
     // Fetch thumbnail token for Mux videos
     const fetchThumbnailToken = useCallback(async (playbackId: string, timestamp?: number) => {
@@ -446,13 +449,77 @@ export function useDashboardLogic({
                 console.log('[ASSET_ROOMS CHANNEL] Status:', status);
             });
 
+        // Realtime for tags table itself (for name updates)
+        const tagsChannel = supabase
+            .channel('tags-table-changes')
+            .on('postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'tags',
+                    filter: `user_id=eq.${user.id}` // Assuming tags are user-specific
+                },
+                (payload) => {
+                    console.log('[TAGS TABLE CHANNEL] Received UPDATE payload:', payload);
+                    const updatedTag = payload.new as { id: string; name: string; user_id: string }; // Adjust type as needed
+
+                    if (updatedTag && updatedTag.id && updatedTag.name) {
+                        setAssets(prevAssets => {
+                            const newAssetsList = prevAssets.map(asset => {
+                                if (asset.tags && asset.tags.some(t => t.id === updatedTag.id)) {
+                                    return {
+                                        ...asset,
+                                        tags: asset.tags.map(t =>
+                                            t.id === updatedTag.id ? { ...t, name: updatedTag.name } : t
+                                        )
+                                    };
+                                }
+                                return asset;
+                            });
+
+                            // Check if any asset was actually updated to avoid unnecessary state change if tag wasn't in use
+                            const changed = JSON.stringify(newAssetsList) !== JSON.stringify(prevAssets);
+                            if (changed) {
+                                console.log(`[TAGS TABLE CHANNEL] Updated assets with new tag name for tag ID: ${updatedTag.id}`);
+                                // Recalculate totals if necessary, though tag name change doesn't affect totals
+                                // const { totalItems: newTotalItems, totalValue: newTotalValue } = calculateTotals(newAssetsList);
+                                // setTotalItems(newTotalItems);
+                                // setTotalValue(newTotalValue);
+                                return newAssetsList; // No sort needed as order isn't changed by tag name update
+                            }
+                            return prevAssets;
+                        });
+
+                        // Also update selectedAsset if it contains the updated tag
+                        setSelectedAsset(prevSelectedAsset => {
+                            if (prevSelectedAsset && prevSelectedAsset.tags && prevSelectedAsset.tags.some(t => t.id === updatedTag.id)) {
+                                return {
+                                    ...prevSelectedAsset,
+                                    tags: prevSelectedAsset.tags.map(t =>
+                                        t.id === updatedTag.id ? { ...t, name: updatedTag.name } : t
+                                    )
+                                };
+                            }
+                            return prevSelectedAsset;
+                        });
+                    }
+                }
+            )
+            .subscribe((status, err) => {
+                console.log(`[TAGS TABLE CHANNEL] Subscription status: ${status}`);
+                if (err) {
+                    console.error('[TAGS TABLE CHANNEL] Subscription error:', err);
+                }
+            });
+
         return () => {
             console.log('[REALTIME CLEANUP] Unsubscribing from asset changes.');
             channel.unsubscribe();
             supabase.removeChannel(assetTagsChannel);
             supabase.removeChannel(assetRoomsChannel);
+            supabase.removeChannel(tagsChannel); // Unsubscribe from the new channel
         };
-    }, [user.id, supabase, fetchAndUpdateAssetState, fetchThumbnailToken, mediaErrors]); // Removed selectedAsset
+    }, [user.id, supabase, fetchAndUpdateAssetState, fetchThumbnailToken]);
 
     // Handle captured media files
     const handleCapture = useCallback(async (file: File) => {
@@ -567,6 +634,33 @@ export function useDashboardLogic({
             alert('Failed to save asset. Please try again.');
         }
     }, [capturedFile, setCapturedFile, supabase, user.id]);
+
+    const processClientSideAssetUpdate = useCallback((updatedAsset: AssetWithMuxData) => {
+        // This function is called when a client component (e.g., AssetModal via AssetRoomSelector)
+        // reports an update to an asset (e.g., its room or tags have changed).
+        // It updates the main `assets` list optimistically.
+        // Database operations are assumed to have been initiated by the calling component.
+        // Realtime events from Supabase will eventually bring the canonical state.
+
+        setAssets(prevAssets => {
+            const newAssetsList = prevAssets.map(a =>
+                a.id === updatedAsset.id ? { ...a, ...updatedAsset } : a // Merge changes
+            );
+            // Recalculate totals with the optimistically updated list
+            const { totalItems: newTotalItems, totalValue: newTotalValue } = calculateTotals(newAssetsList);
+            setTotalItems(newTotalItems);
+            setTotalValue(newTotalValue);
+            console.log(`[CLIENT UPDATE] Optimistically updated asset ${updatedAsset.id} in main assets list.`);
+            // Re-sort, as created_at might not be the only sort factor in user's mind,
+            // but primary sort is by created_at descending.
+            return newAssetsList.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        });
+
+        // Also update selectedAsset if it's the one being modified, ensuring it has the latest client changes.
+        setSelectedAsset(prevSelectedAsset =>
+            prevSelectedAsset && prevSelectedAsset.id === updatedAsset.id ? { ...prevSelectedAsset, ...updatedAsset } : prevSelectedAsset
+        );
+    }, [setAssets, setSelectedAsset, setTotalItems, setTotalValue]);
 
     // Handle asset selection for multi-select mode
     const toggleAssetSelection = useCallback((assetId: string, event: React.MouseEvent | React.ChangeEvent<HTMLInputElement>) => {
@@ -814,6 +908,8 @@ export function useDashboardLogic({
         handleRetryMediaPreview,
         handleCloseAssetModal,
         handleAssetDeletedFromModal,
+        processClientSideAssetUpdate,
+        fetchAndUpdateAssetState,
 
         // Setters (usually not needed, but maybe for specific cases like closing modal)
         // setSelectedAsset, // Example

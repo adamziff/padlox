@@ -27,6 +27,7 @@ interface AssetModalProps {
     onClose: () => void;
     onAssetDeleted: (assetId: string) => void;
     onAssetUpdated: (updatedAsset: AssetWithMuxData) => void; // Callback to update asset list
+    fetchAndUpdateAssetState?: (assetId: string) => Promise<void>;
     availableRooms: Room[];
     availableTags: Tag[];
 }
@@ -37,6 +38,7 @@ export function AssetModal({
     onClose,
     onAssetDeleted,
     onAssetUpdated,
+    fetchAndUpdateAssetState,
     availableRooms,
     availableTags
 }: AssetModalProps) {
@@ -170,6 +172,7 @@ export function AssetModal({
                             asset={asset}
                             availableRooms={availableRooms}
                             onAssetUpdate={handleInternalAssetUpdate}
+                            fetchAndUpdateAssetState={fetchAndUpdateAssetState}
                         />
 
                         <hr className="my-4" />

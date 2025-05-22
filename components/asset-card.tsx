@@ -40,20 +40,14 @@ export function AssetCard({
     // Determine clickability:
     // - Images are always clickable.
     // - Items (derived from videos) are always clickable.
-    // - Videos are clickable only if their Mux processing is 'ready'.
-    // - Assets with errors that prevent display might also be considered not clickable,
-    //   but the current error handling shows a retry button, so the card itself can remain clickable
-    //   to potentially open a modal with more details if needed.
+    // - Videos are never clickable.
     const isMuxVideoReady = isVideoAsset && asset.mux_asset_id && asset.mux_processing_status === 'ready';
-    const isClickable = isImageAsset || isItemAsset || isMuxVideoReady;
+    const isClickable = isImageAsset || isItemAsset;
 
     // Determine if we should show a processing spinner:
-    // This is slightly different from clickability. We show spinner if:
-    // 1. It's a video asset AND Mux status is not 'ready' (e.g., 'preparing', 'processing', or null/undefined if not yet started)
-    // This also covers the case where the video is a "source video" that might be undergoing further backend processing
-    // even if Mux itself is done. The original `isProcessingVideo` logic was a bit broad.
-    // Let's refine this to: show spinner if it's a video and not yet ready for playback/interaction.
-    const showProcessingSpinner = isVideoAsset && (!asset.mux_asset_id || asset.mux_processing_status !== 'ready');
+    // Show spinner if it's a video asset and its Mux status is not 'ready'.
+    // This includes 'preparing', 'processing', or if mux_asset_id is not yet available.
+    const showProcessingSpinner = isVideoAsset && asset.mux_processing_status !== 'ready';
 
     // Determine the image source URL dynamically
     let imageUrl = '';
@@ -112,7 +106,7 @@ export function AssetCard({
                                 <SpinnerIcon />
                             </span>
                         </div>
-                        <p className="text-sm text-muted-foreground">Analyzing video (usually 10-30 seconds)...</p>
+                        <p className="text-sm text-muted-foreground">Analyzing video...</p>
                     </div>
                 </div>
             ) : hasError ? (
@@ -125,6 +119,17 @@ export function AssetCard({
                         >
                             Retry
                         </button>
+                    </div>
+                </div>
+            ) : isVideoAsset ? (
+                <div className="w-full h-full flex items-center justify-center">
+                    <div className="text-center">
+                        <div className="h-10 w-10 mx-auto mb-2 flex items-center justify-center">
+                            <span className="animate-spin">
+                                <SpinnerIcon />
+                            </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">Processing video...</p>
                     </div>
                 </div>
             ) : imageUrl ? (
@@ -157,7 +162,7 @@ export function AssetCard({
                 )
             ) : (
                 <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                    <p>{asset.media_type === 'video' ? 'Video Unavailable' : 'Image Unavailable'}</p>
+                    <p>Image Unavailable</p>
                 </div>
             )}
 

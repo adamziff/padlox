@@ -18,13 +18,15 @@ interface AssetRoomSelectorProps {
     asset: AssetWithMuxData;
     availableRooms: Room[];
     onAssetUpdate: (updatedAsset: AssetWithMuxData) => void;
+    fetchAndUpdateAssetState?: (assetId: string) => Promise<void>;
     // Consider passing down a global error/success display mechanism from AssetModal if needed
 }
 
 export function AssetRoomSelector({
     asset: initialAsset,
     availableRooms,
-    onAssetUpdate
+    onAssetUpdate,
+    fetchAndUpdateAssetState
 }: AssetRoomSelectorProps) {
     const supabase = createClient();
     const [currentRoomId, setCurrentRoomId] = useState<string>(initialAsset.room?.id || "no-room");
@@ -33,18 +35,15 @@ export function AssetRoomSelector({
 
     useEffect(() => {
         setCurrentRoomId(initialAsset.room?.id || "no-room");
-    }, [initialAsset.room]);
+    }, [initialAsset.room?.id]);
 
     const handleUpdateRoom = async (newRoomIdValue: string) => {
-        const newRoomId = newRoomIdValue === "no-room" ? null : newRoomIdValue;
+        const newTargetRoomId = newRoomIdValue === "no-room" ? null : newRoomIdValue;
+        const currentActualRoomId = initialAsset.room?.id || null;
 
-        // Prevent update if the room hasn't actually changed
-        if (newRoomId === (initialAsset.room?.id || null) && newRoomId !== null) {
-            // If newRoomId is not null and it's the same as current, do nothing.
-            // This check is a bit complex, mainly to allow re-selecting "No Room" even if it was already no room.
-            if (newRoomId !== null && newRoomId === currentRoomId) return;
-        } else if (newRoomId === null && !initialAsset.room?.id) {
-            // Both are no-room, do nothing
+        // If the selection is the same as the current state, do nothing.
+        if (newTargetRoomId === currentActualRoomId) {
+            console.log('[AssetRoomSelector] Room selection is already the current state. No update needed.');
             return;
         }
 
@@ -52,70 +51,54 @@ export function AssetRoomSelector({
         setRoomUpdateError(null);
 
         try {
-            // 1. Delete existing room assignment (if any)
-            // This is safe because an asset can only be in one room due to UNIQUE constraint on asset_id in asset_rooms
+            // 1. Delete existing room assignment.
             const { error: deleteError } = await supabase
                 .from('asset_rooms')
                 .delete()
                 .eq('asset_id', initialAsset.id);
 
-            // PGRST116: No rows found (means no previous room, which is fine)
-            if (deleteError && deleteError.code !== 'PGRST116') {
+            if (deleteError && deleteError.code !== 'PGRST116') { // PGRST116: No rows found
                 throw deleteError;
             }
+            console.log(`[AssetRoomSelector] Deleted old room assignment for asset ${initialAsset.id} (if any).`);
 
-            let newRoomObject: Room | null = null;
-            if (newRoomId) {
+            let newRoomObjectForOptimisticUpdate: Room | null = null;
+            if (newTargetRoomId) {
+                // 2. Insert new room assignment if a new room is selected.
                 const { error: insertError } = await supabase
                     .from('asset_rooms')
-                    .insert({ asset_id: initialAsset.id, room_id: newRoomId });
+                    .insert({ asset_id: initialAsset.id, room_id: newTargetRoomId });
 
                 if (insertError) {
-                    // Log schema cache error but proceed if DB write likely succeeded.
                     if (insertError.message.toLowerCase().includes("schema cache") || insertError.message.toLowerCase().includes("relationship")) {
-                        console.warn(`Supabase client schema cache might be stale for asset_rooms relationship (asset: ${initialAsset.id}, room: ${newRoomId}), but operation likely succeeded if DB constraints are met. Error: ${insertError.message}`);
+                        console.warn(`[AssetRoomSelector] Supabase client schema cache warning for asset_rooms insert (asset: ${initialAsset.id}, room: ${newTargetRoomId}). Assuming DB operation succeeded. Error: ${insertError.message}`);
                     } else {
-                        throw insertError; // Rethrow other critical errors
+                        throw insertError;
                     }
                 }
-                newRoomObject = availableRooms.find(r => r.id === newRoomId) || null;
-            }
-
-            setCurrentRoomId(newRoomId || "no-room");
-
-            // Construct the updated asset with full relations for the parent
-            // Fetching the full asset again here to ensure all data is fresh after update
-            const { data: refreshedAsset, error: refreshError } = await supabase
-                .from('assets')
-                .select('*, asset_rooms(rooms(*)), asset_tags(tags(*))')
-                .eq('id', initialAsset.id)
-                .single();
-
-            if (refreshError) throw refreshError;
-
-            if (refreshedAsset) {
-                const roomLink = Array.isArray(refreshedAsset.asset_rooms) && refreshedAsset.asset_rooms.length > 0 ? refreshedAsset.asset_rooms[0] : null;
-                const finalRoom = roomLink ? roomLink.rooms : null;
-                const tagsData = refreshedAsset.asset_tags;
-                const finalTags = Array.isArray(tagsData) ? tagsData.map((at: { tags: { id: string, name: string } }) => at.tags).filter(tag => tag !== null && typeof tag === 'object') : [];
-
-                onAssetUpdate({
-                    ...refreshedAsset,
-                    room: finalRoom,
-                    tags: finalTags,
-                    asset_rooms: undefined,
-                    asset_tags: undefined
-                } as AssetWithMuxData);
+                newRoomObjectForOptimisticUpdate = availableRooms.find(r => r.id === newTargetRoomId) || null;
+                console.log(`[AssetRoomSelector] Inserted new room assignment for asset ${initialAsset.id} to room ${newTargetRoomId}.`);
             } else {
-                // Fallback: update optimistically if refresh fails
-                onAssetUpdate({ ...initialAsset, room: newRoomObject });
+                console.log(`[AssetRoomSelector] Asset ${initialAsset.id} is now set to 'No Room'.`);
             }
+
+            // Optimistically update local UI state for the dropdown selector itself
+            setCurrentRoomId(newRoomIdValue);
+
+            // Call onAssetUpdate with an optimistically constructed asset.
+            // The actual state update with full data will come from the useDashboardLogic subscription
+            // to asset_rooms or assets table changes which triggers fetchAndUpdateAssetState.
+            onAssetUpdate({
+                ...initialAsset,
+                room: newRoomObjectForOptimisticUpdate
+            });
+
             setRoomUpdateError(null); // Clear error on success
 
         } catch (error: unknown) {
-            console.error('Failed to update room:', error);
+            console.error('[AssetRoomSelector] Failed to update room:', error);
             setRoomUpdateError(error instanceof Error ? error.message : 'Failed to update room.');
-            // Revert optimistic UI change on error
+            // Revert optimistic UI change for the dropdown on error
             setCurrentRoomId(initialAsset.room?.id || "no-room");
         } finally {
             setIsUpdatingRoom(false);

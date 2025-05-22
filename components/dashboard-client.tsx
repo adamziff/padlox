@@ -83,7 +83,9 @@ export function DashboardClient({
         handleCloseAssetModal,
         totalItems,
         totalValue,
-        handleAssetDeletedFromModal
+        handleAssetDeletedFromModal,
+        processClientSideAssetUpdate,
+        fetchAndUpdateAssetState
     } = useDashboardLogic({
         initialAssets,
         user,
@@ -630,27 +632,10 @@ export function DashboardClient({
                         isOpen={true} // If logicSelectedAsset is truthy, modal should be open
                         onClose={handleCloseAssetModal}
                         onAssetDeleted={handleAssetDeletedFromModal} // Correct prop name and handler from useDashboardLogic
+                        onAssetUpdated={processClientSideAssetUpdate} // Pass the new handler
+                        fetchAndUpdateAssetState={fetchAndUpdateAssetState} // Pass down for explicit refresh
                         availableTags={userTags}
                         availableRooms={userRooms}
-                        onAssetUpdated={(updatedAsset: AssetWithMuxData) => { // Correct prop name
-
-                            // The actual update to the `assets` list in `useDashboardLogic` will be handled
-                            // by its own internal logic or realtime updates. 
-                            // If `useDashboardLogic` needs a direct way to set `assets`, it would provide a setter.
-                            // For now, we assume `AssetModal` updates its own view of the asset, and `useDashboardLogic`
-                            // handles the master list updates, which then propagate back to `DashboardClient` via the `assets` prop.
-
-                            // If the updated asset is the selectedAsset, ensure the modal shows the latest version.
-                            // This is typically handled inside AssetModal by its `useEffect` on the `asset` prop or
-                            // by `useDashboardLogic` updating `selectedAsset` which causes a prop change for AssetModal.
-                            if (logicSelectedAsset && logicSelectedAsset.id === updatedAsset.id) {
-                                // The `selectedAsset` in `useDashboardLogic` should be updated if the asset being edited is the one selected.
-                                // The realtime UPDATE handler in `useDashboardLogic` already does: setSelectedAsset(updatedAsset);
-                                // So, this explicit call might be redundant if realtime is fast enough.
-                                // However, onAssetUpdated is a direct callback, so updating selectedAsset here ensures immediate consistency for the modal.
-                                // Consider if setSelectedAsset should be exposed from useDashboardLogic or if this update path is sufficient.
-                            }
-                        }}
                     />
                 )}
 
