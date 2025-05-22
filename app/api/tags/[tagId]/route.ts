@@ -14,8 +14,7 @@ interface RouteParams {
 }
 
 export async function PUT(req: NextRequest, { params }: RouteParams) {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
+  const supabase = await createClient();
   const { tagId } = params;
 
   if (!tagId) {
@@ -98,8 +97,7 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 }
 
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
+  const supabase = await createClient();
   const { tagId } = params;
 
   if (!tagId) {

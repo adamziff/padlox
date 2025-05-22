@@ -20,9 +20,8 @@ interface RouteParams {
 
 // POST to assign or update a room for an asset (upsert behavior)
 export async function POST(req: NextRequest, { params }: RouteParams) {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
-  const { assetId } = params;
+  const supabase = await createClient();
+  const { assetId } = await params;
 
   if (!assetId) {
     return NextResponse.json({ error: 'Asset ID is required' }, { status: 400 });
@@ -108,8 +107,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
 
 // DELETE to remove a room association from an asset
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
+  const supabase = await createClient();
   const { assetId } = params;
 
   if (!assetId) {

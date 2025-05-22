@@ -106,6 +106,8 @@ export function DashboardClient({
     const [createRoomLoading, setCreateRoomLoading] = useState(false);
     const [createRoomError, setCreateRoomError] = useState<string | null>(null);
 
+    // State for mobile filter toggle
+    const [showFilters, setShowFilters] = useState(false);
 
     const fetchUserTagsAndRooms = async () => {
         try {
@@ -140,13 +142,21 @@ export function DashboardClient({
         fetchUserTagsAndRooms();
     }, []);
 
-    const handleRoomChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        setSelectedRoomId(event.target.value);
+    const handleRoomChange = (roomId: string) => {
+        setSelectedRoomId(roomId);
     };
 
-    const handleTagChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        const selectedOptions = Array.from(event.target.selectedOptions, option => option.value);
-        setSelectedTagIds(selectedOptions.filter(id => id !== "")); // Filter out "All Tags" placeholder if used
+    const toggleTagSelection = (tagId: string) => {
+        setSelectedTagIds(prev =>
+            prev.includes(tagId)
+                ? prev.filter(id => id !== tagId)
+                : [...prev, tagId]
+        );
+    };
+
+    const clearAllFilters = () => {
+        setSelectedRoomId("");
+        setSelectedTagIds([]);
     };
 
     const handleCreateTag = async () => {
@@ -204,7 +214,7 @@ export function DashboardClient({
             setCreateRoomLoading(false);
         }
     };
-    
+
     const displayedAssets = useMemo(() => {
         let filtered = assets.filter(asset => {
             // Exclude processed source videos
@@ -229,7 +239,7 @@ export function DashboardClient({
         if (selectedRoomId && selectedRoomId !== "") {
             filtered = filtered.filter(asset => asset.room?.id === selectedRoomId);
         }
-        
+
         // Apply tags filter (AND logic: asset must have ALL selected tags)
         if (selectedTagIds.length > 0) {
             filtered = filtered.filter(asset => {
@@ -306,122 +316,224 @@ export function DashboardClient({
                     searchTerm={searchTerm}
                     onSearchChange={setSearchTerm}
                 />
-                
+
                 {/* Filter UI Elements */}
-                <div className="my-4 flex flex-col sm:flex-row gap-4 items-center">
-                    {/* Room Filter */}
-                    <div className="w-full sm:w-auto">
-                        <label htmlFor="room-filter" className="block text-sm font-medium text-muted-foreground mb-1">
-                            Filter by Room
-                        </label>
-                        <select
-                            id="room-filter"
-                            value={selectedRoomId}
-                            onChange={handleRoomChange}
-                            className="block w-full pl-3 pr-10 py-2 text-base border-input bg-background hover:border-ring focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring sm:text-sm rounded-md shadow-sm"
+                <div className="my-4">
+                    {/* Mobile Filter Toggle (Appears on smaller screens) */}
+                    <div className="block sm:hidden mb-4">
+                        <Button
+                            variant="outline"
+                            className="w-full flex items-center justify-between"
+                            onClick={() => setShowFilters(!showFilters)}
                         >
-                            <option value="">All Rooms</option>
-                            {userRooms.map(room => (
-                                <option key={room.id} value={room.id}>
-                                    {room.name}
-                                </option>
-                            ))}
-                        </select>
+                            <span>
+                                Filters
+                                {(selectedRoomId || selectedTagIds.length > 0) &&
+                                    ` (${(selectedRoomId ? 1 : 0) + selectedTagIds.length})`
+                                }
+                            </span>
+                            <span>{showFilters ? "↑" : "↓"}</span>
+                        </Button>
                     </div>
 
-                    {/* Tag Filter (Basic Multi-Select) */}
-                    <div className="w-full sm:w-auto">
-                         <label htmlFor="tag-filter" className="block text-sm font-medium text-muted-foreground mb-1">
-                            Filter by Tags (Ctrl/Cmd to select)
-                        </label>
-                        <select
-                            id="tag-filter"
-                            multiple
-                            value={selectedTagIds}
-                            onChange={handleTagChange}
-                            className="block w-full pl-3 pr-10 py-2 text-base border-input bg-background hover:border-ring focus:outline-none focus:ring-2 focus:ring-ring focus:border-ring sm:text-sm rounded-md shadow-sm h-24"
-                        >
-                            {userTags.map(tag => (
-                                <option key={tag.id} value={tag.id}>
-                                    {tag.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                     {/* Create New Tag/Room Buttons */}
-                    <div className="flex flex-col sm:flex-row gap-2 mt-2 sm:mt-0 sm:ml-auto">
-                        <Dialog open={isCreateTagDialogOpen} onOpenChange={setIsCreateTagDialogOpen}>
-                            <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" className="flex items-center gap-1">
-                                    <PlusCircle className="h-4 w-4" /> Create Tag
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader>
-                                    <DialogTitle>Create New Tag</DialogTitle>
-                                    <DialogDescription>Enter a name for your new tag.</DialogDescription>
-                                </DialogHeader>
-                                <div className="grid gap-4 py-4">
-                                    <div className="grid grid-cols-4 items-center gap-4">
-                                        <Label htmlFor="new-tag-name" className="text-right">Name</Label>
-                                        <Input
-                                            id="new-tag-name"
-                                            value={newTagName}
-                                            onChange={(e) => setNewTagName(e.target.value)}
-                                            className="col-span-3"
-                                            disabled={createTagLoading}
-                                        />
-                                    </div>
-                                    {createTagError && <p className="col-span-4 text-sm text-destructive text-center">{createTagError}</p>}
-                                </div>
-                                <DialogFooter>
-                                    <DialogClose asChild>
-                                        <Button variant="outline" disabled={createTagLoading}>Cancel</Button>
-                                    </DialogClose>
-                                    <Button onClick={handleCreateTag} disabled={createTagLoading}>
-                                        {createTagLoading ? "Creating..." : "Create Tag"}
+                    {/* Filters Section (Always visible on desktop, toggleable on mobile) */}
+                    <div className={`space-y-4 ${showFilters ? 'block' : 'hidden sm:block'}`}>
+                        {/* Room Filter - Chip Based */}
+                        <div>
+                            <div className="flex justify-between items-center mb-2">
+                                <h3 className="text-sm font-medium text-muted-foreground">Filter by Room</h3>
+                                {selectedRoomId && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                        onClick={() => setSelectedRoomId("")}
+                                    >
+                                        Clear
                                     </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
+                                )}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    className={`px-3 py-1.5 rounded-full text-sm ${selectedRoomId === ""
+                                            ? "bg-primary text-primary-foreground"
+                                            : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                        }`}
+                                    onClick={() => handleRoomChange("")}
+                                >
+                                    All Rooms
+                                </button>
+                                {userRooms.map(room => (
+                                    <button
+                                        key={room.id}
+                                        className={`px-3 py-1.5 rounded-full text-sm ${selectedRoomId === room.id
+                                                ? "bg-primary text-primary-foreground"
+                                                : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                            }`}
+                                        onClick={() => handleRoomChange(room.id)}
+                                    >
+                                        {room.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
 
-                        <Dialog open={isCreateRoomDialogOpen} onOpenChange={setIsCreateRoomDialogOpen}>
-                            <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" className="flex items-center gap-1">
-                                    <PlusCircle className="h-4 w-4" /> Create Room
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader>
-                                    <DialogTitle>Create New Room</DialogTitle>
-                                    <DialogDescription>Enter a name for your new room.</DialogDescription>
-                                </DialogHeader>
-                                <div className="grid gap-4 py-4">
-                                    <div className="grid grid-cols-4 items-center gap-4">
-                                        <Label htmlFor="new-room-name" className="text-right">Name</Label>
-                                        <Input
-                                            id="new-room-name"
-                                            value={newRoomName}
-                                            onChange={(e) => setNewRoomName(e.target.value)}
-                                            className="col-span-3"
-                                            disabled={createRoomLoading}
-                                        />
-                                    </div>
-                                    {createRoomError && <p className="col-span-4 text-sm text-destructive text-center">{createRoomError}</p>}
-                                </div>
-                                <DialogFooter>
-                                    <DialogClose asChild>
-                                        <Button variant="outline" disabled={createRoomLoading}>Cancel</Button>
-                                    </DialogClose>
-                                    <Button onClick={handleCreateRoom} disabled={createRoomLoading}>
-                                        {createRoomLoading ? "Creating..." : "Create Room"}
+                        {/* Tag Filter - Chip Based */}
+                        <div>
+                            <div className="flex justify-between items-center mb-2">
+                                <h3 className="text-sm font-medium text-muted-foreground">Filter by Tags</h3>
+                                {selectedTagIds.length > 0 && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                                        onClick={() => setSelectedTagIds([])}
+                                    >
+                                        Clear
                                     </Button>
-                                </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
+                                )}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {userTags.map(tag => (
+                                    <button
+                                        key={tag.id}
+                                        className={`px-3 py-1.5 rounded-full text-sm ${selectedTagIds.includes(tag.id)
+                                                ? "bg-primary text-primary-foreground"
+                                                : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                            }`}
+                                        onClick={() => toggleTagSelection(tag.id)}
+                                    >
+                                        {tag.name}
+                                    </button>
+                                ))}
+                                {userTags.length === 0 && (
+                                    <p className="text-sm text-muted-foreground italic">No tags yet. Create one!</p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Active Filters Display */}
+                        {(selectedRoomId !== "" || selectedTagIds.length > 0) && (
+                            <div className="pt-2 border-t border-border">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h3 className="text-sm font-medium text-foreground">Active Filters</h3>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs"
+                                        onClick={clearAllFilters}
+                                    >
+                                        Clear All
+                                    </Button>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                    {selectedRoomId !== "" && (
+                                        <div className="flex items-center bg-primary/20 px-2 py-1 rounded-full text-sm">
+                                            <span className="mr-1">{userRooms.find(r => r.id === selectedRoomId)?.name}</span>
+                                            <button
+                                                className="text-muted-foreground hover:text-foreground"
+                                                onClick={() => setSelectedRoomId("")}
+                                                aria-label="Remove room filter"
+                                            >
+                                                ×
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {selectedTagIds.map(tagId => {
+                                        const tag = userTags.find(t => t.id === tagId);
+                                        return (
+                                            <div key={tagId} className="flex items-center bg-primary/20 px-2 py-1 rounded-full text-sm">
+                                                <span className="mr-1">{tag?.name}</span>
+                                                <button
+                                                    className="text-muted-foreground hover:text-foreground"
+                                                    onClick={() => toggleTagSelection(tagId)}
+                                                    aria-label={`Remove ${tag?.name} tag filter`}
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Create New Tag/Room Buttons */}
+                        <div className="flex flex-wrap gap-2 pt-2">
+                            <Dialog open={isCreateTagDialogOpen} onOpenChange={setIsCreateTagDialogOpen}>
+                                <DialogTrigger asChild>
+                                    <Button variant="outline" size="sm" className="flex items-center gap-1">
+                                        <PlusCircle className="h-4 w-4" /> Create Tag
+                                    </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                    <DialogHeader>
+                                        <DialogTitle>Create New Tag</DialogTitle>
+                                        <DialogDescription>Enter a name for your new tag.</DialogDescription>
+                                    </DialogHeader>
+                                    <div className="grid gap-4 py-4">
+                                        <div className="grid grid-cols-4 items-center gap-4">
+                                            <Label htmlFor="new-tag-name" className="text-right">Name</Label>
+                                            <Input
+                                                id="new-tag-name"
+                                                value={newTagName}
+                                                onChange={(e) => setNewTagName(e.target.value)}
+                                                className="col-span-3"
+                                                disabled={createTagLoading}
+                                            />
+                                        </div>
+                                        {createTagError && <p className="col-span-4 text-sm text-destructive text-center">{createTagError}</p>}
+                                    </div>
+                                    <DialogFooter>
+                                        <DialogClose asChild>
+                                            <Button variant="outline" disabled={createTagLoading}>Cancel</Button>
+                                        </DialogClose>
+                                        <Button onClick={handleCreateTag} disabled={createTagLoading}>
+                                            {createTagLoading ? "Creating..." : "Create Tag"}
+                                        </Button>
+                                    </DialogFooter>
+                                </DialogContent>
+                            </Dialog>
+
+                            <Dialog open={isCreateRoomDialogOpen} onOpenChange={setIsCreateRoomDialogOpen}>
+                                <DialogTrigger asChild>
+                                    <Button variant="outline" size="sm" className="flex items-center gap-1">
+                                        <PlusCircle className="h-4 w-4" /> Create Room
+                                    </Button>
+                                </DialogTrigger>
+                                <DialogContent>
+                                    <DialogHeader>
+                                        <DialogTitle>Create New Room</DialogTitle>
+                                        <DialogDescription>Enter a name for your new room.</DialogDescription>
+                                    </DialogHeader>
+                                    <div className="grid gap-4 py-4">
+                                        <div className="grid grid-cols-4 items-center gap-4">
+                                            <Label htmlFor="new-room-name" className="text-right">Name</Label>
+                                            <Input
+                                                id="new-room-name"
+                                                value={newRoomName}
+                                                onChange={(e) => setNewRoomName(e.target.value)}
+                                                className="col-span-3"
+                                                disabled={createRoomLoading}
+                                            />
+                                        </div>
+                                        {createRoomError && <p className="col-span-4 text-sm text-destructive text-center">{createRoomError}</p>}
+                                    </div>
+                                    <DialogFooter>
+                                        <DialogClose asChild>
+                                            <Button variant="outline" disabled={createRoomLoading}>Cancel</Button>
+                                        </DialogClose>
+                                        <Button onClick={handleCreateRoom} disabled={createRoomLoading}>
+                                            {createRoomLoading ? "Creating..." : "Create Room"}
+                                        </Button>
+                                    </DialogFooter>
+                                </DialogContent>
+                            </Dialog>
+                        </div>
                     </div>
                 </div>
-
 
                 <div className="grid grid-cols-2 md:grid-cols-2 gap-4 my-6">
                     <Card>
@@ -483,7 +595,7 @@ export function DashboardClient({
                         availableRooms={userRooms}
                         onAssetUpdate={(updatedAsset) => {
                             // Find and update the asset in the main 'assets' list
-                            const updatedAssets = assets.map(a => 
+                            const updatedAssets = assets.map(a =>
                                 a.id === updatedAsset.id ? { ...a, ...updatedAsset } : a
                             );
                             // This assumes 'assets' is directly managed or useDashboardLogic provides a setter
@@ -494,7 +606,7 @@ export function DashboardClient({
                             // For the purpose of this task, we'll assume selectedAsset in modal will reflect changes,
                             // and AssetCard will re-render if selectedAsset is part of its key or props.
                             // A more robust solution would be to lift state or use a global state manager.
-                             // Find the asset in the main assets list and update it
+                            // Find the asset in the main assets list and update it
                             const index = assets.findIndex(a => a.id === updatedAsset.id);
                             if (index !== -1) {
                                 const newAssets = [...assets];

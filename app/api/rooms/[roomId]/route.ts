@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
 import { z } from 'zod';
 
 const roomNameSchema = z.object({
@@ -14,9 +13,8 @@ interface RouteParams {
 }
 
 export async function PUT(req: NextRequest, { params }: RouteParams) {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
-  const { roomId } = params;
+  const supabase = await createClient();
+  const { roomId } = await params;
 
   if (!roomId) {
     return NextResponse.json({ error: 'Room ID is required' }, { status: 400 });
@@ -98,9 +96,8 @@ export async function PUT(req: NextRequest, { params }: RouteParams) {
 }
 
 export async function DELETE(req: NextRequest, { params }: RouteParams) {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
-  const { roomId } = params;
+  const supabase = await createClient();
+  const { roomId } = await params;
 
   if (!roomId) {
     return NextResponse.json({ error: 'Room ID is required' }, { status: 400 });

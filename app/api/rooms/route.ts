@@ -8,8 +8,7 @@ const roomNameSchema = z.object({
 });
 
 export async function GET(req: NextRequest) {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
+  const supabase = await createClient();
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
@@ -37,8 +36,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const cookieStore = cookies();
-  const supabase = createClient(cookieStore);
+  const supabase = await createClient();
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
 
