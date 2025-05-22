@@ -26,7 +26,6 @@ export function AssetRoomSelector({
     asset: initialAsset,
     availableRooms,
     onAssetUpdate,
-    fetchAndUpdateAssetState
 }: AssetRoomSelectorProps) {
     const supabase = createClient();
     const [currentRoomId, setCurrentRoomId] = useState<string>(initialAsset.room?.id || "no-room");

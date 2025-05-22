@@ -41,7 +41,6 @@ export function AssetCard({
     // - Images are always clickable.
     // - Items (derived from videos) are always clickable.
     // - Videos are never clickable.
-    const isMuxVideoReady = isVideoAsset && asset.mux_asset_id && asset.mux_processing_status === 'ready';
     const isClickable = isImageAsset || isItemAsset;
 
     // Determine if we should show a processing spinner:
