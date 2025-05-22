@@ -818,7 +818,7 @@ export function useDashboardLogic({
             fetchThumbnailToken(playbackId, timestamp);
         });
 
-    }, [assets, thumbnailTokens, fetchThumbnailToken]);
+    }, [assets, fetchThumbnailToken]);
 
     // Auto-dismiss processing notifications after 3 minutes
     useEffect(() => {
