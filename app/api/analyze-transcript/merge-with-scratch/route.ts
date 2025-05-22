@@ -284,9 +284,9 @@ CRITICAL MERGING, DEDUPLICATION, AND NAMING LOGIC:
     -   Estimated Value: Use its estimated value.
 
 5.  TAGGING AND ROOM ASSIGNMENT (OPTIONAL):
-    -   For each item, if appropriate, you can suggest a `room_name` and an array of `tag_names`.
-    -   `room_name`: MUST be ONE of the "Available Rooms" listed above. If no room is a good fit, do not assign one.
-    -   `tag_names`: MUST be a selection from the "Available Tags" listed above. If no tags are a good fit, do not assign any.
+    -   For each item, if appropriate, you can suggest a \`room_name\` and an array of \`tag_names\`.
+    -   \`room_name\`: MUST be ONE of the "Available Rooms" listed above. If no room is a good fit, do not assign one.
+    -   \`tag_names\`: MUST be a selection from the "Available Tags" listed above. If no tags are a good fit, do not assign any.
     -   Only assign tags/rooms if there's a clear and logical fit based on the item's nature and the provided lists. Do not invent new tags or rooms.
 
 6.  NAMING REQUIREMENTS (APPLIES TO ALL FINAL ITEMS):
@@ -423,7 +423,7 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
                 if (sanitizedItems.length > 0) {
                   logger.info(`Extracted ${sanitizedItems.length} valid items manually`);
                   // Ensure the result conforms to OutputSchema, even if some fields are missing
-                  const validatedItems = sanitizedItems.map(item => ({
+                  const validatedItems = sanitizedItems.map((item: AnalyzedItem) => ({
                       name: item.name,
                       description: item.description,
                       timestamp: item.timestamp,

@@ -34,8 +34,9 @@ export default async function Dashboard() {
         .from('assets')
         .select(`
             *,
-            tags (id, name),
-            rooms (id, name)
+            asset_rooms(
+                rooms(*)
+            )
         `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
@@ -44,7 +45,7 @@ export default async function Dashboard() {
         console.error('Error fetching assets with tags and room:', error);
         return <div>Error loading dashboard data: {error.message}</div>;
     }
-    
+
     // The 'tags' will be an array of objects like [{id, name}, ...].
     // The 'rooms' field from the query `rooms (id, name)` might return an array with one item or null/empty array
     // if no room is associated. We want to transform it to a single object or null.
