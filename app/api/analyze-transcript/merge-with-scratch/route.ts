@@ -81,6 +81,113 @@ const formatTimestamp = (timestamp: number | null | undefined): number => {
   return Math.round(Number(timestamp) * 10) / 10;
 };
 
+// Helper to provide intelligent fallback tags and rooms based on item names
+const generateFallbackTagsAndRoom = (itemName: string, description: string, availableTagNames: string[], availableRoomNames: string[]): { tag_names?: string[], room_name?: string } => {
+  const nameLower = itemName.toLowerCase();
+  const descLower = description.toLowerCase();
+  const combined = `${nameLower} ${descLower}`;
+  
+  // Generate fallback tags based on item characteristics
+  const fallbackTags: string[] = [];
+  
+  // Electronics tags
+  if (combined.includes('phone') || combined.includes('smartphone') || combined.includes('iphone') || combined.includes('android')) {
+    fallbackTags.push('Electronics', 'Personal Items');
+  } else if (combined.includes('laptop') || combined.includes('computer') || combined.includes('macbook') || combined.includes('pc')) {
+    fallbackTags.push('Electronics', 'Office Equipment');
+  } else if (combined.includes('tv') || combined.includes('television') || combined.includes('monitor')) {
+    fallbackTags.push('Electronics', 'Entertainment');
+  } else if (combined.includes('tablet') || combined.includes('ipad')) {
+    fallbackTags.push('Electronics', 'Personal Items');
+  } else if (combined.includes('playstation') || combined.includes('xbox') || combined.includes('console') || combined.includes('gaming')) {
+    fallbackTags.push('Electronics', 'Entertainment');
+  } else if (combined.includes('fridge') || combined.includes('refrigerator') || combined.includes('freezer')) {
+    fallbackTags.push('Appliances', 'Kitchenware');
+  }
+  
+  // Furniture tags
+  else if (combined.includes('bed') || combined.includes('mattress') || combined.includes('dresser') || combined.includes('nightstand')) {
+    fallbackTags.push('Furniture', 'Bedroom');
+  } else if (combined.includes('sofa') || combined.includes('couch') || combined.includes('chair') || combined.includes('table') || combined.includes('desk') || combined.includes('stand')) {
+    fallbackTags.push('Furniture');
+  }
+  
+  // Clothing and personal items
+  else if (combined.includes('wallet') || combined.includes('purse') || combined.includes('bag') || combined.includes('backpack')) {
+    fallbackTags.push('Personal Items', 'Accessories');
+  } else if (combined.includes('clothes') || combined.includes('shirt') || combined.includes('pants') || combined.includes('dress') || combined.includes('jacket')) {
+    fallbackTags.push('Clothing');
+  } else if (combined.includes('jewelry') || combined.includes('ring') || combined.includes('necklace') || combined.includes('watch')) {
+    fallbackTags.push('Jewelry', 'Personal Items');
+  }
+  
+  // Kitchen items
+  else if (combined.includes('microwave') || combined.includes('refrigerator') || combined.includes('oven') || combined.includes('coffee') || combined.includes('kitchen')) {
+    fallbackTags.push('Kitchenware', 'Appliances');
+  }
+  
+  // Documents and media
+  else if (combined.includes('document') || combined.includes('paper') || combined.includes('book') || combined.includes('file')) {
+    fallbackTags.push('Documents');
+  } else if (combined.includes('artwork') || combined.includes('painting') || combined.includes('frame') || combined.includes('picture')) {
+    fallbackTags.push('Artwork', 'Decor');
+  } else if (combined.includes('vase') || combined.includes('plant') || combined.includes('flower') || combined.includes('orchid') || combined.includes('decoration')) {
+    fallbackTags.push('Decor', 'Personal Items');
+  }
+  
+  // Tools and equipment
+  else if (combined.includes('tool') || combined.includes('drill') || combined.includes('hammer') || combined.includes('equipment')) {
+    fallbackTags.push('Tools');
+  } else if (combined.includes('sport') || combined.includes('exercise') || combined.includes('bike') || combined.includes('ball')) {
+    fallbackTags.push('Sports Equipment');
+  }
+  
+  // Default to general categories if no specific match
+  if (fallbackTags.length === 0) {
+    fallbackTags.push('Personal Items');
+  }
+  
+  // Filter to only use tags that exist or add common ones that should exist
+  const finalTags = fallbackTags.filter(tag => 
+    availableTagNames.includes(tag) || 
+    ['Electronics', 'Furniture', 'Personal Items', 'Clothing', 'Kitchenware', 'Documents', 'Tools', 'Sports Equipment', 'Jewelry', 'Artwork', 'Office Equipment', 'Entertainment', 'Bedroom', 'Accessories', 'Appliances', 'Decor'].includes(tag)
+  );
+  
+  // Generate fallback room based on item characteristics
+  let fallbackRoom: string | undefined;
+  
+  if (combined.includes('kitchen') || combined.includes('microwave') || combined.includes('refrigerator') || combined.includes('coffee') || combined.includes('oven') || combined.includes('fridge')) {
+    fallbackRoom = 'Kitchen';
+  } else if (combined.includes('bedroom') || combined.includes('bed') || combined.includes('mattress') || combined.includes('dresser') || combined.includes('nightstand')) {
+    fallbackRoom = 'Bedroom';
+  } else if (combined.includes('living') || combined.includes('sofa') || combined.includes('couch') || combined.includes('tv') || combined.includes('television')) {
+    fallbackRoom = 'Living Room';
+  } else if (combined.includes('office') || combined.includes('desk') || combined.includes('computer') || combined.includes('laptop') || combined.includes('document')) {
+    fallbackRoom = 'Office';
+  } else if (combined.includes('bathroom') || combined.includes('shower') || combined.includes('bath')) {
+    fallbackRoom = 'Bathroom';
+  } else if (combined.includes('garage') || combined.includes('car') || combined.includes('tool')) {
+    fallbackRoom = 'Garage';
+  } else if (combined.includes('dining') || combined.includes('table')) {
+    fallbackRoom = 'Dining Room';
+  } else if (combined.includes('basement') || combined.includes('storage')) {
+    fallbackRoom = 'Basement';
+  }
+  
+  // Only use room if it exists in available rooms or is a common room
+  if (fallbackRoom && (availableRoomNames.includes(fallbackRoom) || 
+      ['Kitchen', 'Living Room', 'Bedroom', 'Office', 'Bathroom', 'Garage', 'Dining Room', 'Basement'].includes(fallbackRoom))) {
+    // Room is valid
+  } else {
+    fallbackRoom = undefined;
+  }
+  
+  return {
+    tag_names: finalTags.length > 0 ? finalTags : undefined,
+    room_name: fallbackRoom
+  };
+};
+
 export async function POST(req: NextRequest) {
   console.log(`[Merge API] POST handler started at ${new Date().toISOString()}`);
   console.log(`[Merge API] Request URL: ${req.url}`);
@@ -407,18 +514,34 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
                 // Filter and sanitize items
                 const sanitizedItems = parsedJson.items
                   .filter((item: Record<string, unknown>) => item && typeof item === 'object' && item.name)
-                  .map((item: Record<string, unknown>) => ({
-                    name: String(item.name || 'Unnamed Item'),
-                    description: String(item.description || ''),
-                    timestamp: typeof item.timestamp === 'number'
-                      ? Math.round(item.timestamp * 10) / 10
-                      : (formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0),
-                    estimated_value: typeof item.estimated_value === 'number'
-                      ? item.estimated_value
-                      : null,
-                    tag_names: Array.isArray(item.tag_names) ? item.tag_names.map(String) : undefined,
-                    room_name: typeof item.room_name === 'string' ? item.room_name : undefined,
-                  }));
+                  .map((item: Record<string, unknown>) => {
+                    const itemName = String(item.name || 'Unnamed Item');
+                    const itemDescription = String(item.description || '');
+                    
+                    // Try to use AI suggestions first, fallback to intelligent suggestions if missing
+                    let tag_names = Array.isArray(item.tag_names) ? item.tag_names.map(String) : undefined;
+                    let room_name = typeof item.room_name === 'string' ? item.room_name : undefined;
+                    
+                    // If AI suggestions are missing, generate intelligent fallbacks
+                    if (!tag_names && !room_name) {
+                      const fallbackTagsAndRoom = generateFallbackTagsAndRoom(itemName, itemDescription, availableTagNames, availableRoomNames);
+                      tag_names = fallbackTagsAndRoom.tag_names;
+                      room_name = fallbackTagsAndRoom.room_name;
+                    }
+                    
+                    return {
+                      name: itemName,
+                      description: itemDescription,
+                      timestamp: typeof item.timestamp === 'number'
+                        ? Math.round(item.timestamp * 10) / 10
+                        : (formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0),
+                      estimated_value: typeof item.estimated_value === 'number'
+                        ? item.estimated_value
+                        : null,
+                      tag_names,
+                      room_name,
+                    };
+                  });
 
                 if (sanitizedItems.length > 0) {
                   logger.info(`Extracted ${sanitizedItems.length} valid items manually`);
@@ -450,13 +573,20 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
               
               if (matches.length > 0) {
                 logger.info(`Found ${matches.length} potential items using regex extraction`);
-                const extractedItems = matches.map((match: RegExpMatchArray, index: number) => ({
-                  name: match[1] || `Item ${index+1}`,
-                  description: match[2] || '',
-                  timestamp: formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0,
-                  estimated_value: 0, // Default value, since schema now requires it
-                  // tag_names and room_name will be undefined here
-                }));
+                const extractedItems = matches.map((match: RegExpMatchArray, index: number) => {
+                  const itemName = match[1] || `Item ${index+1}`;
+                  const itemDescription = match[2] || '';
+                  const fallbackTagsAndRoom = generateFallbackTagsAndRoom(itemName, itemDescription, availableTagNames, availableRoomNames);
+                  
+                  return {
+                    name: itemName,
+                    description: itemDescription,
+                    timestamp: formattedScratchItems.length > 0 ? formattedScratchItems[0].timestamp : 0,
+                    estimated_value: 0, // Default value, since schema now requires it
+                    tag_names: fallbackTagsAndRoom.tag_names,
+                    room_name: fallbackTagsAndRoom.room_name,
+                  };
+                });
 
                 result = { object: { items: extractedItems } };
               } else {
@@ -464,31 +594,41 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
                 logger.info('All recovery methods failed, using scratch items directly');
                 result = {
                   object: {
-                    items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => ({
-                      name: item.name,
-                      description: item.description || '',
-                      timestamp: item.timestamp,
-                      estimated_value: item.estimated_value !== null ? item.estimated_value : 0, // Ensure a number
-                      // tag_names and room_name will be undefined
-                    }))
+                    items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => {
+                      const fallbackTagsAndRoom = generateFallbackTagsAndRoom(item.name, item.description || '', availableTagNames, availableRoomNames);
+                      
+                      return {
+                        name: item.name,
+                        description: item.description || '',
+                        timestamp: item.timestamp,
+                        estimated_value: item.estimated_value !== null ? item.estimated_value : 0, // Ensure a number
+                        tag_names: fallbackTagsAndRoom.tag_names,
+                        room_name: fallbackTagsAndRoom.room_name,
+                      };
+                    })
                   }
                 };
               }
             } catch (regexError: unknown) {
               logger.error('Error during regex extraction:', regexError);
-              // Ultimate fallback: use scratch items if regex itself errors
-              logger.info('Regex extraction failed, using scratch items directly as ultimate fallback');
-              result = {
-                object: {
-                  items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => ({
-                    name: item.name,
-                    description: item.description || '',
-                    timestamp: item.timestamp,
-                    estimated_value: item.estimated_value !== null ? item.estimated_value : 0, // Ensure a number
-                    // tag_names and room_name will be undefined
-                  }))
-                }
-              };
+                              // Ultimate fallback: use scratch items if regex itself errors
+                logger.info('Regex extraction failed, using scratch items directly as ultimate fallback');
+                result = {
+                  object: {
+                    items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => {
+                      const fallbackTagsAndRoom = generateFallbackTagsAndRoom(item.name, item.description || '', availableTagNames, availableRoomNames);
+                      
+                      return {
+                        name: item.name,
+                        description: item.description || '',
+                        timestamp: item.timestamp,
+                        estimated_value: item.estimated_value !== null ? item.estimated_value : 0, // Ensure a number
+                        tag_names: fallbackTagsAndRoom.tag_names,
+                        room_name: fallbackTagsAndRoom.room_name,
+                      };
+                    })
+                  }
+                };
             }
           }
         } else {
@@ -496,13 +636,18 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
           logger.warn('Could not extract error text, using scratch items as fallback');
           result = {
             object: {
-              items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => ({
-                name: item.name,
-                description: item.description || '',
-                timestamp: item.timestamp,
-                estimated_value: item.estimated_value !== null ? item.estimated_value : 0, // Ensure a number
-                // tag_names and room_name will be undefined
-              }))
+              items: formattedScratchItems.map((item: typeof formattedScratchItems[0]) => {
+                const fallbackTagsAndRoom = generateFallbackTagsAndRoom(item.name, item.description || '', availableTagNames, availableRoomNames);
+                
+                return {
+                  name: item.name,
+                  description: item.description || '',
+                  timestamp: item.timestamp,
+                  estimated_value: item.estimated_value !== null ? item.estimated_value : 0, // Ensure a number
+                  tag_names: fallbackTagsAndRoom.tag_names,
+                  room_name: fallbackTagsAndRoom.room_name,
+                };
+              })
             }
           };
         }
@@ -511,8 +656,29 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
       const analyzedItems: AnalyzedItem[] = result.object.items || [];
       logger.info(`Generated ${analyzedItems.length} items from Gemini API`);
 
+      // Apply fallback tagging for items that don't have tag_names or room_name
+      const itemsWithFallback = analyzedItems.map((item: AnalyzedItem) => {
+        if (!item.tag_names || !item.room_name) {
+          const fallbackTagsAndRoom = generateFallbackTagsAndRoom(
+            item.name, 
+            item.description || '', 
+            availableTagNames, 
+            availableRoomNames
+          );
+          
+          return {
+            ...item,
+            tag_names: item.tag_names || fallbackTagsAndRoom.tag_names,
+            room_name: item.room_name || fallbackTagsAndRoom.room_name,
+          };
+        }
+        return item;
+      });
+
+      logger.info(`Applied fallback tagging logic to items missing tag_names or room_name`);
+
       // Prepare items for insertion (without tag/room linking yet)
-      const itemsToInsertData = analyzedItems.map((item: AnalyzedItem) => {
+      const itemsToInsertData = itemsWithFallback.map((item: AnalyzedItem) => {
         let sanitizedTimestamp = 0;
         if (item.timestamp !== undefined && item.timestamp !== null) {
           sanitizedTimestamp = Math.round(item.timestamp * 10) / 10;
@@ -600,7 +766,7 @@ CRUCIAL FORMATTING & VALUE REQUIREMENTS:
       if (insertedItems && insertedItems.length > 0) {
         for (let i = 0; i < insertedItems.length; i++) {
           const dbItem = insertedItems[i];
-          const aiItem = analyzedItems[i]; // Corresponding AI item with tag/room suggestions
+          const aiItem = itemsWithFallback[i]; // Corresponding AI item with tag/room suggestions
 
           // Link Tags (Create if not exist)
           if (aiItem.tag_names && aiItem.tag_names.length > 0) {
