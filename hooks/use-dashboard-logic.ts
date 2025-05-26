@@ -815,6 +815,58 @@ export function useDashboardLogic({
         }
     }, [selectedAssets]);
 
+    // Calculate which tags are currently applied to selected assets
+    const getSelectedAssetsTagStatus = useCallback(() => {
+        if (selectedAssets.size === 0) {
+            return new Map<string, 'all' | 'some' | 'none'>();
+        }
+
+        const selectedAssetsList = assets.filter(asset => selectedAssets.has(asset.id));
+        const tagStatus = new Map<string, 'all' | 'some' | 'none'>();
+
+        // For each available tag, check how many selected assets have it
+        assets.forEach(asset => {
+            if (asset.tags) {
+                asset.tags.forEach(tag => {
+                    if (!tagStatus.has(tag.id)) {
+                        tagStatus.set(tag.id, 'none');
+                    }
+                });
+            }
+        });
+
+        // Count how many selected assets have each tag
+        for (const [tagId] of tagStatus) {
+            const assetsWithTag = selectedAssetsList.filter(asset => 
+                asset.tags?.some(tag => tag.id === tagId)
+            ).length;
+
+            if (assetsWithTag === 0) {
+                tagStatus.set(tagId, 'none');
+            } else if (assetsWithTag === selectedAssetsList.length) {
+                tagStatus.set(tagId, 'all');
+            } else {
+                tagStatus.set(tagId, 'some');
+            }
+        }
+
+        return tagStatus;
+    }, [assets, selectedAssets]);
+
+    // Handle bulk tag toggle (add if not all have it, remove if all have it)
+    const handleBulkToggleTag = useCallback(async (tagId: string) => {
+        const tagStatus = getSelectedAssetsTagStatus();
+        const currentStatus = tagStatus.get(tagId) || 'none';
+        
+        if (currentStatus === 'all') {
+            // All selected assets have this tag, so remove it
+            await handleBulkRemoveTag(tagId);
+        } else {
+            // Some or no selected assets have this tag, so add it to all
+            await handleBulkAddTag(tagId);
+        }
+    }, [getSelectedAssetsTagStatus, handleBulkAddTag, handleBulkRemoveTag]);
+
     // Handle bulk room assignment
     const handleBulkAssignRoom = useCallback(async (roomId: string) => {
         const assetsToUpdate = Array.from(selectedAssets);
@@ -1091,6 +1143,7 @@ export function useDashboardLogic({
         handleBulkDelete,
         handleBulkAddTag,
         handleBulkRemoveTag,
+        handleBulkToggleTag,
         handleBulkAssignRoom,
         handleBulkRemoveRoom,
         handleAssetClick,
@@ -1107,6 +1160,7 @@ export function useDashboardLogic({
         handleAssetDeletedFromModal,
         processClientSideAssetUpdate,
         fetchAndUpdateAssetState,
+        getSelectedAssetsTagStatus,
 
         // Setters (usually not needed, but maybe for specific cases like closing modal)
         // setSelectedAsset, // Example

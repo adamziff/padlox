@@ -71,8 +71,7 @@ export function DashboardClient({
         handleCapture,
         handleSave,
         handleBulkDelete,
-        handleBulkAddTag,
-        handleBulkRemoveTag,
+        handleBulkToggleTag,
         handleBulkAssignRoom,
         handleBulkRemoveRoom,
         handleAssetClick,
@@ -90,7 +89,8 @@ export function DashboardClient({
         totalValue,
         handleAssetDeletedFromModal,
         processClientSideAssetUpdate,
-        fetchAndUpdateAssetState
+        fetchAndUpdateAssetState,
+        getSelectedAssetsTagStatus
     } = useDashboardLogic({
         initialAssets,
         user,
@@ -349,8 +349,8 @@ export function DashboardClient({
                     availableRooms={userRooms}
                     onToggleSelectionMode={handleToggleSelectionMode}
                     onBulkDelete={handleBulkDelete}
-                    onBulkAddTag={handleBulkAddTag}
-                    onBulkRemoveTag={handleBulkRemoveTag}
+                    onBulkToggleTag={handleBulkToggleTag}
+                    getTagStatus={(tagId: string) => getSelectedAssetsTagStatus().get(tagId) || 'none'}
                     onBulkAssignRoom={handleBulkAssignRoom}
                     onBulkRemoveRoom={handleBulkRemoveRoom}
                     onAddNewAsset={handleAddNewAsset}
@@ -659,8 +659,8 @@ export function DashboardClient({
                     availableTags={userTags}
                     availableRooms={userRooms}
                     onBulkDelete={handleBulkDelete}
-                    onBulkAddTag={handleBulkAddTag}
-                    onBulkRemoveTag={handleBulkRemoveTag}
+                    onBulkToggleTag={handleBulkToggleTag}
+                    getTagStatus={(tagId: string) => getSelectedAssetsTagStatus().get(tagId) || 'none'}
                     onBulkAssignRoom={handleBulkAssignRoom}
                     onBulkRemoveRoom={handleBulkRemoveRoom}
                     onCancelSelection={handleToggleSelectionMode}

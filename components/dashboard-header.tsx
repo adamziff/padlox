@@ -10,10 +10,8 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
     DropdownMenuSeparator,
-    DropdownMenuSub,
-    DropdownMenuSubContent,
-    DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
+import { BulkTagSelector } from '@/components/bulk-tag-selector';
 
 interface Tag {
     id: string;
@@ -34,8 +32,8 @@ interface DashboardHeaderProps {
     availableRooms: Room[];
     onToggleSelectionMode: () => void;
     onBulkDelete: () => void;
-    onBulkAddTag: (tagId: string) => void;
-    onBulkRemoveTag: (tagId: string) => void;
+    onBulkToggleTag: (tagId: string) => void;
+    getTagStatus: (tagId: string) => 'all' | 'some' | 'none';
     onBulkAssignRoom: (roomId: string) => void;
     onBulkRemoveRoom: () => void;
     onAddNewAsset: () => void;
@@ -52,8 +50,8 @@ export function DashboardHeader({
     availableRooms,
     onToggleSelectionMode,
     onBulkDelete,
-    onBulkAddTag,
-    onBulkRemoveTag,
+    onBulkToggleTag,
+    getTagStatus,
     onBulkAssignRoom,
     onBulkRemoveRoom,
     onAddNewAsset,
@@ -89,7 +87,7 @@ export function DashboardHeader({
                                     {isDeleting ? "Deleting..." : `Delete (${selectedCount})`}
                                 </Button>
 
-                                {/* Tag actions dropdown */}
+                                {/* Tag multiselect dropdown */}
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                         <Button variant="outline" size="sm" disabled={selectedCount === 0}>
@@ -97,39 +95,20 @@ export function DashboardHeader({
                                             Tags
                                         </Button>
                                     </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-48">
-                                        <DropdownMenuSub>
-                                            <DropdownMenuSubTrigger>
-                                                <Plus className="mr-2 h-4 w-4" />
-                                                Add Tag
-                                            </DropdownMenuSubTrigger>
-                                            <DropdownMenuSubContent className="max-w-48">
-                                                {availableTags.map((tag) => (
-                                                    <DropdownMenuItem
-                                                        key={tag.id}
-                                                        onClick={() => onBulkAddTag(tag.id)}
-                                                    >
-                                                        {tag.name}
-                                                    </DropdownMenuItem>
-                                                ))}
-                                            </DropdownMenuSubContent>
-                                        </DropdownMenuSub>
-                                        <DropdownMenuSub>
-                                            <DropdownMenuSubTrigger>
-                                                <Minus className="mr-2 h-4 w-4" />
-                                                Remove Tag
-                                            </DropdownMenuSubTrigger>
-                                            <DropdownMenuSubContent className="max-w-48">
-                                                {availableTags.map((tag) => (
-                                                    <DropdownMenuItem
-                                                        key={tag.id}
-                                                        onClick={() => onBulkRemoveTag(tag.id)}
-                                                    >
-                                                        {tag.name}
-                                                    </DropdownMenuItem>
-                                                ))}
-                                            </DropdownMenuSubContent>
-                                        </DropdownMenuSub>
+                                    <DropdownMenuContent align="end" className="w-80 p-0">
+                                        <div className="p-3 border-b">
+                                            <h4 className="font-medium text-sm">Manage Tags</h4>
+                                            <p className="text-xs text-muted-foreground mt-1">
+                                                Click tags to add/remove. Highlighted = all selected assets have this tag.
+                                                Partial = some selected assets have this tag.
+                                            </p>
+                                        </div>
+                                        <BulkTagSelector
+                                            availableTags={availableTags}
+                                            getTagStatus={getTagStatus}
+                                            onToggleTag={onBulkToggleTag}
+                                            disabled={false}
+                                        />
                                     </DropdownMenuContent>
                                 </DropdownMenu>
 

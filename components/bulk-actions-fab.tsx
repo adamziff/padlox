@@ -17,10 +17,10 @@ import {
     Tag,
     Home,
     MoreVertical,
-    Plus,
     Minus,
     X
 } from 'lucide-react';
+import { BulkTagSelector } from '@/components/bulk-tag-selector';
 
 interface Tag {
     id: string;
@@ -38,8 +38,8 @@ interface BulkActionsFabProps {
     availableTags: Tag[];
     availableRooms: Room[];
     onBulkDelete: () => void;
-    onBulkAddTag: (tagId: string) => void;
-    onBulkRemoveTag: (tagId: string) => void;
+    onBulkToggleTag: (tagId: string) => void;
+    getTagStatus: (tagId: string) => 'all' | 'some' | 'none';
     onBulkAssignRoom: (roomId: string) => void;
     onBulkRemoveRoom: () => void;
     onCancelSelection: () => void;
@@ -51,8 +51,8 @@ export function BulkActionsFab({
     availableTags,
     availableRooms,
     onBulkDelete,
-    onBulkAddTag,
-    onBulkRemoveTag,
+    onBulkToggleTag,
+    getTagStatus,
     onBulkAssignRoom,
     onBulkRemoveRoom,
     onCancelSelection,
@@ -112,50 +112,34 @@ export function BulkActionsFab({
                             avoidCollisions={true}
                             collisionPadding={16}
                         >
-                            {/* Tag actions */}
+                            {/* Tag multiselect */}
                             <DropdownMenuSub>
                                 <DropdownMenuSubTrigger>
                                     <Tag className="mr-2 h-4 w-4" />
                                     <span>Manage Tags</span>
                                 </DropdownMenuSubTrigger>
                                 <DropdownMenuSubContent
-                                    className="w-36 max-w-36"
+                                    className="w-72 p-0"
                                     sideOffset={4}
                                     alignOffset={0}
                                     avoidCollisions={true}
                                     collisionPadding={8}
                                 >
-                                    <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                                        Add Tags
+                                    <div className="p-2 border-b">
+                                        <h4 className="font-medium text-xs">Manage Tags</h4>
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            Tap to add/remove tags
+                                        </p>
                                     </div>
-                                    {availableTags.map((tag) => (
-                                        <DropdownMenuItem
-                                            key={`add-${tag.id}`}
-                                            onClick={() => {
-                                                onBulkAddTag(tag.id);
-                                                setIsOpen(false);
-                                            }}
-                                        >
-                                            <Plus className="mr-2 h-3 w-3" />
-                                            {tag.name}
-                                        </DropdownMenuItem>
-                                    ))}
-                                    <DropdownMenuSeparator />
-                                    <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                                        Remove Tags
-                                    </div>
-                                    {availableTags.map((tag) => (
-                                        <DropdownMenuItem
-                                            key={`remove-${tag.id}`}
-                                            onClick={() => {
-                                                onBulkRemoveTag(tag.id);
-                                                setIsOpen(false);
-                                            }}
-                                        >
-                                            <Minus className="mr-2 h-3 w-3" />
-                                            {tag.name}
-                                        </DropdownMenuItem>
-                                    ))}
+                                    <BulkTagSelector
+                                        availableTags={availableTags}
+                                        getTagStatus={getTagStatus}
+                                        onToggleTag={(tagId) => {
+                                            onBulkToggleTag(tagId);
+                                            setIsOpen(false);
+                                        }}
+                                        disabled={false}
+                                    />
                                 </DropdownMenuSubContent>
                             </DropdownMenuSub>
 
