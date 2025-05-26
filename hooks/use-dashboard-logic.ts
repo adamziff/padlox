@@ -58,29 +58,40 @@ export function useDashboardLogic({
 
     const fetchAndUpdateAssetState = useCallback(async (assetId: string) => {
         console.log(`[FETCH & UPDATE] Fetching updated data for asset ${assetId}`);
-        const { data: updatedAssetData, error } = await supabase
-            .from('assets')
-            .select(`
-                *,
-                asset_rooms(
-                    rooms(*)
-                ),
-                asset_tags(
-                    tags(*)
-                )
-            `)
-            .eq('id', assetId)
-            .eq('user_id', user.id)
-            .single();
+        try {
+            const { data: updatedAssetData, error } = await supabase
+                .from('assets')
+                .select(`
+                    *,
+                    asset_rooms(
+                        rooms(*)
+                    ),
+                    asset_tags(
+                        tags(*)
+                    )
+                `)
+                .eq('id', assetId)
+                .eq('user_id', user.id)
+                .single();
 
-        if (error) {
-            console.error(`[FETCH & UPDATE] Error fetching asset ${assetId}:`, error);
-            if (error.code === 'PGRST116') {
-                 setAssets(prevAssets => prevAssets.filter(a => a.id !== assetId));
-                 console.log(`[FETCH & UPDATE] Asset ${assetId} not found after update, removing from local state.`);
+            if (error) {
+                // Silently handle asset not found (likely deleted)
+                if (error.code === 'PGRST116') {
+                     setAssets(prevAssets => prevAssets.filter(a => a.id !== assetId));
+                     console.log(`[FETCH & UPDATE] Asset ${assetId} not found after update, removing from local state.`);
+                     return;
+                }
+                
+                // Only log other errors
+                console.error(`[FETCH & UPDATE] Error fetching asset ${assetId}:`, {
+                    message: error.message || 'Unknown error',
+                    code: error.code || 'NO_CODE',
+                    details: error.details || 'No details',
+                    hint: error.hint || 'No hint',
+                    fullError: error
+                });
+                return;
             }
-            return;
-        }
 
         if (updatedAssetData) {
             const roomDataFromSupabase = updatedAssetData.asset_rooms;
@@ -134,6 +145,9 @@ export function useDashboardLogic({
                 return prevSelectedAsset;
             });
         }
+        } catch (fetchError) {
+            console.error(`[FETCH & UPDATE] Unexpected error fetching asset ${assetId}:`, fetchError);
+        }
     }, [supabase, user?.id, setAssets, setSelectedAsset, setTotalItems, setTotalValue]);
 
     // Fetch thumbnail token for Mux videos
@@ -169,6 +183,59 @@ export function useDashboardLogic({
         }
     }, []);
 
+    // Test function to manually trigger realtime events (for debugging)
+    const testRealtimeConnection = useCallback(async () => {
+        console.log('[TEST REALTIME] Testing realtime connection...');
+        try {
+            // Create a test asset
+            const { data: testAsset, error: insertError } = await supabase
+                .from('assets')
+                .insert([{
+                    user_id: user.id,
+                    name: 'TEST_REALTIME_DELETE',
+                    description: 'Test asset for realtime debugging',
+                    estimated_value: 1,
+                    media_type: 'item',
+                    media_url: 'test-realtime-url' // Required field
+                }])
+                .select()
+                .single();
+
+            if (insertError) {
+                console.error('[TEST REALTIME] Error creating test asset:', insertError);
+                return;
+            }
+
+            console.log('[TEST REALTIME] Created test asset:', testAsset);
+
+            // Wait a moment for the INSERT event to be processed
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Now delete it
+            const { error: deleteError } = await supabase
+                .from('assets')
+                .delete()
+                .eq('id', testAsset.id);
+
+            if (deleteError) {
+                console.error('[TEST REALTIME] Error deleting test asset:', deleteError);
+                return;
+            }
+
+            console.log('[TEST REALTIME] Deleted test asset:', testAsset.id);
+        } catch (error) {
+            console.error('[TEST REALTIME] Test failed:', error);
+        }
+    }, [supabase, user.id]);
+
+    // Expose test function globally for debugging
+    useEffect(() => {
+        (window as any).testRealtimeConnection = testRealtimeConnection;
+        return () => {
+            delete (window as any).testRealtimeConnection;
+        };
+    }, [testRealtimeConnection]);
+
     // Setup realtime subscription for assets
     useEffect(() => {
         const channel = supabase
@@ -182,6 +249,11 @@ export function useDashboardLogic({
                 },
                 (payload) => {
                     console.log('[REALTIME HANDLER] Received payload:', payload);
+                    console.log('[REALTIME HANDLER] Event type:', payload.eventType);
+                    console.log('[REALTIME HANDLER] Schema:', payload.schema);
+                    console.log('[REALTIME HANDLER] Table:', payload.table);
+                    if (payload.old) console.log('[REALTIME HANDLER] Old data:', payload.old);
+                    if (payload.new) console.log('[REALTIME HANDLER] New data:', payload.new);
                     
                     // Function to update assets and recalculate totals
                     const updateStateAndTotals = (updater: (prevAssets: AssetWithMuxData[]) => AssetWithMuxData[]) => {
@@ -374,7 +446,12 @@ export function useDashboardLogic({
                     else if (payload.eventType === 'DELETE') {
                         const deletedAssetId = payload.old.id;
                         console.log(`[REALTIME HANDLER] DELETE detected: ${deletedAssetId}`);
-                        updateStateAndTotals(prevAssets => prevAssets.filter(asset => asset.id !== deletedAssetId));
+                        console.log(`[REALTIME HANDLER] DELETE payload:`, payload);
+                        updateStateAndTotals(prevAssets => {
+                            const filteredAssets = prevAssets.filter(asset => asset.id !== deletedAssetId);
+                            console.log(`[REALTIME HANDLER] Filtered assets from ${prevAssets.length} to ${filteredAssets.length}`);
+                            return filteredAssets;
+                        });
                         
                         if (selectedAsset && selectedAsset.id === deletedAssetId) {
                             setSelectedAsset(null);
@@ -393,6 +470,10 @@ export function useDashboardLogic({
                 }
                 if (status === 'SUBSCRIBED') {
                     console.log('[REALTIME SUBSCRIBE] Successfully subscribed to asset changes!');
+                    console.log(`[REALTIME SUBSCRIBE] Listening for changes to assets for user: ${user.id}`);
+                }
+                if (status === 'CHANNEL_ERROR') {
+                    console.error('[REALTIME SUBSCRIBE] Channel error - subscription may not be working');
                 }
             });
 
@@ -674,6 +755,120 @@ export function useDashboardLogic({
         setSelectedAssets(newSelectedAssets);
     }, [selectedAssets]);
 
+    // Handle bulk tag assignment
+    const handleBulkAddTag = useCallback(async (tagId: string) => {
+        const assetsToUpdate = Array.from(selectedAssets);
+        let errors: { id: string, error: string }[] = [];
+        
+        for (const assetId of assetsToUpdate) {
+            try {
+                const response = await fetch(`/api/assets/${assetId}/tags`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tag_id: tagId }),
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    if (response.status === 409) {
+                        // Tag already assigned, skip silently
+                        continue;
+                    }
+                    throw new Error(data.error || `Failed to add tag (${response.status})`);
+                }
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                console.error(`Error adding tag to asset ${assetId}:`, errorMessage);
+                errors.push({ id: assetId, error: errorMessage });
+            }
+        }
+        
+        if (errors.length > 0) {
+            alert(`Failed to add tag to ${errors.length} asset(s). Please check the console for details.`);
+        }
+    }, [selectedAssets]);
+
+    // Handle bulk tag removal
+    const handleBulkRemoveTag = useCallback(async (tagId: string) => {
+        const assetsToUpdate = Array.from(selectedAssets);
+        let errors: { id: string, error: string }[] = [];
+        
+        for (const assetId of assetsToUpdate) {
+            try {
+                const response = await fetch(`/api/assets/${assetId}/tags`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tag_id: tagId }),
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.error || `Failed to remove tag (${response.status})`);
+                }
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                console.error(`Error removing tag from asset ${assetId}:`, errorMessage);
+                errors.push({ id: assetId, error: errorMessage });
+            }
+        }
+        
+        if (errors.length > 0) {
+            alert(`Failed to remove tag from ${errors.length} asset(s). Please check the console for details.`);
+        }
+    }, [selectedAssets]);
+
+    // Handle bulk room assignment
+    const handleBulkAssignRoom = useCallback(async (roomId: string) => {
+        const assetsToUpdate = Array.from(selectedAssets);
+        let errors: { id: string, error: string }[] = [];
+        
+        for (const assetId of assetsToUpdate) {
+            try {
+                const response = await fetch(`/api/assets/${assetId}/room`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ room_id: roomId }),
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.error || `Failed to assign room (${response.status})`);
+                }
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                console.error(`Error assigning room to asset ${assetId}:`, errorMessage);
+                errors.push({ id: assetId, error: errorMessage });
+            }
+        }
+        
+        if (errors.length > 0) {
+            alert(`Failed to assign room to ${errors.length} asset(s). Please check the console for details.`);
+        }
+    }, [selectedAssets]);
+
+    // Handle bulk room removal
+    const handleBulkRemoveRoom = useCallback(async () => {
+        const assetsToUpdate = Array.from(selectedAssets);
+        let errors: { id: string, error: string }[] = [];
+        
+        for (const assetId of assetsToUpdate) {
+            try {
+                const response = await fetch(`/api/assets/${assetId}/room`, {
+                    method: 'DELETE',
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.error || `Failed to remove room (${response.status})`);
+                }
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                console.error(`Error removing room from asset ${assetId}:`, errorMessage);
+                errors.push({ id: assetId, error: errorMessage });
+            }
+        }
+        
+        if (errors.length > 0) {
+            alert(`Failed to remove room from ${errors.length} asset(s). Please check the console for details.`);
+        }
+    }, [selectedAssets]);
+
     // Handle bulk delete of selected assets
     const handleBulkDelete = useCallback(async () => {
         if (!window.confirm(`Are you sure you want to delete ${selectedAssets.size} assets? This action cannot be undone.`)) return;
@@ -756,10 +951,8 @@ export function useDashboardLogic({
         // }
         
         if (isSelectionMode) {
-            console.log(`[HANDLE ASSET CLICK] Selection mode ON. Toggling selection for asset: ${asset.id}`);
             toggleAssetSelection(asset.id, event);
         } else {
-            console.log(`[HANDLE ASSET CLICK] Selection mode OFF. Setting selected asset to open modal:`, asset);
             setSelectedAsset(asset);
         }
     }, [isSelectionMode, toggleAssetSelection, setSelectedAsset]);
@@ -871,9 +1064,9 @@ export function useDashboardLogic({
     // Handler for when asset is deleted from the modal
     // (Realtime updates handle the state change, but we need to close the modal)
     const handleAssetDeletedFromModal = useCallback((deletedAssetId: string) => {
+        console.log(`[HANDLE ASSET DELETED FROM MODAL] Processing deletion of asset ${deletedAssetId}`);
         setSelectedAsset(null); // Close modal if the deleted asset was selected
-        // No need to modify `assets` state here due to realtime updates
-        // No need to modify `selectedAssets` here, handled by realtime delete event
+        // Relying on realtime subscription to handle state updates
     }, []);
 
 
@@ -896,6 +1089,10 @@ export function useDashboardLogic({
         handleCapture,
         handleSave,
         handleBulkDelete,
+        handleBulkAddTag,
+        handleBulkRemoveTag,
+        handleBulkAssignRoom,
+        handleBulkRemoveRoom,
         handleAssetClick,
         handleMediaError,
         handleRetryMedia,

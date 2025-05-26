@@ -12,7 +12,7 @@ import { DashboardHeader } from './dashboard-header'
 import { AssetGrid } from './asset-grid'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, Package, PlusCircle, Settings } from 'lucide-react'; // Added PlusCircle, Settings
-import { formatCurrency } from '@/utils/format';
+import { formatCurrency, formatCurrencyCompact } from '@/utils/format';
 import { Button } from '@/components/ui/button'; // Added Button
 import {
     Dialog,
@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input"; // Added Input
 import { Label } from "@/components/ui/label"; // Added Label
 import { ManageTagsDialog } from './manage-tags-dialog'; // Added
 import { ManageRoomsDialog } from './manage-rooms-dialog'; // Added
+import { BulkActionsFab } from './bulk-actions-fab'; // Added
 
 // Basic types for Tag and Room - ideally these would come from a shared types file
 interface Tag {
@@ -70,6 +71,10 @@ export function DashboardClient({
         handleCapture,
         handleSave,
         handleBulkDelete,
+        handleBulkAddTag,
+        handleBulkRemoveTag,
+        handleBulkAssignRoom,
+        handleBulkRemoveRoom,
         handleAssetClick,
         handleMediaError,
         handleRetryMedia,
@@ -94,7 +99,6 @@ export function DashboardClient({
     });
 
     const logicSelectedAsset = selectedAsset; // Assign to a new variable for logging
-    console.log('[DashboardClient] selectedAsset value from useDashboardLogic:', logicSelectedAsset);
 
     const [searchTerm, setSearchTerm] = useState('');
     const [userTags, setUserTags] = useState<Tag[]>([]);
@@ -341,8 +345,14 @@ export function DashboardClient({
                     isSelectionMode={isSelectionMode}
                     selectedCount={selectedAssets.size}
                     isDeleting={isDeleting}
+                    availableTags={userTags}
+                    availableRooms={userRooms}
                     onToggleSelectionMode={handleToggleSelectionMode}
                     onBulkDelete={handleBulkDelete}
+                    onBulkAddTag={handleBulkAddTag}
+                    onBulkRemoveTag={handleBulkRemoveTag}
+                    onBulkAssignRoom={handleBulkAssignRoom}
+                    onBulkRemoveRoom={handleBulkRemoveRoom}
                     onAddNewAsset={handleAddNewAsset}
                     searchTerm={searchTerm}
                     onSearchChange={setSearchTerm}
@@ -590,7 +600,9 @@ export function DashboardClient({
                             <DollarSign className="h-4 w-4 text-primary" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold">{formatCurrency(totalValue)}</div>
+                            <div className="text-2xl font-bold" title={formatCurrency(totalValue)}>
+                                {formatCurrencyCompact(totalValue)}
+                            </div>
                         </CardContent>
                     </Card>
                 </div>
@@ -640,6 +652,19 @@ export function DashboardClient({
                 )}
 
                 {renderActiveUploads()}
+
+                <BulkActionsFab
+                    selectedCount={selectedAssets.size}
+                    isDeleting={isDeleting}
+                    availableTags={userTags}
+                    availableRooms={userRooms}
+                    onBulkDelete={handleBulkDelete}
+                    onBulkAddTag={handleBulkAddTag}
+                    onBulkRemoveTag={handleBulkRemoveTag}
+                    onBulkAssignRoom={handleBulkAssignRoom}
+                    onBulkRemoveRoom={handleBulkRemoveRoom}
+                    onCancelSelection={handleToggleSelectionMode}
+                />
 
                 <ManageTagsDialog
                     isOpen={isManageTagsDialogOpen}

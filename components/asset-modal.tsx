@@ -4,6 +4,7 @@ import { AssetWithMuxData } from '@/types/mux'
 import { useState, useEffect, useCallback } from 'react'
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { toast } from 'sonner';
+import { createClient } from '@/lib/supabase';
 import { AssetModalHeader } from './asset-modal-parts/AssetModalHeader';
 import { AssetMediaDisplay } from './asset-modal-parts/AssetMediaDisplay';
 import { AssetDetailsForm } from './asset-modal-parts/AssetDetailsForm';
@@ -42,14 +43,12 @@ export function AssetModal({
     availableRooms,
     availableTags
 }: AssetModalProps) {
-    console.log('[AssetModal] Props received - isOpen:', isOpen, 'initialAsset:', initialAsset);
     const [asset, setAsset] = useState<AssetWithMuxData | null>(initialAsset);
     const [isDeleting, setIsDeleting] = useState(false);
     const [isLoadingMuxTokens, setIsLoadingMuxTokens] = useState(false);
     const [muxPlaybackToken, setMuxPlaybackToken] = useState<string | null>(null);
 
     useEffect(() => {
-        console.log('[AssetModal] useEffect syncing internal asset state from initialAsset:', initialAsset);
         setAsset(initialAsset);
         if (initialAsset) {
             setMuxPlaybackToken(null);
@@ -91,20 +90,63 @@ export function AssetModal({
 
     const handleDelete = async () => {
         if (!asset) return;
+        if (!window.confirm(`Are you sure you want to delete "${asset.name || 'Untitled'}"? This action cannot be undone.`)) return;
+
         setIsDeleting(true);
         try {
-            const response = await fetch(`/api/assets/${asset.id}`, {
-                method: 'DELETE',
-            });
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ message: 'Failed to delete asset' }));
-                throw new Error(errorData.message);
+            console.log(`Processing deletion for asset ${asset.id}, type: ${asset.media_type}`);
+
+            if (asset.media_type === 'item') {
+                console.log(`Deleting item asset (DB only): ${asset.id}`);
+                const supabase = createClient();
+                const { error: dbError } = await supabase.from('assets').delete().eq('id', asset.id);
+                if (dbError) throw new Error(`Database delete failed: ${dbError.message}`);
+                console.log(`[ASSET MODAL DELETE] Successfully deleted item asset ${asset.id} from database`);
+            } else if (asset.media_type === 'video' && asset.mux_asset_id) {
+                console.log(`Deleting source Mux asset via API: ${asset.id}`);
+                const response = await fetch('/api/mux/delete', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ assetId: asset.id }),
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.error || `Mux API delete failed (${response.status})`);
+                }
+            } else if (asset.media_type === 'image' && asset.media_url && !asset.mux_asset_id) {
+                console.log(`Deleting S3 image asset (DB & S3): ${asset.id}`);
+                const supabase = createClient();
+                const { error: dbError } = await supabase.from('assets').delete().eq('id', asset.id);
+                if (dbError) throw new Error(`Database delete failed: ${dbError.message}`);
+                console.log(`[ASSET MODAL DELETE] Successfully deleted image asset ${asset.id} from database`);
+
+                const key = asset.media_url.split('/').pop();
+                if (key) {
+                    const response = await fetch('/api/delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key })
+                    });
+                    if (!response.ok) console.error(`Failed to delete S3 object for key ${key}, but DB record deleted.`);
+                } else console.warn(`Could not determine S3 key for asset ${asset.id}`);
+            } else {
+                console.warn(`Unsupported asset type or state for deletion: ${asset.id}, type: ${asset.media_type}, mux: ${!!asset.mux_asset_id}`);
+                throw new Error('Unsupported asset type for deletion.');
             }
+
+            console.log(`Successfully processed deletion for asset ${asset.id}`);
             toast.success(`Asset "${asset.name || 'Untitled'}" deleted successfully.`);
+
+            // Give a small delay to ensure the realtime subscription picks up the delete
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log(`[ASSET MODAL DELETE] Calling onAssetDeleted callback for asset ${asset.id}`);
             onAssetDeleted(asset.id);
             onClose(); // Close modal after deletion
-        } catch (error: unknown) { // Catch any error
-            toast.error(`Error deleting asset: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.error(`Error deleting asset ${asset.id}:`, errorMessage);
+            toast.error(`Error deleting asset: ${errorMessage}`);
         } finally {
             setIsDeleting(false);
         }
@@ -121,14 +163,10 @@ export function AssetModal({
         document.body.removeChild(link);
     };
 
-    console.log('[AssetModal] Internal state before visibility check - asset:', asset, 'isOpen prop:', isOpen);
-
     if (!isOpen || !asset) {
         console.log('[AssetModal] Condition (!isOpen || !asset) is TRUE, returning null. isOpen:', isOpen, 'internal asset state:', asset);
         return null;
     }
-
-    console.log('[AssetModal] Rendering Dialog. isOpen prop:', isOpen, 'internal asset state:', asset);
 
     // These definitions are correct and should be the only ones for these constants.
     const isMuxAsset = asset.mux_asset_id ? true : false;

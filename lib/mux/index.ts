@@ -60,8 +60,6 @@ export async function createMuxPlaybackJWT(
       customer_id: userId  // Optional custom field
     };
 
-    log(`Creating ${audience} JWT for playback ID: ${playbackId}`);
-
     // Sign the JWT with RS256 algorithm - Mux requires this for signing keys
     return jwt.sign(payload, privateKey, { algorithm: 'RS256' });
   } catch (error) {

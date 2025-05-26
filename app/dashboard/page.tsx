@@ -17,9 +17,11 @@ export default async function Dashboard() {
     // Create the Supabase client (it's an async function)
     const supabase = await createClient()
 
-    const { data: { user } } = await supabase.auth.getUser()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    console.log('[DASHBOARD] Auth check:', { hasUser: !!user, error: authError?.message })
 
     if (!user) {
+        console.log('[DASHBOARD] No user found, redirecting to login')
         return redirect('/login')
     }
 
