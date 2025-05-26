@@ -124,8 +124,34 @@ export default async function Dashboard() {
 
 // Server-side function for user management
 
-const DEFAULT_TAG_NAMES = ["Electronics", "Furniture", "Jewelry", "Art", "Decor", "Clothing", "Documents", "Kitchenware", "Tools", "Sports Equipment"];
-const DEFAULT_ROOM_NAMES = ["Living Room", "Master Bedroom", "Guest Bedroom", "Kitchen", "Dining Room", "Office", "Garage", "Basement", "Attic", "Storage Closet"];
+const DEFAULT_TAG_NAMES = [
+    "Electronics",
+    "Furniture",
+    "Jewelry",
+    "Art",
+    "Decor",
+    "Clothing",
+    "Documents",
+    "Kitchenware",
+    "Tools",
+    "Sports Equipment",
+    "Personal Items",
+];
+const DEFAULT_ROOM_NAMES = [
+    "Living Room",
+    "Master Bedroom",
+    "Guest Bedroom",
+    "Master Bathroom",
+    "Guest Bathroom",
+    "Kitchen",
+    "Dining Room",
+    "Office",
+    "Garage",
+    "Basement",
+    "Attic",
+    "Storage Closet",
+    "Porch",
+];
 
 async function ensureUserExists(user: { id: string, email?: string | undefined }, supabase: SupabaseClient) {
     // Only proceed if the user has an email (some auth methods might not provide email)
