@@ -1,13 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@/test/test-utils';
 import { AssetModal } from '../asset-modal';
-import { Asset } from '@/types/asset';
+import { AssetWithMuxData } from '@/types/mux';
 
 describe('AssetModal', () => {
     const mockOnClose = vi.fn();
     const mockOnDelete = vi.fn();
 
-    const mockAsset: Asset = {
+    const mockAsset: AssetWithMuxData = {
         id: '1',
         name: 'Test Asset',
         description: 'Test Description',
@@ -16,12 +16,29 @@ describe('AssetModal', () => {
         estimated_value: 100,
         created_at: '2024-01-01T00:00:00Z',
         user_id: 'user1',
+        mux_asset_id: undefined,
+        mux_playback_id: undefined,
+        mux_processing_status: undefined,
+        transcript_text: undefined,
+        transcript_processing_status: undefined,
+        transcript_error: undefined,
+        is_processed: false,
+        is_source_video: false,
+        source_video_id: undefined,
+        item_timestamp: undefined,
+        tags: [],
+        room: null,
     };
 
     const defaultProps = {
         asset: mockAsset,
+        isOpen: true,
         onClose: mockOnClose,
-        onDelete: mockOnDelete,
+        onAssetDeleted: mockOnDelete,
+        onAssetUpdated: vi.fn(),
+        fetchAndUpdateAssetState: vi.fn(),
+        availableTags: [],
+        availableRooms: [],
     };
 
     beforeEach(() => {

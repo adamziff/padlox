@@ -1,726 +1,269 @@
 'use client'
 
 import { AssetWithMuxData } from '@/types/mux'
-import Image from 'next/image'
-import { Button } from './ui/button'
-import { formatCurrency } from '@/utils/format'
-import { CrossIcon, TrashIcon, DownloadIcon } from './icons'
-import { useState, useEffect } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { MuxPlayer } from './mux-player'
-import { getMuxThumbnailUrl } from '@/lib/mux'
-import { Input } from './ui/input'
-import { Textarea } from './ui/textarea'
-import { Label } from '@/components/ui/label'
-import { useDebouncedCallback } from 'use-debounce'
+import { useState, useEffect, useCallback } from 'react'
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { toast } from 'sonner';
+import { createClient } from '@/lib/supabase';
+import { AssetModalHeader } from './asset-modal-parts/AssetModalHeader';
+import { AssetMediaDisplay } from './asset-modal-parts/AssetMediaDisplay';
+import { AssetDetailsForm } from './asset-modal-parts/AssetDetailsForm';
+import { AssetRoomSelector } from './asset-modal-parts/AssetRoomSelector';
+import { AssetTagsManager } from './asset-modal-parts/AssetTagsManager';
 
-interface AssetModalProps {
-    asset: AssetWithMuxData
-    onClose: () => void
-    onDelete?: (id: string) => void
+// Define Tag and Room types if not imported from a central location
+interface Tag {
+    id: string;
+    name: string;
 }
 
-export function AssetModal({ asset: initialAsset, onClose, onDelete }: AssetModalProps) {
-    const [asset, setAsset] = useState<AssetWithMuxData>(initialAsset);
+interface Room {
+    id: string;
+    name: string;
+}
+
+interface AssetModalProps {
+    asset: AssetWithMuxData | null;
+    isOpen: boolean;
+    onClose: () => void;
+    onAssetDeleted: (assetId: string) => void;
+    onAssetUpdated: (updatedAsset: AssetWithMuxData) => void; // Callback to update asset list
+    fetchAndUpdateAssetState?: (assetId: string) => Promise<void>;
+    availableRooms: Room[];
+    availableTags: Tag[];
+    onThumbnailRegenerate?: (assetId: string, newTimestamp: number) => void; // Callback to regenerate thumbnails
+}
+
+export function AssetModal({
+    asset: initialAsset,
+    isOpen,
+    onClose,
+    onAssetDeleted,
+    onAssetUpdated,
+    fetchAndUpdateAssetState,
+    availableRooms,
+    availableTags,
+    onThumbnailRegenerate
+}: AssetModalProps) {
+    const [asset, setAsset] = useState<AssetWithMuxData | null>(initialAsset);
     const [isDeleting, setIsDeleting] = useState(false);
-    const supabase = createClient();
-    const [modalToken, setModalToken] = useState<string | null>(null);
-    const [isLoadingToken, setIsLoadingToken] = useState(false);
+    const [isLoadingMuxTokens, setIsLoadingMuxTokens] = useState(false);
+    const [muxPlaybackToken, setMuxPlaybackToken] = useState<string | null>(null);
 
-    // Add state for editable fields
-    const [editableName, setEditableName] = useState(asset.name || '');
-    const [editableDescription, setEditableDescription] = useState(asset.description || '');
-    const [editableValue, setEditableValue] = useState<string>(asset.estimated_value != null ? String(asset.estimated_value) : '');
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveError, setSaveError] = useState<string | null>(null);
-    const [saveSuccess, setSaveSuccess] = useState(false);
-
-    // Define these based on the current asset state
-    const isItem = asset.media_type === 'item';
-    const isVideo = asset.media_type === 'video';
-    const hasMuxData = 'mux_playback_id' in asset && !!asset.mux_playback_id;
-    const isMuxProcessing = isVideo && asset.mux_processing_status === 'preparing';
-    const isMuxReady = isVideo && asset.mux_processing_status === 'ready';
-
-    // Fetch the signed token when the asset changes or modal opens
-    useEffect(() => {
-        let isMounted = true;
-        const fetchToken = async () => {
-            if (asset?.mux_playback_id) {
-                setIsLoadingToken(true);
-                setModalToken(null); // Clear previous token
-                try {
-                    // Determine the timestamp to use (if any)
-                    const timestamp = isItem && asset.item_timestamp != null ? asset.item_timestamp : undefined;
-
-                    // Construct the URL, adding the timestamp only if provided
-                    let apiUrl = `/api/mux/token?playbackId=${asset.mux_playback_id}&_=${Date.now()}`;
-                    if (timestamp !== undefined) {
-                        apiUrl += `&time=${timestamp}`;
-                    }
-
-                    // Fetch token from the API endpoint
-                    const response = await fetch(apiUrl);
-                    if (!response.ok) {
-                        let errorMessage = `${response.status} ${response.statusText}`;
-                        try {
-                            const errorData = await response.json();
-                            errorMessage += `: ${errorData.message || 'Unknown error'}`;
-                        } catch {
-                            // Ignore error during error message generation
-                        }
-                        throw new Error(`Failed to fetch token: ${errorMessage}`);
-                    }
-                    const data = await response.json();
-
-                    // The API returns tokens for different purposes
-                    const token = data.tokens?.thumbnail;
-
-                    if (isMounted && token) {
-                        setModalToken(token);
-                    } else if (isMounted) {
-                        console.warn("Thumbnail token not found in API response for", asset.mux_playback_id);
-                    }
-                } catch (error) {
-                    console.error("Failed to fetch thumbnail token:", error);
-                    if (isMounted) {
-                        // Handle token fetch error appropriately (e.g., show message)
-                    }
-                } finally {
-                    if (isMounted) {
-                        setIsLoadingToken(false);
-                    }
-                }
-            }
-        };
-
-        fetchToken();
-
-        return () => {
-            isMounted = false;
-        };
-    }, [asset, isItem]); // Re-fetch if the asset changes OR if it changes type (edge case)
-
-    // Set up a real-time subscription to update this asset if it changes
-    useEffect(() => {
-        console.log(`Setting up realtime subscription for asset: ${asset.id}`);
-
-        // Subscribe to changes on this specific asset
-        const channel = supabase
-            .channel(`asset-${asset.id}-changes`)
-            .on('postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'assets',
-                    filter: `id=eq.${asset.id}`
-                },
-                (payload) => {
-                    // Extract the old and new asset data
-                    const oldAsset = payload.old as Partial<AssetWithMuxData>;
-                    const newAsset = payload.new as AssetWithMuxData;
-
-                    console.log('Asset modal received postgres update:',
-                        'for asset:', asset.id,
-                        'new status:', newAsset.mux_processing_status,
-                        'old status:', oldAsset.mux_processing_status);
-
-                    // Add detailed logging for transcript changes
-                    if ('transcript_processing_status' in newAsset && 'transcript_processing_status' in oldAsset) {
-                        if (newAsset.transcript_processing_status !== oldAsset.transcript_processing_status) {
-                            console.log(`[ASSET MODAL] Transcript status changed: ${oldAsset.transcript_processing_status} → ${newAsset.transcript_processing_status}`);
-                        }
-                    }
-
-                    // Check if transcript text was added
-                    if ((!oldAsset.transcript_text || oldAsset.transcript_text === '') &&
-                        newAsset.transcript_text &&
-                        newAsset.transcript_text !== '') {
-                        console.log(`[ASSET MODAL] Transcript text received (${newAsset.transcript_text.length} chars)`);
-                    }
-
-                    // Create a fresh copy to ensure all properties are updated
-                    const updatedAsset = { ...newAsset } as AssetWithMuxData;
-
-                    // Update our local state with the changes
-                    console.log(`[ASSET MODAL] Updating asset state with new data`);
-                    setAsset(updatedAsset);
-                }
-            )
-            .on('broadcast', { event: 'asset-ready' }, (payload) => {
-                console.log('[ASSET MODAL] Received asset-ready broadcast for asset:', payload);
-
-                // Check if the broadcast is for this asset
-                if (payload.payload && payload.payload.id === asset.id) {
-                    // Fetch the latest asset data
-                    supabase
-                        .from('assets')
-                        .select('*')
-                        .eq('id', asset.id)
-                        .single()
-                        .then(({ data, error }) => {
-                            if (!error && data) {
-                                console.log('[ASSET MODAL] Updated asset data from broadcast:', data);
-                                setAsset(data as AssetWithMuxData);
-                            }
-                        });
-                }
-            })
-            .on('broadcast', { event: 'transcript-ready' }, (payload) => {
-                console.log('[ASSET MODAL] Received transcript-ready broadcast:', payload);
-
-                // Check if the broadcast is for this asset
-                if (payload.payload && payload.payload.id === asset.id) {
-                    console.log('[ASSET MODAL] Transcript is ready for this asset, fetching updated data');
-
-                    // Fetch the latest asset data including the transcript
-                    supabase
-                        .from('assets')
-                        .select('*')
-                        .eq('id', asset.id)
-                        .single()
-                        .then(({ data, error }) => {
-                            if (!error && data) {
-                                const updatedAsset = data as AssetWithMuxData;
-                                console.log('[ASSET MODAL] Updated asset with transcript:',
-                                    `Status: ${updatedAsset.transcript_processing_status}`,
-                                    `Has transcript: ${!!updatedAsset.transcript}`,
-                                    `Text length: ${updatedAsset.transcript_text?.length || 0} chars`);
-
-                                setAsset(updatedAsset);
-                            } else {
-                                console.error('[ASSET MODAL] Error fetching updated asset with transcript:', error);
-                            }
-                        });
-                }
-            })
-            .subscribe((status) => {
-                console.log(`Asset subscription status for ${asset.id}:`, status);
-            });
-
-        // Set up a periodic check for transcript updates as a fallback
-        let refreshTimer: NodeJS.Timeout | null = null;
-
-        // Only set up the timer for assets that are waiting for transcription
-        if ('transcript_processing_status' in asset &&
-            (asset.transcript_processing_status === 'pending' ||
-                asset.transcript_processing_status === 'processing')) {
-
-            console.log(`[ASSET MODAL] Setting up transcript check timer for asset: ${asset.id}`);
-
-            refreshTimer = setInterval(() => {
-                console.log(`[ASSET MODAL] Checking transcript status for asset: ${asset.id}`);
-
-                supabase
-                    .from('assets')
-                    .select('*')
-                    .eq('id', asset.id)
-                    .single()
-                    .then(({ data, error }) => {
-                        if (!error && data) {
-                            const freshAsset = data as AssetWithMuxData;
-
-                            // Check if transcript status or content changed
-                            const transcriptStatusChanged =
-                                'transcript_processing_status' in freshAsset &&
-                                'transcript_processing_status' in asset &&
-                                freshAsset.transcript_processing_status !== asset.transcript_processing_status;
-
-                            const transcriptTextChanged =
-                                'transcript_text' in freshAsset &&
-                                (!('transcript_text' in asset) ||
-                                    freshAsset.transcript_text !== asset.transcript_text);
-
-                            if (transcriptStatusChanged || transcriptTextChanged) {
-                                console.log(`[ASSET MODAL] Manual refresh detected transcript change:`,
-                                    transcriptStatusChanged ?
-                                        `Status: ${asset.transcript_processing_status} → ${freshAsset.transcript_processing_status}` : '',
-                                    transcriptTextChanged ?
-                                        `Text: ${freshAsset.transcript_text ? 'received' : 'none'}` : '');
-
-                                setAsset(freshAsset);
-
-                                // If transcript is completed or error, clear the timer
-                                if (freshAsset.transcript_processing_status === 'completed' ||
-                                    freshAsset.transcript_processing_status === 'error') {
-                                    if (refreshTimer) {
-                                        console.log(`[ASSET MODAL] Clearing transcript check timer`);
-                                        clearInterval(refreshTimer);
-                                        refreshTimer = null;
-                                    }
-                                }
-                            }
-                        }
-                    });
-            }, 5000); // Check every 5 seconds
-        }
-
-        // Cleanup on unmount
-        return () => {
-            console.log(`Cleaning up realtime subscription for asset: ${asset.id}`);
-            channel.unsubscribe();
-
-            if (refreshTimer) {
-                clearInterval(refreshTimer);
-            }
-        };
-    }, [asset.id, supabase, isMuxProcessing, asset]);
-
-    // Update the asset when initialAsset changes (e.g., from parent component)
     useEffect(() => {
         setAsset(initialAsset);
+        setCurrentTimestamp(initialAsset?.item_timestamp ?? null);
+        if (initialAsset) {
+            setMuxPlaybackToken(null);
+        } else {
+            setMuxPlaybackToken(null);
+        }
     }, [initialAsset]);
 
-    // Update editable state when the underlying asset changes (e.g., due to realtime updates)
+    // Track the current timestamp to detect changes
+    const [currentTimestamp, setCurrentTimestamp] = useState<number | null>(
+        initialAsset?.item_timestamp ?? null
+    );
+
     useEffect(() => {
-        setEditableName(asset.name || '');
-        setEditableDescription(asset.description || '');
-        setEditableValue(asset.estimated_value != null ? String(asset.estimated_value) : '');
-    }, [asset]);
+        if (isOpen && asset && asset.mux_playback_id && !isLoadingMuxTokens) {
+            // Check if we need to fetch a new token
+            const needsNewToken = !muxPlaybackToken ||
+                (asset.media_type === 'item' && asset.item_timestamp !== currentTimestamp);
 
-    // Debounced save function
-    const debouncedSave = useDebouncedCallback(async () => {
-        if (!editableName) { // Add validation if needed
-            setSaveError('Name cannot be empty.');
-            return;
-        }
+            if (needsNewToken) {
+                setIsLoadingMuxTokens(true);
+                setCurrentTimestamp(asset.item_timestamp ?? null);
 
-        const valueToSave = editableValue.trim() === '' ? null : parseFloat(editableValue);
-        if (editableValue.trim() !== '' && (isNaN(valueToSave!) || valueToSave! < 0)) {
-            setSaveError('Invalid estimated value. Must be a non-negative number.');
-            return;
-        }
-
-        setIsSaving(true);
-        setSaveError(null);
-        setSaveSuccess(false);
-
-        try {
-            const { error } = await supabase
-                .from('assets')
-                .update({
-                    name: editableName,
-                    description: editableDescription || null,
-                    estimated_value: valueToSave
-                })
-                .eq('id', asset.id);
-
-            if (error) throw error;
-
-            // Update local asset state immediately for perceived speed
-            setAsset(prev => ({
-                ...prev,
-                name: editableName,
-                description: editableDescription || null,
-                estimated_value: valueToSave
-            }));
-            setSaveSuccess(true);
-            setTimeout(() => setSaveSuccess(false), 2000); // Hide success message after 2s
-
-        } catch (error) {
-            console.error('Error saving asset details:', error);
-            const message = error instanceof Error ? error.message : 'Unknown error';
-            setSaveError(`Save failed: ${message}`);
-        } finally {
-            setIsSaving(false);
-        }
-    }, 500); // Debounce time in ms
-
-    // Trigger save when inputs change
-    useEffect(() => {
-        // Avoid saving on initial load
-        if (editableName !== initialAsset.name ||
-            editableDescription !== (initialAsset.description || '') ||
-            editableValue !== (initialAsset.estimated_value != null ? String(initialAsset.estimated_value) : '')) {
-            debouncedSave();
-        }
-    }, [editableName, editableDescription, editableValue, initialAsset, debouncedSave]);
-
-    // Log asset state for debugging
-    useEffect(() => {
-        if (process.env.NODE_ENV !== 'production') {
-            console.log('Asset Modal - Current Asset State:', {
-                id: asset.id,
-                type: asset.media_type,
-                hasMuxData,
-                isMuxProcessing,
-                isMuxReady,
-                playbackId: 'mux_playback_id' in asset ? asset.mux_playback_id : 'N/A',
-                status: 'mux_processing_status' in asset ? asset.mux_processing_status : 'N/A'
-            });
-        }
-    }, [asset, hasMuxData, isMuxProcessing, isMuxReady]);
-
-    async function handleDelete() {
-        if (!window.confirm('Are you sure you want to delete this asset? This action cannot be undone.')) {
-            return
-        }
-
-        setIsDeleting(true)
-        try {
-            // Handle item deletion (only delete from DB)
-            if (isItem) {
-                console.log(`Deleting item asset (DB only): ${asset.id}`)
-                const { error: dbError } = await supabase
-                    .from('assets')
-                    .delete()
-                    .eq('id', asset.id)
-
-                if (dbError) {
-                    console.error('Error deleting item asset from database:', dbError);
-                    throw dbError;
-                }
+                fetch(`/api/mux/token?playbackId=${asset.mux_playback_id}${asset.item_timestamp ? `&time=${asset.item_timestamp}` : ''}&_=${Date.now()}`)
+                    .then(res => {
+                        if (!res.ok) throw new Error('Failed to fetch Mux tokens');
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (data.tokens) {
+                            setMuxPlaybackToken(data.tokens.playback);
+                        } else if (data.token) {
+                            setMuxPlaybackToken(data.token);
+                        }
+                        if (!data.tokens && !data.token) {
+                            throw new Error('No tokens returned from API');
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error fetching Mux tokens:", err);
+                        toast.error("Could not load video details: " + (err.message || ''));
+                    })
+                    .finally(() => setIsLoadingMuxTokens(false));
             }
-            // Handle source video/image deletion (Mux API or S3 API)
-            else if (hasMuxData && asset.mux_asset_id) { // Ensure we have the mux_asset_id for source videos
-                console.log(`Deleting source Mux asset: ${asset.id} (Mux ID: ${asset.mux_asset_id})`);
-                // Delete using the Mux API endpoint
+        }
+    }, [isOpen, asset, asset?.item_timestamp, muxPlaybackToken, isLoadingMuxTokens, currentTimestamp]);
+
+    const handleInternalAssetUpdate = useCallback((updatedAsset: AssetWithMuxData) => {
+        setAsset(updatedAsset);
+        onAssetUpdated(updatedAsset);
+    }, [onAssetUpdated]);
+
+    const handleTimestampUpdate = useCallback(async (newTimestamp: number) => {
+        if (!asset || asset.media_type !== 'item' || !asset.mux_playback_id) return;
+
+        try {
+            // Clear current token to force regeneration with new timestamp
+            setMuxPlaybackToken(null);
+            setCurrentTimestamp(newTimestamp);
+
+            // Notify parent component to regenerate thumbnails in the asset grid
+            if (onThumbnailRegenerate) {
+                onThumbnailRegenerate(asset.id, newTimestamp);
+            }
+
+            toast.success('Preview timestamp updated successfully!');
+
+            // The useEffect will handle fetching the new token automatically
+            // when it detects the timestamp change
+        } catch (error) {
+            console.error('Error updating timestamp:', error);
+            toast.error('Failed to update preview timestamp');
+        }
+    }, [asset, onThumbnailRegenerate]);
+
+    const handleDelete = async () => {
+        if (!asset) return;
+        if (!window.confirm(`Are you sure you want to delete "${asset.name || 'Untitled'}"? This action cannot be undone.`)) return;
+
+        setIsDeleting(true);
+        try {
+            console.log(`Processing deletion for asset ${asset.id}, type: ${asset.media_type}`);
+
+            if (asset.media_type === 'item') {
+                console.log(`Deleting item asset (DB only): ${asset.id}`);
+                const supabase = createClient();
+                const { error: dbError } = await supabase.from('assets').delete().eq('id', asset.id);
+                if (dbError) throw new Error(`Database delete failed: ${dbError.message}`);
+                console.log(`[ASSET MODAL DELETE] Successfully deleted item asset ${asset.id} from database`);
+            } else if (asset.media_type === 'video' && asset.mux_asset_id) {
+                console.log(`Deleting source Mux asset via API: ${asset.id}`);
                 const response = await fetch('/api/mux/delete', {
                     method: 'DELETE',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    // Pass the Supabase asset ID, the API route will find the Mux asset ID
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ assetId: asset.id }),
                 });
-
                 if (!response.ok) {
                     const data = await response.json().catch(() => ({}));
-                    throw new Error(data.error || 'Failed to delete Mux asset');
+                    throw new Error(data.error || `Mux API delete failed (${response.status})`);
                 }
-            } else if (asset.media_type === 'image' && asset.media_url) {
-                console.log(`Deleting image asset (DB & S3): ${asset.id}`);
-                // For non-Mux images, delete from Supabase and S3
-                const { error: dbError } = await supabase
-                    .from('assets')
-                    .delete()
-                    .eq('id', asset.id)
+            } else if (asset.media_type === 'image' && asset.media_url && !asset.mux_asset_id) {
+                console.log(`Deleting S3 image asset (DB & S3): ${asset.id}`);
+                const supabase = createClient();
+                const { error: dbError } = await supabase.from('assets').delete().eq('id', asset.id);
+                if (dbError) throw new Error(`Database delete failed: ${dbError.message}`);
+                console.log(`[ASSET MODAL DELETE] Successfully deleted image asset ${asset.id} from database`);
 
-                if (dbError) throw dbError
-
-                // Delete from S3
-                const key = asset.media_url.split('/').pop()
-                if (key) { // Ensure we have a key
+                const key = asset.media_url.split('/').pop();
+                if (key) {
                     const response = await fetch('/api/delete', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify({ key }),
-                    })
-                    if (!response.ok) {
-                        // Log S3 deletion error but maybe don't block UI update?
-                        console.error('Failed to delete file from S3, but DB record deleted.')
-                        // throw new Error('Failed to delete file from S3') 
-                    }
-                } else {
-                    console.warn('Could not determine S3 key from media_url for deletion.')
-                }
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key })
+                    });
+                    if (!response.ok) console.error(`Failed to delete S3 object for key ${key}, but DB record deleted.`);
+                } else console.warn(`Could not determine S3 key for asset ${asset.id}`);
             } else {
-                console.warn(`Cannot determine deletion method for asset ${asset.id} of type ${asset.media_type}`);
+                console.warn(`Unsupported asset type or state for deletion: ${asset.id}, type: ${asset.media_type}, mux: ${!!asset.mux_asset_id}`);
                 throw new Error('Unsupported asset type for deletion.');
             }
 
-            onDelete?.(asset.id) // Notify parent (e.g., dashboard) via prop
-            onClose() // Close the modal
-        } catch (error) {
-            console.error('Error deleting asset:', error)
-            alert(`Failed to delete asset: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`)
+            console.log(`Successfully processed deletion for asset ${asset.id}`);
+            toast.success(`Asset "${asset.name || 'Untitled'}" deleted successfully.`);
+
+            // Give a small delay to ensure the realtime subscription picks up the delete
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            console.log(`[ASSET MODAL DELETE] Calling onAssetDeleted callback for asset ${asset.id}`);
+            onAssetDeleted(asset.id);
+            onClose(); // Close modal after deletion
+        } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.error(`Error deleting asset ${asset.id}:`, errorMessage);
+            toast.error(`Error deleting asset: ${errorMessage}`);
         } finally {
-            setIsDeleting(false)
+            setIsDeleting(false);
         }
+    };
+
+    const handleDownload = () => {
+        if (!asset || !asset.media_url || asset.mux_asset_id) return; // No download for Mux videos from here for now
+        // For direct S3 links or other non-Mux uploads
+        const link = document.createElement('a');
+        link.href = asset.media_url.startsWith('http') ? asset.media_url : `https://${process.env.NEXT_PUBLIC_AWS_BUCKET_NAME}.s3.${process.env.NEXT_PUBLIC_AWS_REGION}.amazonaws.com/${asset.media_url}`;
+        link.download = asset.name || 'download';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    if (!isOpen || !asset) {
+        console.log('[AssetModal] Condition (!isOpen || !asset) is TRUE, returning null. isOpen:', isOpen, 'internal asset state:', asset);
+        return null;
     }
 
-    async function handleDownload() {
-        try {
-            // For Mux videos, we can't easily provide direct downloads
-            if (hasMuxData) {
-                alert('Direct download from Mux is not currently supported.');
-                return;
-            }
-
-            // Send the full media URL to let the server handle key extraction
-            const response = await fetch('/api/download', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                credentials: 'include',
-                body: JSON.stringify({
-                    key: asset.media_url,
-                    filename: `${asset.name}${asset.media_type === 'video' ? '.mp4' : '.jpg'}`
-                }),
-            })
-
-            if (!response.ok) {
-                const error = await response.json().catch(() => ({ details: 'Failed to download file' }))
-                throw new Error(error.details || 'Failed to download file')
-            }
-
-            // Check content type to ensure we received the file
-            const contentType = response.headers.get('Content-Type')
-            if (!contentType || (!contentType.includes('video') && !contentType.includes('image'))) {
-                throw new Error('Invalid response type received')
-            }
-
-            const blob = await response.blob()
-            if (blob.size === 0) {
-                throw new Error('Received empty file')
-            }
-
-            // Create and trigger download
-            const url = window.URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `${asset.name}${asset.media_type === 'video' ? '.mp4' : '.jpg'}`
-            document.body.appendChild(a)
-            a.click()
-
-            // Cleanup
-            window.URL.revokeObjectURL(url)
-            document.body.removeChild(a)
-        } catch (error) {
-            console.error('Error downloading asset:', error)
-            alert(error instanceof Error ? error.message : 'Failed to download asset. Please try again.')
-        }
-    }
-
-    // Determine media URL dynamically for rendering (mostly needed for non-player images now)
-    // This is primarily for the regular <Image> tag if needed as a fallback.
-    // The MuxPlayer component itself will handle fetching based on playbackId.
-    let displayImageUrl = '';
-    if (isItem && asset.mux_playback_id && asset.item_timestamp != null) {
-        // Pass the fetched modalToken to the URL function
-        displayImageUrl = getMuxThumbnailUrl(asset.mux_playback_id, modalToken);
-    } else if (asset.media_type === 'image') {
-        displayImageUrl = asset.media_url;
-    } else if (isVideo && asset.mux_playback_id && isMuxReady) {
-        // Use token for the main video thumbnail too (timestamp 0)
-        displayImageUrl = getMuxThumbnailUrl(asset.mux_playback_id, modalToken);
-    }
+    // These definitions are correct and should be the only ones for these constants.
+    const isMuxAsset = asset.mux_asset_id ? true : false;
+    const activeProcessingStates = ['preparing', 'processing'];
+    const isMuxProcessing = isMuxAsset && asset.mux_processing_status && activeProcessingStates.includes(asset.mux_processing_status);
+    const isMuxReady = isMuxAsset && asset.mux_processing_status === 'ready';
 
     return (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50">
-            <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50" role="dialog" aria-label="Asset Details" aria-modal="true">
-                <div className="fixed inset-0 w-full h-full sm:inset-[50%] sm:w-full sm:max-w-3xl sm:h-[90vh] sm:translate-x-[-50%] sm:translate-y-[-50%] bg-background rounded-none sm:rounded-lg shadow-lg flex flex-col">
-                    <div className="flex justify-between items-center p-4 border-b">
-                        <h2 className="text-xl font-semibold">{asset.name}</h2>
-                        <div className="flex items-center gap-2">
-                            {/* Only show download button for images, not videos */}
-                            {asset.media_type === 'image' && (
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={handleDownload}
-                                    aria-label="Download asset"
-                                >
-                                    <DownloadIcon />
-                                </Button>
-                            )}
-                            <Button
-                                variant="destructive"
-                                size="icon"
-                                onClick={handleDelete}
-                                aria-label="Delete asset"
-                                disabled={isDeleting}
-                            >
-                                {isDeleting ? (
-                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-t-transparent"></div>
-                                ) : (
-                                    <TrashIcon className="h-4 w-4" />
-                                )}
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={onClose}
-                                aria-label="Close asset details"
-                            >
-                                <CrossIcon />
-                            </Button>
-                        </div>
+        <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+            <DialogContent className="max-w-3xl p-0 min-h-[300px]">
+                <AssetModalHeader
+                    assetName={asset.name}
+                    isDeleting={isDeleting}
+                    onDelete={handleDelete}
+                    onDownload={handleDownload}
+                    onClose={onClose}
+                    hasMuxData={asset.mux_asset_id ? true : false}
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-0 max-h-[calc(100vh-120px)] md:max-h-[calc(100vh-70px-50px)]">
+                    {/* Left Column: Media Display */}
+                    <div className="md:col-span-1 bg-background flex items-center justify-center overflow-hidden md:max-h-[calc(100vh-120px)]">
+                        <AssetMediaDisplay
+                            asset={asset}
+                            isLoadingToken={isLoadingMuxTokens}
+                            isMuxReady={isMuxReady}
+                            isMuxProcessing={Boolean(isMuxProcessing)}
+                        />
                     </div>
 
-                    {/* Content */}
-                    <div className="flex-1 overflow-auto p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Media Display */}
-                            <div className="aspect-square relative rounded-lg overflow-hidden bg-muted">
-                                {isLoadingToken ? (
-                                    <div className="flex items-center justify-center h-full text-muted-foreground">Loading preview...</div>
-                                ) : isItem && asset.mux_playback_id && asset.item_timestamp != null ? (
-                                    // Display Item using MuxPlayer starting at the timestamp
-                                    <MuxPlayer
-                                        playbackId={asset.mux_playback_id}
-                                        title={asset.name}
-                                        aspectRatio={asset.mux_aspect_ratio || '1/1'}
-                                        startTime={asset.item_timestamp} // Start playback at the item timestamp
-                                        itemTimestamp={asset.item_timestamp} // Pass timestamp for initial thumbnail token
-                                    />
-                                ) : isVideo && asset.mux_playback_id && isMuxReady ? (
-                                    // Display Source Video using MuxPlayer
-                                    <MuxPlayer
-                                        playbackId={asset.mux_playback_id}
-                                        title={asset.name}
-                                        aspectRatio={asset.mux_aspect_ratio || '16/9'}
-                                        startTime={0} // Start source videos from the beginning
-                                    />
-                                ) : isVideo && isMuxProcessing ? (
-                                    <div className="flex items-center justify-center h-full text-muted-foreground">
-                                        <p>Video is processing...</p>
-                                    </div>
-                                ) : asset.media_type === 'image' ? (
-                                    // Display Regular Image
-                                    displayImageUrl ? (
-                                        <div className="relative w-full h-full">
-                                            <Image
-                                                key={displayImageUrl} // Use URL as key
-                                                src={displayImageUrl}
-                                                alt={asset.name}
-                                                fill
-                                                className="object-contain"
-                                                sizes="(max-width: 768px) 100vw, 50vw"
-                                                priority
-                                                onError={(e) => console.error(`Modal image error for ${asset.id}:`, e)}
-                                            />
-                                        </div>
-                                    ) : (
-                                        <div className="flex items-center justify-center h-full text-muted-foreground">Image Unavailable</div>
-                                    )
-                                ) : (
-                                    // Fallback for unexpected states
-                                    <div className="flex items-center justify-center h-full text-muted-foreground">
-                                        {isItem ? 'Item Media Unavailable' : 'Media Unavailable'}
-                                    </div>
-                                )}
-                            </div>
-                            {/* Details Column */}
-                            <div className="space-y-4">
-                                {/* Editable Name */}
-                                <div>
-                                    <Label htmlFor="asset-name" className="font-medium mb-1 block">Name</Label>
-                                    <Input
-                                        id="asset-name"
-                                        value={editableName}
-                                        onChange={(e) => setEditableName(e.target.value)}
-                                        placeholder="Item Name"
-                                    />
-                                </div>
+                    {/* Right Column: Details, Tags, Room */}
+                    <div className="md:col-span-1 p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto md:max-h-[calc(100vh-120px)]">
+                        <AssetDetailsForm
+                            asset={asset}
+                            onAssetUpdate={handleInternalAssetUpdate}
+                            onTimestampUpdate={handleTimestampUpdate}
+                        />
 
-                                {/* Editable Description */}
-                                <div>
-                                    <Label htmlFor="asset-description" className="font-medium mb-1 block">Description</Label>
-                                    <Textarea
-                                        id="asset-description"
-                                        value={editableDescription}
-                                        onChange={(e) => setEditableDescription(e.target.value)}
-                                        placeholder="Item description..."
-                                        rows={3}
-                                    />
-                                </div>
+                        <hr className="my-4" />
 
-                                {/* Editable Estimated Value */}
-                                <div>
-                                    <Label htmlFor="asset-value" className="font-medium mb-1 block">Estimated Value ($)</Label>
-                                    <Input
-                                        id="asset-value"
-                                        type="number"
-                                        value={editableValue}
-                                        onChange={(e) => setEditableValue(e.target.value)}
-                                        placeholder="e.g., 199.99"
-                                        min="0"
-                                        step="0.01"
-                                    />
-                                </div>
+                        <AssetRoomSelector
+                            asset={asset}
+                            availableRooms={availableRooms}
+                            onAssetUpdate={handleInternalAssetUpdate}
+                            fetchAndUpdateAssetState={fetchAndUpdateAssetState}
+                        />
 
-                                {/* Save Status Indicator */}
-                                <div className="h-4 text-sm">
-                                    {isSaving && <span className="text-muted-foreground italic">Saving...</span>}
-                                    {saveError && <span className="text-destructive">{saveError}</span>}
-                                    {saveSuccess && <span className="text-green-600">Saved!</span>}
-                                </div>
+                        <hr className="my-4" />
 
-                                {asset.description && (
-                                    <div>
-                                        <h3 className="font-medium mb-2">Description</h3>
-                                        <p className="text-muted-foreground whitespace-pre-line">{asset.description}</p>
-                                    </div>
-                                )}
-                                {asset.estimated_value && (
-                                    <div>
-                                        <h3 className="font-medium mb-2">Estimated Value</h3>
-                                        <p className="text-muted-foreground">{formatCurrency(asset.estimated_value)}</p>
-                                    </div>
-                                )}
-                                {/* Show Mux metadata if available */}
-                                {'mux_processing_status' in asset && asset.mux_processing_status && (
-                                    <div>
-                                        <h3 className="font-medium mb-2">Video Status</h3>
-                                        <p className="text-muted-foreground">
-                                            {asset.mux_processing_status === 'preparing'
-                                                ? 'Processing (please wait)'
-                                                : asset.mux_processing_status === 'ready'
-                                                    ? 'Ready'
-                                                    : 'Error'}
-                                        </p>
-                                    </div>
-                                )}
-                                {'mux_max_resolution' in asset && asset.mux_max_resolution && (
-                                    <div>
-                                        <h3 className="font-medium mb-2">Video Resolution</h3>
-                                        <p className="text-muted-foreground">
-                                            {asset.mux_max_resolution}
-                                        </p>
-                                    </div>
-                                )}
-                                {'mux_duration' in asset && asset.mux_duration && (
-                                    <div>
-                                        <h3 className="font-medium mb-2">Duration</h3>
-                                        <p className="text-muted-foreground">
-                                            {Math.floor(asset.mux_duration / 60)}m {Math.round(asset.mux_duration % 60)}s
-                                        </p>
-                                    </div>
-                                )}
-                                {/* Transcript Section */}
-                                {'transcript_processing_status' in asset && asset.transcript_processing_status && (
-                                    <div>
-                                        <h3 className="font-medium mb-2">Transcript Status</h3>
-                                        <p className="text-muted-foreground">
-                                            {asset.transcript_processing_status === 'pending'
-                                                ? 'Pending'
-                                                : asset.transcript_processing_status === 'processing'
-                                                    ? 'Processing (please wait)'
-                                                    : asset.transcript_processing_status === 'completed'
-                                                        ? 'Completed'
-                                                        : 'Error'}
-                                        </p>
-                                        {asset.transcript_error && (
-                                            <p className="text-red-500 text-sm mt-1">{asset.transcript_error}</p>
-                                        )}
-                                    </div>
-                                )}
-                                {/* Show transcript if available */}
-                                {'transcript_text' in asset && asset.transcript_text && (
-                                    <div>
-                                        <h3 className="font-medium mb-2">Transcript</h3>
-                                        <div className="max-h-60 overflow-y-auto bg-muted p-3 rounded-md">
-                                            <p className="text-muted-foreground whitespace-pre-line text-sm">
-                                                {asset.transcript_text}
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-                                <div>
-                                    <h3 className="font-medium mb-2">Added On</h3>
-                                    <p className="text-muted-foreground">
-                                        {new Date(asset.created_at).toLocaleDateString()}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                        <AssetTagsManager
+                            asset={asset}
+                            availableTags={availableTags}
+                            onAssetUpdate={handleInternalAssetUpdate}
+                        />
+
                     </div>
                 </div>
-            </div>
-        </div>
-    )
-} 
+            </DialogContent>
+        </Dialog>
+    );
+}

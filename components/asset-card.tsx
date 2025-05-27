@@ -13,7 +13,6 @@ type AssetCardProps = {
     isSelectionMode: boolean;
     thumbnailToken: string | null;
     hasError: boolean;
-    itemTimestamp?: number;
     onCardClick: (asset: AssetWithMuxData, event: React.MouseEvent) => void;
     onCheckboxChange: (assetId: string, event: React.ChangeEvent<HTMLInputElement>) => void;
     onRetryMedia: (assetId: string, event: React.MouseEvent) => void;
@@ -26,30 +25,40 @@ export function AssetCard({
     isSelectionMode,
     thumbnailToken,
     hasError,
-    itemTimestamp,
     onCardClick,
     onCheckboxChange,
     onRetryMedia,
     onImageError,
 }: AssetCardProps) {
     // Always show loading spinner for video assets until transcription finishes and items appear
-    const isProcessingVideo = asset.media_type === 'video';
-    const isItem = asset.media_type === 'item';
-    const isClickable = !isProcessingVideo;
+    const isVideoAsset = asset.media_type === 'video';
+    const isItemAsset = asset.media_type === 'item';
+    const isImageAsset = asset.media_type === 'image';
+
+    // Determine clickability:
+    // - Images are always clickable.
+    // - Items (derived from videos) are always clickable.
+    // - Videos are never clickable.
+    const isClickable = isImageAsset || isItemAsset;
+
+    // Determine if we should show a processing spinner:
+    // Show spinner if it's a video asset and its Mux status is not 'ready'.
+    // This includes 'preparing', 'processing', or if mux_asset_id is not yet available.
+    const showProcessingSpinner = isVideoAsset && asset.mux_processing_status !== 'ready';
 
     // Determine the image source URL dynamically
     let imageUrl = '';
     let imageKey = asset.id; // Use a base key, modify for items with timestamps
 
-    if (isItem && asset.mux_playback_id && itemTimestamp != null) {
+    if (isItemAsset && asset.mux_playback_id && asset.item_timestamp != null) {
         imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
         // Stable key: Based on asset ID and timestamp (if applicable)
-        imageKey = `${asset.id}-item-${itemTimestamp}`;
-    } else if (asset.media_type === 'video' && asset.mux_playback_id && asset.mux_processing_status === 'ready') {
+        imageKey = `${asset.id}-item-${asset.item_timestamp}`;
+    } else if (isVideoAsset && asset.mux_playback_id && asset.mux_processing_status === 'ready') {
         // We do not load thumbnails for video assets; isProcessingVideo covers all videos
         // imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
         // imageKey = `${asset.id}-video`;
-    } else if (asset.media_type === 'image') {
+    } else if (isImageAsset) {
         imageUrl = asset.media_url;
         // Stable key: Based on asset ID for images
         imageKey = `${asset.id}-image`;
@@ -86,7 +95,7 @@ export function AssetCard({
                 </div>
             )}
 
-            {isProcessingVideo ? (
+            {showProcessingSpinner ? (
                 <div className="w-full h-full flex items-center justify-center">
                     <div className="text-center">
                         <div className="h-10 w-10 mx-auto mb-2 flex items-center justify-center">
@@ -94,7 +103,7 @@ export function AssetCard({
                                 <SpinnerIcon />
                             </span>
                         </div>
-                        <p className="text-sm text-muted-foreground">Analyzing video (usually 10-30 seconds)...</p>
+                        <p className="text-sm text-muted-foreground">Uploading video...</p>
                     </div>
                 </div>
             ) : hasError ? (
@@ -107,6 +116,17 @@ export function AssetCard({
                         >
                             Retry
                         </button>
+                    </div>
+                </div>
+            ) : isVideoAsset ? (
+                <div className="w-full h-full flex items-center justify-center">
+                    <div className="text-center">
+                        <div className="h-10 w-10 mx-auto mb-2 flex items-center justify-center">
+                            <span className="animate-spin">
+                                <SpinnerIcon />
+                            </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">Analyzing video... (let him cook)</p>
                     </div>
                 </div>
             ) : imageUrl ? (
@@ -139,7 +159,7 @@ export function AssetCard({
                 )
             ) : (
                 <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-                    <p>{asset.media_type === 'video' ? 'Video Unavailable' : 'Image Unavailable'}</p>
+                    <p>Image Unavailable</p>
                 </div>
             )}
 
@@ -147,10 +167,29 @@ export function AssetCard({
                 <h3 className="text-white font-medium truncate text-sm sm:text-base">
                     {asset.name}
                 </h3>
-                {asset.estimated_value && (
+                {asset.estimated_value != null && (
                     <p className="text-white/90 text-xs sm:text-sm">
                         {formatCurrency(asset.estimated_value)}
                     </p>
+                )}
+                {asset.room && (
+                    <p className="text-white/80 text-xs truncate mt-0.5">
+                        Room: {asset.room.name}
+                    </p>
+                )}
+                {asset.tags && asset.tags.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                        {asset.tags.slice(0, 3).map(tag => ( // Show up to 3 tags
+                            <span key={tag.id} className="px-1.5 py-0.5 text-xs bg-white/20 text-white rounded-md">
+                                {tag.name}
+                            </span>
+                        ))}
+                        {asset.tags.length > 3 && (
+                            <span className="px-1.5 py-0.5 text-xs bg-white/20 text-white rounded-md">
+                                +{asset.tags.length - 3} more
+                            </span>
+                        )}
+                    </div>
                 )}
             </div>
 

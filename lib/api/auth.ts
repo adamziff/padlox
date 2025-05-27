@@ -50,8 +50,6 @@ export function withAuth<T extends (req: Request, ...rest: unknown[]) => Promise
         return unauthorizedResponse();
       }
 
-      console.log('Auth middleware: User authenticated', { id: user.id, email: user.email });
-
       // Add the user to the request context
       const extendedRequest = request as Request & { user: User };
       Object.defineProperty(extendedRequest, 'user', {

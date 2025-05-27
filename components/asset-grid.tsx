@@ -65,7 +65,6 @@ export function AssetGrid({
                         isSelected={isSelected}
                         isSelectionMode={isSelectionMode}
                         thumbnailToken={token}
-                        itemTimestamp={timestamp}
                         hasError={hasError}
                         onCardClick={onAssetClick}
                         onCheckboxChange={onCheckboxChange}

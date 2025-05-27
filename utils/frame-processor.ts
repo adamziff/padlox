@@ -115,17 +115,24 @@ async function analyzeFrameWithGemini(imageUrl: string) {
     const prompt = `Analyze this image of a room or space for a home inventory system.
       Identify household items and personal belongings that would be important for insurance purposes.
       
+      CRITICAL CONFIDENCE REQUIREMENT:
+      - ONLY include items you can clearly see and identify with HIGH CONFIDENCE.
+      - If the image is blurry, dark, out of focus, or unclear, DO NOT attempt to identify items.
+      - If you cannot clearly distinguish what an item is, DO NOT include it.
+      - It is better to return NO items than to include uncertain or guessed items.
+      - DO NOT MAKE UP OR GUESS what items might be present in unclear areas.
+      
       IMPORTANT EXCLUSIONS:
       - DO NOT include fixed features of the home itself (e.g., windows, doors, walls, ceilings, floors, built-in shelving).
       - DO NOT include everyday clothing or accessories being worn by people in the video (e.g., shirts, pants, common jewelry like a simple necklace or watch) unless they are clearly high-value designer items or explicitly highlighted as valuable.
       - Focus ONLY on movable contents and distinct, valuable personal property.
 
-      For each item detected that meets the criteria:
+      For each item you can CLEARLY identify with high confidence:
       1. Provide a specific and descriptive name (2-3 words minimum) that clearly distinguishes this item from similar items.
          - For example, use "Brown Leather Sofa" instead of just "Sofa".
          - For electronics, include brand if visible: "Apple MacBook Pro" instead of just "Laptop".
          - For artwork or decorative items, describe the style: "Abstract Canvas Painting" instead of just "Artwork".
-         - DO NOT MAKE UP OR GUESS DETAILS. ONLY USE WHAT YOU SEE IN THE IMAGE.
+         - DO NOT MAKE UP OR GUESS DETAILS. ONLY USE WHAT YOU CAN CLEARLY SEE IN THE IMAGE.
       
       2. Write a DETAILED TWO-SENTENCE description:
          - First sentence must cover physical attributes: size, color, material, distinctive features.
@@ -134,8 +141,9 @@ async function analyzeFrameWithGemini(imageUrl: string) {
       
       3. Provide an estimated value in USD as a number. IMPORTANT: You must provide a reasonable USD estimate for EVERY item (never return null).
       
-      Focus on accuracy and DETAIL. Your descriptions must be specific enough that identical items detected in different frames can be recognized as the same item.
-      Concentrate on items that would be valuable for insurance documentation.
+      Focus on accuracy over quantity. Only include items you can see clearly and identify with certainty.
+      Your descriptions must be specific enough that identical items detected in different frames can be recognized as the same item.
+      Concentrate on items that would be valuable for insurance documentation and that you can identify with HIGH CONFIDENCE.
       
       The image shows:`;
     

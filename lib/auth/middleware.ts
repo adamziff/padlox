@@ -9,6 +9,9 @@ import { createServerClient } from '@supabase/ssr'
  * @param request - The incoming request
  */
 export async function updateSession(request: NextRequest) {
+  const url = request.nextUrl.pathname
+  console.log(`[MIDDLEWARE] Processing request to: ${url}`)
+
   // Create a response object that we can modify
   const response = NextResponse.next({
     request: {
@@ -44,7 +47,11 @@ export async function updateSession(request: NextRequest) {
   )
 
   // Refresh the user's session if needed
-  await supabase.auth.getSession()
+  const { data: { user }, error } = await supabase.auth.getUser()
+  console.log(`[MIDDLEWARE] Session check for ${url}:`, {
+    hasUser: !!user,
+    error: error?.message
+  })
 
   return response
 }
