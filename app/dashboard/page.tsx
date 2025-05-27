@@ -133,7 +133,6 @@ const DEFAULT_TAG_NAMES = [
     "Art",
     "Decor",
     "Clothing",
-    "Documents",
     "Kitchenware",
     "Tools",
     "Sports Equipment",

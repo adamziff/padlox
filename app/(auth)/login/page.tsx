@@ -13,15 +13,15 @@ export default async function LoginPage() {
     const supabase = await createClient() // Await the async function
 
     const {
-        data: { session },
+        data: { user },
         error
-    } = await supabase.auth.getSession()
+    } = await supabase.auth.getUser()
 
-    console.log('[LOGIN] Session check:', { hasSession: !!session, hasUser: !!session?.user, error: error?.message })
+    console.log('[LOGIN] Session check:', { hasUser: !!user, error: error?.message })
 
     // If user is already logged in, redirect to dashboard
-    if (session) {
-        console.log('[LOGIN] Session found, redirecting to dashboard')
+    if (user) {
+        console.log('[LOGIN] User found, redirecting to dashboard')
         redirect('/dashboard')
     }
 

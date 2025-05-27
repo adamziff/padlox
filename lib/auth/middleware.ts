@@ -47,10 +47,9 @@ export async function updateSession(request: NextRequest) {
   )
 
   // Refresh the user's session if needed
-  const { data: { session }, error } = await supabase.auth.getSession()
+  const { data: { user }, error } = await supabase.auth.getUser()
   console.log(`[MIDDLEWARE] Session check for ${url}:`, {
-    hasSession: !!session,
-    hasUser: !!session?.user,
+    hasUser: !!user,
     error: error?.message
   })
 
