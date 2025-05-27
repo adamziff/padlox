@@ -12,11 +12,11 @@ export default function HowItWorksPage() {
                 </h1>
 
                 <div className="mb-8 p-4 bg-amber-50 border border-amber-300 rounded-md text-center">
-                  <p className="text-amber-700 font-semibold">Welcome to the Alpha release of Padlox!</p>
-                  <p className="text-amber-600 text-sm">
-                    We&rsquo;re excited for you to try it out. As an alpha product, some features might still be under development, 
-                    and you may encounter occasional bugs. Your feedback is invaluable!
-                  </p>
+                    <p className="text-amber-700 font-semibold">Welcome to the Alpha release of Padlox!</p>
+                    <p className="text-amber-600 text-sm">
+                        We&rsquo;re excited for you to try it out. Some features might still be under development,
+                        and you may encounter occasional bugs. Please reach out to us at <a href="mailto:adam@padlox.io" className="text-blue-500 hover:text-blue-600">adam@padlox.io</a> if you have any feedback or questions.
+                    </p>
                 </div>
 
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">

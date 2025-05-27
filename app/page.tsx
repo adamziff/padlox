@@ -78,7 +78,7 @@ const InsurerContent = () => (
                 <div className="grid gap-1 text-center md:text-left">
                   <h3 className="text-xl font-bold flex items-center justify-center md:justify-start"><CheckCircle className="mr-2 h-5 w-5 text-primary" />Expedite Claims</h3>
                   <p className="text-muted-foreground">
-                    Provide adjusters with comprehensive inventory reports and <a href="https://c2pa.org/" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">C2PA-signed media</a>, ensuring proof of video authenticity and speeding up the validation of legitimate claims.
+                    Provide adjusters with comprehensive inventory reports and <a href="https://c2pa.org/" target="_blank" rel="noopener noreferrer" className="underline hover:text-primary">C2PA-signed media</a> (coming soon), ensuring proof of video authenticity and speeding up the validation of legitimate claims.
                   </p>
                 </div>
               </li>
@@ -160,7 +160,7 @@ const InsurerContent = () => (
               <MicIcon className="h-6 w-6" />
             </div>
             <h3 className="mb-1 font-semibold">2. Narrate Details</h3>
-            <p className="text-sm text-muted-foreground">AI analysis finds and saves items based on video and audio analysis. Clear narration is still recommended for optimal results and context.</p>
+            <p className="text-sm text-muted-foreground">AI analysis finds and saves items based on video and audio analysis. Clear narration is recommended for optimal results and context.</p>
           </div>
           <div className="flex flex-col items-center text-center p-4">
             <div className="mb-4 rounded-full bg-primary p-3 text-primary-foreground">
@@ -314,14 +314,14 @@ const PolicyholderContent = ({ isLoggedIn }: { isLoggedIn: boolean }) => (
               <ArrowRight className="mt-1 h-6 w-6 flex-shrink-0 text-primary" />
               <div>
                 <h3 className="font-semibold">Simple Video Walkthrough</h3>
-                <p className="text-sm text-muted-foreground">Just record a video of your rooms, describing items as you go. Padlox analyzes both video and audio to automatically build a list of your items. Providing context by narrating is helpful.</p>
+                <p className="text-sm text-muted-foreground">Just record a video of your rooms, describing items as you go. Padlox analyzes both video and audio to automatically build a list of your items.</p>
               </div>
             </li>
             <li className="flex items-start gap-3">
               <MicIcon className="mt-1 h-6 w-6 flex-shrink-0 text-primary" />
               <div>
                 <h3 className="font-semibold">AI Item Recognition & Transcription</h3>
-                <p className="text-sm text-muted-foreground">Padlox automatically saves details from your video and narration (like brand, value, serial numbers), no typing required. Clear speaking is important for accuracy.</p>
+                <p className="text-sm text-muted-foreground">Padlox automatically saves details from your video and narration (like brand, value, serial numbers), no typing required.</p>
               </div>
             </li>
             <li className="flex items-start gap-3">
