@@ -31,6 +31,7 @@ interface AssetModalProps {
     fetchAndUpdateAssetState?: (assetId: string) => Promise<void>;
     availableRooms: Room[];
     availableTags: Tag[];
+    onThumbnailRegenerate?: (assetId: string, newTimestamp: number) => void; // Callback to regenerate thumbnails
 }
 
 export function AssetModal({
@@ -41,7 +42,8 @@ export function AssetModal({
     onAssetUpdated,
     fetchAndUpdateAssetState,
     availableRooms,
-    availableTags
+    availableTags,
+    onThumbnailRegenerate
 }: AssetModalProps) {
     const [asset, setAsset] = useState<AssetWithMuxData | null>(initialAsset);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -50,6 +52,7 @@ export function AssetModal({
 
     useEffect(() => {
         setAsset(initialAsset);
+        setCurrentTimestamp(initialAsset?.item_timestamp ?? null);
         if (initialAsset) {
             setMuxPlaybackToken(null);
         } else {
@@ -57,36 +60,72 @@ export function AssetModal({
         }
     }, [initialAsset]);
 
+    // Track the current timestamp to detect changes
+    const [currentTimestamp, setCurrentTimestamp] = useState<number | null>(
+        initialAsset?.item_timestamp ?? null
+    );
+
     useEffect(() => {
-        if (isOpen && asset && asset.mux_playback_id && !muxPlaybackToken && !isLoadingMuxTokens) {
-            setIsLoadingMuxTokens(true);
-            fetch(`/api/mux/token?playbackId=${asset.mux_playback_id}${asset.item_timestamp ? `&time=${asset.item_timestamp}` : ''}`)
-                .then(res => {
-                    if (!res.ok) throw new Error('Failed to fetch Mux tokens');
-                    return res.json();
-                })
-                .then(data => {
-                    if (data.tokens) {
-                        setMuxPlaybackToken(data.tokens.playback);
-                    } else if (data.token) {
-                        setMuxPlaybackToken(data.token);
-                    }
-                    if (!data.tokens && !data.token) {
-                        throw new Error('No tokens returned from API');
-                    }
-                })
-                .catch(err => {
-                    console.error("Error fetching Mux tokens:", err);
-                    toast.error("Could not load video details: " + (err.message || ''));
-                })
-                .finally(() => setIsLoadingMuxTokens(false));
+        if (isOpen && asset && asset.mux_playback_id && !isLoadingMuxTokens) {
+            // Check if we need to fetch a new token
+            const needsNewToken = !muxPlaybackToken ||
+                (asset.media_type === 'item' && asset.item_timestamp !== currentTimestamp);
+
+            if (needsNewToken) {
+                setIsLoadingMuxTokens(true);
+                setCurrentTimestamp(asset.item_timestamp ?? null);
+
+                fetch(`/api/mux/token?playbackId=${asset.mux_playback_id}${asset.item_timestamp ? `&time=${asset.item_timestamp}` : ''}&_=${Date.now()}`)
+                    .then(res => {
+                        if (!res.ok) throw new Error('Failed to fetch Mux tokens');
+                        return res.json();
+                    })
+                    .then(data => {
+                        if (data.tokens) {
+                            setMuxPlaybackToken(data.tokens.playback);
+                        } else if (data.token) {
+                            setMuxPlaybackToken(data.token);
+                        }
+                        if (!data.tokens && !data.token) {
+                            throw new Error('No tokens returned from API');
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error fetching Mux tokens:", err);
+                        toast.error("Could not load video details: " + (err.message || ''));
+                    })
+                    .finally(() => setIsLoadingMuxTokens(false));
+            }
         }
-    }, [isOpen, asset, muxPlaybackToken, isLoadingMuxTokens]);
+    }, [isOpen, asset, asset?.item_timestamp, muxPlaybackToken, isLoadingMuxTokens, currentTimestamp]);
 
     const handleInternalAssetUpdate = useCallback((updatedAsset: AssetWithMuxData) => {
         setAsset(updatedAsset);
         onAssetUpdated(updatedAsset);
     }, [onAssetUpdated]);
+
+    const handleTimestampUpdate = useCallback(async (newTimestamp: number) => {
+        if (!asset || asset.media_type !== 'item' || !asset.mux_playback_id) return;
+
+        try {
+            // Clear current token to force regeneration with new timestamp
+            setMuxPlaybackToken(null);
+            setCurrentTimestamp(newTimestamp);
+
+            // Notify parent component to regenerate thumbnails in the asset grid
+            if (onThumbnailRegenerate) {
+                onThumbnailRegenerate(asset.id, newTimestamp);
+            }
+
+            toast.success('Preview timestamp updated successfully!');
+
+            // The useEffect will handle fetching the new token automatically
+            // when it detects the timestamp change
+        } catch (error) {
+            console.error('Error updating timestamp:', error);
+            toast.error('Failed to update preview timestamp');
+        }
+    }, [asset, onThumbnailRegenerate]);
 
     const handleDelete = async () => {
         if (!asset) return;
@@ -202,6 +241,7 @@ export function AssetModal({
                         <AssetDetailsForm
                             asset={asset}
                             onAssetUpdate={handleInternalAssetUpdate}
+                            onTimestampUpdate={handleTimestampUpdate}
                         />
 
                         <hr className="my-4" />

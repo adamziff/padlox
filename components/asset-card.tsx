@@ -13,7 +13,6 @@ type AssetCardProps = {
     isSelectionMode: boolean;
     thumbnailToken: string | null;
     hasError: boolean;
-    itemTimestamp?: number;
     onCardClick: (asset: AssetWithMuxData, event: React.MouseEvent) => void;
     onCheckboxChange: (assetId: string, event: React.ChangeEvent<HTMLInputElement>) => void;
     onRetryMedia: (assetId: string, event: React.MouseEvent) => void;
@@ -26,7 +25,6 @@ export function AssetCard({
     isSelectionMode,
     thumbnailToken,
     hasError,
-    itemTimestamp,
     onCardClick,
     onCheckboxChange,
     onRetryMedia,
@@ -52,10 +50,10 @@ export function AssetCard({
     let imageUrl = '';
     let imageKey = asset.id; // Use a base key, modify for items with timestamps
 
-    if (isItemAsset && asset.mux_playback_id && itemTimestamp != null) {
+    if (isItemAsset && asset.mux_playback_id && asset.item_timestamp != null) {
         imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);
         // Stable key: Based on asset ID and timestamp (if applicable)
-        imageKey = `${asset.id}-item-${itemTimestamp}`;
+        imageKey = `${asset.id}-item-${asset.item_timestamp}`;
     } else if (isVideoAsset && asset.mux_playback_id && asset.mux_processing_status === 'ready') {
         // We do not load thumbnails for video assets; isProcessingVideo covers all videos
         // imageUrl = getMuxThumbnailUrl(asset.mux_playback_id, thumbnailToken);

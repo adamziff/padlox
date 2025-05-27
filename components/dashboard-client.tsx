@@ -90,7 +90,8 @@ export function DashboardClient({
         handleAssetDeletedFromModal,
         processClientSideAssetUpdate,
         fetchAndUpdateAssetState,
-        getSelectedAssetsTagStatus
+        getSelectedAssetsTagStatus,
+        setThumbnailTokens
     } = useDashboardLogic({
         initialAssets,
         user,
@@ -335,6 +336,38 @@ export function DashboardClient({
             </div>
         );
     }
+
+    // Handle thumbnail regeneration when timestamp is updated
+    const handleThumbnailRegenerate = useCallback(async (assetId: string, newTimestamp: number) => {
+        const asset = assets.find(a => a.id === assetId);
+        if (!asset || asset.media_type !== 'item' || !asset.mux_playback_id) return;
+
+        try {
+            // Generate new thumbnail token with updated timestamp
+            const tokenKey = `${asset.mux_playback_id}-${newTimestamp}`;
+            const newToken = await fetchThumbnailToken(asset.mux_playback_id, newTimestamp);
+
+            if (newToken) {
+                // Force update the thumbnail tokens to trigger re-render in AssetCard
+                setThumbnailTokens((prev: Record<string, string>) => ({
+                    ...prev,
+                    [tokenKey]: newToken
+                }));
+
+                // Also clear any old token for this asset to ensure fresh fetch
+                const oldTokenKey = asset.item_timestamp !== null ? `${asset.mux_playback_id}-${asset.item_timestamp}` : asset.mux_playback_id;
+                if (oldTokenKey !== tokenKey) {
+                    setThumbnailTokens((prev: Record<string, string>) => {
+                        const newTokens = { ...prev };
+                        delete newTokens[oldTokenKey];
+                        return newTokens;
+                    });
+                }
+            }
+        } catch (error) {
+            console.error('Error regenerating thumbnail:', error);
+        }
+    }, [assets, fetchThumbnailToken, setThumbnailTokens]);
 
     return (
         <div className="min-h-screen flex flex-col">
@@ -648,6 +681,7 @@ export function DashboardClient({
                         fetchAndUpdateAssetState={fetchAndUpdateAssetState} // Pass down for explicit refresh
                         availableTags={userTags}
                         availableRooms={userRooms}
+                        onThumbnailRegenerate={handleThumbnailRegenerate}
                     />
                 )}
 

@@ -1163,6 +1163,6 @@ export function useDashboardLogic({
         getSelectedAssetsTagStatus,
 
         // Setters (usually not needed, but maybe for specific cases like closing modal)
-        // setSelectedAsset, // Example
+        setThumbnailTokens, // Expose for thumbnail regeneration
     };
 } 
