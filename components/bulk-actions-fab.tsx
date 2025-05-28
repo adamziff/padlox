@@ -8,54 +8,31 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
     DropdownMenuSeparator,
-    DropdownMenuSub,
-    DropdownMenuSubContent,
-    DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
     Trash2,
     Tag,
     Home,
     MoreVertical,
-    Minus,
     X
 } from 'lucide-react';
-import { BulkTagSelector } from '@/components/bulk-tag-selector';
-
-interface Tag {
-    id: string;
-    name: string;
-}
-
-interface Room {
-    id: string;
-    name: string;
-}
 
 interface BulkActionsFabProps {
     selectedCount: number;
     isDeleting: boolean;
-    availableTags: Tag[];
-    availableRooms: Room[];
     onBulkDelete: () => void;
-    onBulkToggleTag: (tagId: string) => void;
-    getTagStatus: (tagId: string) => 'all' | 'some' | 'none';
-    onBulkAssignRoom: (roomId: string) => void;
-    onBulkRemoveRoom: () => void;
     onCancelSelection: () => void;
+    onOpenBulkTagModal: () => void;
+    onOpenBulkRoomModal: () => void;
 }
 
 export function BulkActionsFab({
     selectedCount,
     isDeleting,
-    availableTags,
-    availableRooms,
     onBulkDelete,
-    onBulkToggleTag,
-    getTagStatus,
-    onBulkAssignRoom,
-    onBulkRemoveRoom,
     onCancelSelection,
+    onOpenBulkTagModal,
+    onOpenBulkRoomModal,
 }: BulkActionsFabProps) {
     const [isOpen, setIsOpen] = useState(false);
 
@@ -112,75 +89,28 @@ export function BulkActionsFab({
                             avoidCollisions={true}
                             collisionPadding={16}
                         >
-                            {/* Tag multiselect */}
-                            <DropdownMenuSub>
-                                <DropdownMenuSubTrigger>
-                                    <Tag className="mr-2 h-4 w-4" />
-                                    <span>Manage Tags</span>
-                                </DropdownMenuSubTrigger>
-                                <DropdownMenuSubContent
-                                    className="w-72 p-0"
-                                    sideOffset={4}
-                                    alignOffset={0}
-                                    avoidCollisions={true}
-                                    collisionPadding={8}
-                                >
-                                    <div className="p-2 border-b">
-                                        <h4 className="font-medium text-xs">Manage Tags</h4>
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                            Tap to add/remove tags
-                                        </p>
-                                    </div>
-                                    <BulkTagSelector
-                                        availableTags={availableTags}
-                                        getTagStatus={getTagStatus}
-                                        onToggleTag={(tagId) => {
-                                            onBulkToggleTag(tagId);
-                                            setIsOpen(false);
-                                        }}
-                                        disabled={false}
-                                    />
-                                </DropdownMenuSubContent>
-                            </DropdownMenuSub>
-
-                            <DropdownMenuSeparator />
-
-                            {/* Room actions */}
-                            <DropdownMenuSub>
-                                <DropdownMenuSubTrigger>
-                                    <Home className="mr-2 h-4 w-4" />
-                                    <span>Assign Room</span>
-                                </DropdownMenuSubTrigger>
-                                <DropdownMenuSubContent
-                                    className="w-36 max-w-36"
-                                    sideOffset={4}
-                                    alignOffset={0}
-                                    avoidCollisions={true}
-                                    collisionPadding={8}
-                                >
-                                    {availableRooms.map((room) => (
-                                        <DropdownMenuItem
-                                            key={room.id}
-                                            onClick={() => {
-                                                onBulkAssignRoom(room.id);
-                                                setIsOpen(false);
-                                            }}
-                                        >
-                                            <Home className="mr-2 h-3 w-3" />
-                                            {room.name}
-                                        </DropdownMenuItem>
-                                    ))}
-                                </DropdownMenuSubContent>
-                            </DropdownMenuSub>
-
+                            {/* Tag management */}
                             <DropdownMenuItem
                                 onClick={() => {
-                                    onBulkRemoveRoom();
+                                    onOpenBulkTagModal();
                                     setIsOpen(false);
                                 }}
                             >
-                                <Minus className="mr-2 h-4 w-4" />
-                                Remove from Room
+                                <Tag className="mr-2 h-4 w-4" />
+                                Manage Tags
+                            </DropdownMenuItem>
+
+                            <DropdownMenuSeparator />
+
+                            {/* Room management */}
+                            <DropdownMenuItem
+                                onClick={() => {
+                                    onOpenBulkRoomModal();
+                                    setIsOpen(false);
+                                }}
+                            >
+                                <Home className="mr-2 h-4 w-4" />
+                                Manage Room
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>

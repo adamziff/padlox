@@ -29,6 +29,8 @@ import { Label } from "@/components/ui/label"; // Added Label
 import { ManageTagsDialog } from './manage-tags-dialog'; // Added
 import { ManageRoomsDialog } from './manage-rooms-dialog'; // Added
 import { BulkActionsFab } from './bulk-actions-fab'; // Added
+import { BulkTagManagementModal } from './bulk-tag-management-modal'; // Added
+import { BulkRoomManagementModal } from './bulk-room-management-modal'; // Added
 
 // Basic types for Tag and Room - ideally these would come from a shared types file
 interface Tag {
@@ -71,9 +73,6 @@ export function DashboardClient({
         handleCapture,
         handleSave,
         handleBulkDelete,
-        handleBulkToggleTag,
-        handleBulkAssignRoom,
-        handleBulkRemoveRoom,
         handleAssetClick,
         handleMediaError,
         handleRetryMedia,
@@ -122,6 +121,10 @@ export function DashboardClient({
     // State for management dialogs
     const [isManageTagsDialogOpen, setIsManageTagsDialogOpen] = useState(false);
     const [isManageRoomsDialogOpen, setIsManageRoomsDialogOpen] = useState(false);
+
+    // State for bulk management modals
+    const [isBulkTagModalOpen, setIsBulkTagModalOpen] = useState(false);
+    const [isBulkRoomModalOpen, setIsBulkRoomModalOpen] = useState(false);
 
     // State for mobile filter toggle
     const [showFilters, setShowFilters] = useState(false);
@@ -378,17 +381,13 @@ export function DashboardClient({
                     isSelectionMode={isSelectionMode}
                     selectedCount={selectedAssets.size}
                     isDeleting={isDeleting}
-                    availableTags={userTags}
-                    availableRooms={userRooms}
                     onToggleSelectionMode={handleToggleSelectionMode}
                     onBulkDelete={handleBulkDelete}
-                    onBulkToggleTag={handleBulkToggleTag}
-                    getTagStatus={(tagId: string) => getSelectedAssetsTagStatus().get(tagId) || 'none'}
-                    onBulkAssignRoom={handleBulkAssignRoom}
-                    onBulkRemoveRoom={handleBulkRemoveRoom}
                     onAddNewAsset={handleAddNewAsset}
                     searchTerm={searchTerm}
                     onSearchChange={setSearchTerm}
+                    onOpenBulkTagModal={() => setIsBulkTagModalOpen(true)}
+                    onOpenBulkRoomModal={() => setIsBulkRoomModalOpen(true)}
                 />
 
                 {/* Filter UI Elements */}
@@ -690,14 +689,10 @@ export function DashboardClient({
                 <BulkActionsFab
                     selectedCount={selectedAssets.size}
                     isDeleting={isDeleting}
-                    availableTags={userTags}
-                    availableRooms={userRooms}
                     onBulkDelete={handleBulkDelete}
-                    onBulkToggleTag={handleBulkToggleTag}
-                    getTagStatus={(tagId: string) => getSelectedAssetsTagStatus().get(tagId) || 'none'}
-                    onBulkAssignRoom={handleBulkAssignRoom}
-                    onBulkRemoveRoom={handleBulkRemoveRoom}
                     onCancelSelection={handleToggleSelectionMode}
+                    onOpenBulkTagModal={() => setIsBulkTagModalOpen(true)}
+                    onOpenBulkRoomModal={() => setIsBulkRoomModalOpen(true)}
                 />
 
                 <ManageTagsDialog
@@ -714,6 +709,31 @@ export function DashboardClient({
                     rooms={userRooms}
                     onRoomUpdated={handleRoomUpdated}
                     onRoomDeleted={handleRoomDeleted}
+                />
+
+                <BulkTagManagementModal
+                    isOpen={isBulkTagModalOpen}
+                    onOpenChange={setIsBulkTagModalOpen}
+                    availableTags={userTags}
+                    selectedAssetIds={Array.from(selectedAssets)}
+                    getTagStatus={(tagId: string) => getSelectedAssetsTagStatus().get(tagId) || 'none'}
+                    onComplete={() => {
+                        // The real-time subscription will handle updating the UI
+                        // No need for manual state updates
+                    }}
+                    disabled={isDeleting}
+                />
+
+                <BulkRoomManagementModal
+                    isOpen={isBulkRoomModalOpen}
+                    onOpenChange={setIsBulkRoomModalOpen}
+                    availableRooms={userRooms}
+                    selectedAssetIds={Array.from(selectedAssets)}
+                    onComplete={() => {
+                        // The real-time subscription will handle updating the UI
+                        // No need for manual state updates
+                    }}
+                    disabled={isDeleting}
                 />
 
             </div>

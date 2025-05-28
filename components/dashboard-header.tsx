@@ -1,44 +1,22 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Plus, ListFilter, Tag, Home, Minus } from 'lucide-react';
+import { Plus, ListFilter, Tag, Home } from 'lucide-react';
 import React from 'react';
 import { Input } from "@/components/ui/input";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-    DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
-import { BulkTagSelector } from '@/components/bulk-tag-selector';
-
-interface Tag {
-    id: string;
-    name: string;
-}
-
-interface Room {
-    id: string;
-    name: string;
-}
 
 interface DashboardHeaderProps {
     hasAssets: boolean;
     isSelectionMode: boolean;
     selectedCount: number;
     isDeleting: boolean;
-    availableTags: Tag[];
-    availableRooms: Room[];
     onToggleSelectionMode: () => void;
     onBulkDelete: () => void;
-    onBulkToggleTag: (tagId: string) => void;
-    getTagStatus: (tagId: string) => 'all' | 'some' | 'none';
-    onBulkAssignRoom: (roomId: string) => void;
-    onBulkRemoveRoom: () => void;
     onAddNewAsset: () => void;
     searchTerm: string;
     onSearchChange: (value: string) => void;
+    onOpenBulkTagModal: () => void;
+    onOpenBulkRoomModal: () => void;
 }
 
 export function DashboardHeader({
@@ -46,17 +24,13 @@ export function DashboardHeader({
     isSelectionMode,
     selectedCount,
     isDeleting,
-    availableTags,
-    availableRooms,
     onToggleSelectionMode,
     onBulkDelete,
-    onBulkToggleTag,
-    getTagStatus,
-    onBulkAssignRoom,
-    onBulkRemoveRoom,
     onAddNewAsset,
     searchTerm,
-    onSearchChange
+    onSearchChange,
+    onOpenBulkTagModal,
+    onOpenBulkRoomModal
 }: DashboardHeaderProps) {
     return (
         <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -90,56 +64,27 @@ export function DashboardHeader({
                                     {isDeleting ? "Deleting..." : `Delete (${selectedCount})`}
                                 </Button>
 
-                                {/* Tag multiselect dropdown */}
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm" disabled={selectedCount === 0}>
-                                            <Tag className="mr-2 h-4 w-4" />
-                                            Tags
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-80 p-0">
-                                        <div className="p-3 border-b">
-                                            <h4 className="font-medium text-sm">Manage Tags</h4>
-                                            <p className="text-xs text-muted-foreground mt-1">
-                                                Click tags to add/remove. Highlighted = all selected assets have this tag.
-                                                Partial = some selected assets have this tag.
-                                            </p>
-                                        </div>
-                                        <BulkTagSelector
-                                            availableTags={availableTags}
-                                            getTagStatus={getTagStatus}
-                                            onToggleTag={onBulkToggleTag}
-                                            disabled={false}
-                                        />
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
+                                {/* Tag management button */}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={selectedCount === 0}
+                                    onClick={onOpenBulkTagModal}
+                                >
+                                    <Tag className="mr-2 h-4 w-4" />
+                                    Tags
+                                </Button>
 
-                                {/* Room actions dropdown */}
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm" disabled={selectedCount === 0}>
-                                            <Home className="mr-2 h-4 w-4" />
-                                            Room
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" className="w-48">
-                                        {availableRooms.map((room) => (
-                                            <DropdownMenuItem
-                                                key={room.id}
-                                                onClick={() => onBulkAssignRoom(room.id)}
-                                            >
-                                                <Home className="mr-2 h-4 w-4" />
-                                                {room.name}
-                                            </DropdownMenuItem>
-                                        ))}
-                                        <DropdownMenuSeparator />
-                                        <DropdownMenuItem onClick={onBulkRemoveRoom}>
-                                            <Minus className="mr-2 h-4 w-4" />
-                                            Remove from Room
-                                        </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
+                                {/* Room management button */}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={selectedCount === 0}
+                                    onClick={onOpenBulkRoomModal}
+                                >
+                                    <Home className="mr-2 h-4 w-4" />
+                                    Room
+                                </Button>
 
                                 <Button
                                     variant="outline"
