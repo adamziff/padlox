@@ -228,6 +228,11 @@ EXAMPLE OUTPUT (NOTICE EVERY ITEM HAS A ROOM):
   ]
 }
 
+THOROUGH DEDUPLICATION:
+- There ARE items in the scratch_items table that are at different timestamps and have slightly different names and descriptions but are the same item. You MUST merge them into one item. Be aggressive about merging items with similar timestamps.
+- You should not return two of the same item unless the user clearly mentions two of the same item in the transcript.
+- DO NOT RETURN DUPLICATE ITEMS.
+
 STEP-BY-STEP PROCESS:
 1. Read transcript carefully for room mentions and timestamps
 2. Filter out food and non-inventory items

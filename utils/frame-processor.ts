@@ -115,16 +115,21 @@ async function analyzeFrameWithGemini(imageUrl: string) {
     const prompt = `Analyze this image of a room or space for a home inventory system.
       Identify household items and personal belongings that would be important for insurance purposes.
       
+      HOME INVENTORY FOCUS: ONLY include items valuable for insurance claims:
+      INCLUDE: Electronics, furniture, appliances, art, jewelry, tools, sporting goods, musical instruments, collectibles, clothing (expensive), books (valuable collections), home decor, beds, etc.
+      EXCLUDE: Food, consumables, office supplies, toiletries, cleaning products, plants, temporary items
+      
       CRITICAL CONFIDENCE REQUIREMENT:
       - ONLY include items you can clearly see and identify with HIGH CONFIDENCE.
       - If the image is blurry, dark, out of focus, or unclear, DO NOT attempt to identify items.
       - If you cannot clearly distinguish what an item is, DO NOT include it.
-      - It is better to return NO items than to include uncertain or guessed items.
       - DO NOT MAKE UP OR GUESS what items might be present in unclear areas.
       
       IMPORTANT EXCLUSIONS:
       - DO NOT include fixed features of the home itself (e.g., windows, doors, walls, ceilings, floors, built-in shelving).
-      - DO NOT include everyday clothing or accessories being worn by people in the video (e.g., shirts, pants, common jewelry like a simple necklace or watch) unless they are clearly high-value designer items or explicitly highlighted as valuable.
+      - DO NOT include everyday clothing or accessories being worn by people in the video (e.g., shirts, pants, shoes, etc.)
+      - Only include jewelry if it is not being worn by a person and it is clearly the focus of the image.
+      - DO NOT include food, snacks, drinks, or consumable items.
       - Focus ONLY on movable contents and distinct, valuable personal property.
 
       For each item you can CLEARLY identify with high confidence:
