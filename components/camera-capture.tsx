@@ -37,6 +37,9 @@ export function CameraCapture({
     const canvasRef = useRef<HTMLCanvasElement>(null) // Stays as RefObject<HTMLCanvasElement | null>
     const fileInputRef = useRef<HTMLInputElement>(null)
 
+    // Track if we should close immediately on mobile when stopping recording
+    const shouldCloseImmediatelyRef = useRef(false)
+
     // --- Hooks --- 
     const { resolvedTheme } = useTheme()
     const isDarkMode = resolvedTheme === 'dark'
@@ -65,9 +68,14 @@ export function CameraCapture({
         streamingUpload: mode === 'video',
         realTimeAnalysis: mode === 'video' && realTimeAnalysis, // Only enable real-time analysis for video mode
         onStreamComplete: () => {
-            // Video streaming complete: simply close
-            console.log("CameraCapture: video stream complete, closing capture UI");
-            onClose();
+            // Video streaming complete: only close if we haven't already closed immediately
+            console.log("CameraCapture: video stream complete");
+            if (!shouldCloseImmediatelyRef.current) {
+                console.log("CameraCapture: closing capture UI after stream completion");
+                onClose();
+            } else {
+                console.log("CameraCapture: stream complete but UI already closed immediately");
+            }
         }
     });
 
@@ -81,11 +89,13 @@ export function CameraCapture({
         }
         setMode(newMode);
         setCountdown(null); // Reset countdown when switching modes
+        shouldCloseImmediatelyRef.current = false; // Reset immediate close flag
     }, [recorderStatus, stopRecording]); // Dependency on hook state/functions
 
     // Close and trigger cleanup (via hook's unmount)
     const handleClose = useCallback(() => {
         console.log("CameraCapture: handleClose called");
+        shouldCloseImmediatelyRef.current = false; // Reset flag
         // The hook's useEffect cleanup handles stopping streams/recorder
         onClose(); // Simply call the parent's close handler
     }, [onClose]);
@@ -95,6 +105,7 @@ export function CameraCapture({
         setFacingMode(prev => (prev === 'environment' ? 'user' : 'environment'));
         // The useCameraCore hook useEffect will trigger re-initialization
         setCountdown(null); // Reset countdown on flip
+        shouldCloseImmediatelyRef.current = false; // Reset immediate close flag
     }, []);
 
     // Setup photo capture (with optional timer)
@@ -111,11 +122,20 @@ export function CameraCapture({
     // Start/Stop video recording
     const handleVideoCapture = useCallback(() => {
         if (recorderStatus === 'recording') {
-            stopRecording();
+            // Close the UI immediately when stopping recording (both mobile and desktop)
+            if (mode === 'video') {
+                console.log("CameraCapture: Video stop - closing UI immediately while background upload continues");
+                shouldCloseImmediatelyRef.current = true;
+                stopRecording(); // This will continue the background upload
+                onClose(); // Close UI immediately
+            } else {
+                stopRecording();
+            }
         } else if (recorderStatus === 'idle') {
+            shouldCloseImmediatelyRef.current = false; // Reset flag when starting
             startRecording();
         }
-    }, [recorderStatus, startRecording, stopRecording]); // Dependencies on hook state/functions
+    }, [recorderStatus, startRecording, stopRecording, mode, onClose]); // Dependencies on hook state/functions
 
     // Handle file upload initiated by the user
     const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
