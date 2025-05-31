@@ -150,7 +150,12 @@ export async function POST(req: NextRequest) {
 
 function createMergePrompt(
   transcript: unknown, 
-  scratchItems: any[], 
+  scratchItems: Array<{
+    name: string;
+    description?: string;
+    video_timestamp?: number;
+    estimated_value?: number;
+  }>, 
   availableTagNames: string[], 
   availableRoomNames: string[]
 ): string {
@@ -244,10 +249,10 @@ CRITICAL: Every item in your response MUST have a "room_name" field with a value
 }
 
 async function linkTagsAndRooms(
-  serviceClient: any,
+  serviceClient: ReturnType<typeof createServiceSupabaseClient>,
   user_id: string,
-  insertedItems: any[],
-  analyzedItems: any[]
+  insertedItems: Array<{ id: string; name: string; estimated_value: number }>,
+  analyzedItems: Array<{ tag_names?: string[]; room_name: string }>
 ) {
   for (let i = 0; i < insertedItems.length; i++) {
     const dbItem = insertedItems[i];
@@ -288,7 +293,7 @@ async function linkTagsAndRooms(
     }
 
     // Handle room assignment with fallbacks
-    let roomNameToUse = aiItem.room_name;
+    const roomNameToUse = aiItem.room_name;
 
     if (roomNameToUse) {
       logger.info(`Looking for room: ${roomNameToUse}`);
