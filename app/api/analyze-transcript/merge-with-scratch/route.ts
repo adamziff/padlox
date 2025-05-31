@@ -17,7 +17,7 @@ const ItemSchema = z.object({
   estimated_value: z.number().positive(),
   timestamp: z.number().min(0),
   tag_names: z.array(z.string()).optional(),
-  room_name: z.string().optional(),
+  room_name: z.string().min(1),
 });
 
 const OutputSchema = z.object({
@@ -165,7 +165,7 @@ function createMergePrompt(
     estimated_value: Number(item.estimated_value) || 0
   }));
 
-  return `You are creating a home inventory for insurance purposes. Your goal is to identify and consolidate high-value items like furniture, electronics, art, jewelry, etc. that are essential for insurance claims.
+  return `You are creating a home inventory for insurance purposes. Your goal is to identify and consolidate high-value items like furniture, electronics, art, jewelry, appliances, etc. that are essential for insurance claims.
 
 TRANSCRIPT: ${transcriptText}
 
@@ -177,45 +177,65 @@ ${formattedScratchItems.map(item =>
 AVAILABLE TAGS (ONLY USE THESE): ${availableTagNames.join(', ') || 'None'}
 AVAILABLE ROOMS: ${availableRoomNames.join(', ') || 'None'}
 
-CONSOLIDATION RULES:
-1. **AGGRESSIVE DEDUPLICATION**: Multiple detections of the same item at close timestamps (within 10 seconds) must be merged into ONE entry
-2. **INCLUSIVE APPROACH**: Include most legitimate home inventory items worth $50+ - err on the side of inclusion rather than exclusion
-3. **CLEAR NAMING**: Use specific, descriptive names (e.g., "Apple MacBook Pro" not "Laptop")
-4. **SMART MERGING**: Items like "Mini MIDI Keyboard", "Akai MPK Mini", "Small MIDI Keyboard" are the SAME item
-5. **VALUE PRIORITY**: Use transcript values first, then best scratch item value, then estimate intelligently
-6. **TAG RESTRICTION**: ONLY use tags from the "AVAILABLE TAGS" list above. Do not create new tags.
+CRITICAL RULES:
+1. **TRANSCRIPT ROOM PARSING**: CAREFULLY read the transcript for room mentions (e.g., "this is my bedroom", "in the kitchen", "living room", etc.). When a room is mentioned, assign ALL items detected AFTER that timestamp to that room, until another room is mentioned. If no room is mentioned, use your best judgment to assign a room. BUT IF THE TRANSCRIPT MENTIONS A ROOM, YOU MUST USE THAT ROOM, EVEN IF IT IS ILLOGICAL. ALWAYS ASSIGN A ROOM.
 
-EXAMPLE OUTPUT:
+2. **HOME INVENTORY FOCUS**: ONLY include items valuable for insurance claims:
+   INCLUDE: Electronics, furniture, appliances, art, jewelry, tools, sporting goods, musical instruments, collectibles, clothing (expensive), books (valuable collections), home decor
+   EXCLUDE: Food, consumables, office supplies, toiletries, cleaning products, plants, temporary items
+
+3. **AGGRESSIVE DEDUPLICATION**: Multiple detections of the same item at close timestamps (within 10 seconds) must be merged into ONE entry
+
+4. **CLEAR NAMING**: Use specific, descriptive names (e.g., "Apple MacBook Pro" not "Laptop")
+
+5. **SMART MERGING**: Items like "Mini MIDI Keyboard", "Akai MPK Mini", "Small MIDI Keyboard" are the SAME item
+
+6. **VALUE PRIORITY**: Use transcript values first, then best scratch item value, then estimate intelligently
+
+7. **TAG RESTRICTION**: ONLY use tags from the "AVAILABLE TAGS" list above. Do not create new tags.
+
+8. **MANDATORY ROOM ASSIGNMENT**: You MUST assign a room_name to EVERY single item. Use transcript context if it exists; otherwise, use logical defaults, but only if the transcript does not mention a room.
+
+**ROOM ASSIGNMENT IS MANDATORY - NEVER LEAVE room_name EMPTY, NULL, OR UNDEFINED**
+
+DEFAULT ROOM ASSIGNMENTS IF NO TRANSCRIPT CONTEXT:
+- Electronics (laptops, monitors, phones) → "Office"
+- Art, wall decor, frames → "Living Room" 
+- Furniture, chairs, tables → "Living Room"
+- Beds, mattresses, pillows → "Bedroom"
+- Kitchen items → "Kitchen"
+- Tools, equipment → "Garage"
+
+EXAMPLE OUTPUT (NOTICE EVERY ITEM HAS A ROOM):
 {
   "items": [
     {
-      "name": "Apple MacBook Pro 16-inch",
-      "description": "High-performance laptop computer used for work and creative projects",
-      "estimated_value": 2500,
-      "timestamp": 5.2,
+      "name": "Dell Laptop Computer",
+      "description": "Silver Dell laptop used for work and projects",
+      "estimated_value": 800,
+      "timestamp": 20.0,
       "tag_names": ["Electronics"],
       "room_name": "Office"
     },
     {
-      "name": "Sony 55-inch 4K TV",
-      "description": "Large flat screen television mounted on living room wall",
-      "estimated_value": 800,
-      "timestamp": 12.5,
+      "name": "Black Computer Monitor",
+      "description": "Large black computer monitor for desktop setup",
+      "estimated_value": 150,
+      "timestamp": 20.0,
       "tag_names": ["Electronics"],
-      "room_name": "Living Room"
-    },
-    {
-      "name": "Wooden Coffee Table", 
-      "description": "Dark wood coffee table with storage drawers",
-      "estimated_value": 400,
-      "timestamp": 8.1,
-      "tag_names": ["Furniture"],
-      "room_name": "Living Room"
+      "room_name": "Bedroom"
     }
   ]
 }
 
-Create a comprehensive inventory including most detectable items worth $50+. Be conservative with merging - only merge if absolutely certain it's the same item.`;
+STEP-BY-STEP PROCESS:
+1. Read transcript carefully for room mentions and timestamps
+2. Filter out food and non-inventory items
+3. Deduplicate similar items
+4. Assign rooms based on transcript context + logical defaults
+5. Ensure EVERY item has a room_name field populated
+
+CRITICAL: Every item in your response MUST have a "room_name" field with a value from the available rooms list. NO EXCEPTIONS.`;
 }
 
 async function linkTagsAndRooms(
@@ -227,6 +247,11 @@ async function linkTagsAndRooms(
   for (let i = 0; i < insertedItems.length; i++) {
     const dbItem = insertedItems[i];
     const aiItem = analyzedItems[i];
+
+    // Debug logging
+    logger.info(`Processing item ${i + 1}: ${dbItem.name}`);
+    logger.info(`AI suggested tags: ${JSON.stringify(aiItem.tag_names)}`);
+    logger.info(`AI suggested room: ${aiItem.room_name}`);
 
     // Handle tags - ONLY use existing tags, don't create new ones
     if (aiItem.tag_names?.length) {
@@ -243,6 +268,9 @@ async function linkTagsAndRooms(
         // Only add if tag exists - don't create new tags
         if (existingTag?.id) {
           tagIds.push(existingTag.id);
+          logger.info(`Found existing tag: ${tagName} (${existingTag.id})`);
+        } else {
+          logger.warn(`Tag not found: ${tagName} - skipping`);
         }
       }
 
@@ -250,32 +278,44 @@ async function linkTagsAndRooms(
         await serviceClient
           .from('asset_tags')
           .insert(tagIds.map(tag_id => ({ asset_id: dbItem.id, tag_id })));
+        logger.info(`Linked ${tagIds.length} tags to asset ${dbItem.id}`);
       }
     }
 
-    // Handle room - can create new rooms if needed
-    if (aiItem.room_name) {
+    // Handle room assignment with fallbacks
+    let roomNameToUse = aiItem.room_name;
+
+    if (roomNameToUse) {
+      logger.info(`Looking for room: ${roomNameToUse}`);
       let { data: existingRoom } = await serviceClient
         .from('rooms')
         .select('id')
         .eq('user_id', user_id)
-        .eq('name', aiItem.room_name)
+        .eq('name', roomNameToUse)
         .single();
 
       if (!existingRoom) {
+        logger.info(`Room not found, creating: ${roomNameToUse}`);
         const { data: newRoom } = await serviceClient
           .from('rooms')
-          .insert({ user_id, name: aiItem.room_name })
+          .insert({ user_id, name: roomNameToUse })
           .select('id')
           .single();
         existingRoom = newRoom;
+      } else {
+        logger.info(`Found existing room: ${roomNameToUse} (${existingRoom.id})`);
       }
 
       if (existingRoom?.id) {
         await serviceClient
           .from('asset_rooms')
           .upsert({ asset_id: dbItem.id, room_id: existingRoom.id });
+        logger.info(`Linked room ${roomNameToUse} to asset ${dbItem.id}`);
+      } else {
+        logger.error(`Failed to create or find room: ${roomNameToUse}`);
       }
+    } else {
+      logger.error(`No room could be determined for item: ${dbItem.name}`);
     }
   }
 }
