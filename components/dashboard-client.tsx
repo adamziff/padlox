@@ -31,6 +31,8 @@ import { ManageRoomsDialog } from './manage-rooms-dialog'; // Added
 import { BulkActionsFab } from './bulk-actions-fab'; // Added
 import { BulkTagManagementModal } from './bulk-tag-management-modal'; // Added
 import { BulkRoomManagementModal } from './bulk-room-management-modal'; // Added
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 // Basic types for Tag and Room - ideally these would come from a shared types file
 interface Tag {
@@ -58,6 +60,78 @@ export function DashboardClient({
     initialTotalItems,
     initialTotalValue
 }: DashboardClientProps) {
+    const handleExportToPdf = async () => {
+        try {
+            const doc = new jsPDF();
+
+            // Set document properties
+            doc.setProperties({
+                title: "Padlox Insurance Claim Report - Asset Inventory",
+                subject: "Detailed list of assets and their estimated values",
+                author: "Padlox Application",
+                keywords: "inventory, assets, insurance, report",
+                creator: "Padlox Application"
+            });
+
+            // Main Title
+            doc.setFontSize(18);
+            doc.text("Insurance Claim Report - Asset Inventory", 14, 22);
+
+            // Summary Section
+            doc.setFontSize(11);
+            doc.setTextColor(100); // Light gray for sub-headers
+
+            const summaryYStart = 35;
+            doc.text("Summary:", 14, summaryYStart);
+            doc.setFontSize(10);
+            doc.setTextColor(0); // Reset text color to black
+
+            let summaryCurrentY = summaryYStart + 7;
+            doc.text(`Total Items: ${totalItems}`, 14, summaryCurrentY);
+            summaryCurrentY += 7;
+            doc.text(`Total Estimated Value: ${formatCurrency(totalValue)}`, 14, summaryCurrentY);
+
+            // Table
+            const tableStartY = summaryCurrentY + 15;
+            const columns = [
+                "Name", "Description", "Room", "Tags", "Est. Value", "Purchase Date", "Serial No."
+            ];
+            const rows = displayedAssets.map(asset => [
+                asset.name || "N/A",
+                asset.description || "N/A",
+                asset.room?.name || "N/A",
+                asset.tags?.map(t => t.name).join(", ") || "N/A",
+                asset.estimated_value ? formatCurrency(asset.estimated_value) : "N/A",
+                asset.purchase_date ? new Date(asset.purchase_date).toLocaleDateString() : "N/A",
+                asset.serial_number || "N/A"
+            ]);
+
+            (doc as any).autoTable({
+                head: [columns],
+                body: rows,
+                startY: tableStartY,
+                theme: 'striped', // or 'grid', 'plain'
+                headStyles: { fillColor: [22, 160, 133] }, // Example header color
+                styles: { fontSize: 8, cellPadding: 2 },
+                columnStyles: {
+                    0: { cellWidth: 30 }, // Name
+                    1: { cellWidth: 40 }, // Description
+                    2: { cellWidth: 20 }, // Room
+                    3: { cellWidth: 30 }, // Tags
+                    4: { cellWidth: 25, halign: 'right' }, // Est. Value
+                    5: { cellWidth: 25 }, // Purchase Date
+                    6: { cellWidth: 'auto' }, // Serial No.
+                }
+            });
+
+            doc.save('padlox_insurance_report.pdf');
+        } catch (error) {
+            console.error("Error generating PDF:", error);
+            // Potentially show a user-facing error message here
+            alert("Failed to generate PDF. Please try again.");
+        }
+    };
+
     const {
         showCamera,
         capturedFile,
@@ -388,6 +462,7 @@ export function DashboardClient({
                     onSearchChange={setSearchTerm}
                     onOpenBulkTagModal={() => setIsBulkTagModalOpen(true)}
                     onOpenBulkRoomModal={() => setIsBulkRoomModalOpen(true)}
+                    onExportPdf={handleExportToPdf}
                 />
 
                 {/* Filter UI Elements */}

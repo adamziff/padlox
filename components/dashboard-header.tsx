@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Plus, ListFilter, Tag, Home } from 'lucide-react';
+import { Plus, ListFilter, Tag, Home, FileDown } from 'lucide-react';
 import React from 'react';
 import { Input } from "@/components/ui/input";
 
@@ -17,6 +17,7 @@ interface DashboardHeaderProps {
     onSearchChange: (value: string) => void;
     onOpenBulkTagModal: () => void;
     onOpenBulkRoomModal: () => void;
+    onExportPdf: () => void;
 }
 
 export function DashboardHeader({
@@ -30,7 +31,8 @@ export function DashboardHeader({
     searchTerm,
     onSearchChange,
     onOpenBulkTagModal,
-    onOpenBulkRoomModal
+    onOpenBulkRoomModal,
+    onExportPdf
 }: DashboardHeaderProps) {
     return (
         <div className="mb-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -133,6 +135,15 @@ export function DashboardHeader({
                                 className="col-span-1"
                             >
                                 <Plus className="mr-2 h-4 w-4" /> Add New
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={onExportPdf}
+                                disabled={!hasAssets || isSelectionMode}
+                                className="col-span-1"
+                            >
+                                <FileDown className="mr-2 h-4 w-4" /> Export PDF
                             </Button>
                         </>
                     )}
